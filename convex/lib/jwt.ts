@@ -50,9 +50,14 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload> 
     // Encode secret as Uint8Array for jose
     const secret = new TextEncoder().encode(jwtSecret);
 
-    // Verify the token
+    // Pin issuer/audience/exp to what signAuthToken mints (authInternal.ts).
+    // Without them any other HS256 token sharing JWT_SECRET — different
+    // service, different audience, or no expiry at all — passes as a session.
     const { payload } = await jose.jwtVerify(token, secret, {
       algorithms: ["HS256"],
+      issuer: "originals-auth",
+      audience: "originals-api",
+      requiredClaims: ["exp"],
     });
 
     const jwtPayload = payload as unknown as JWTPayload;
