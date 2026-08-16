@@ -162,3 +162,71 @@ test("setListAssetDid throws on a missing list rather than silently no-oping", a
     /not found/
   );
 });
+
+// The minting half of the migration. Until now only celAssetDidsDb.ts (the
+// database half) was covered, which is why SDK 3.0's NO_CUSTODY throw slipped
+// through typecheck and the whole suite: nothing here ever called createAsset.
+async function loadMinter() {
+  const dir = "tmp/cel-migration-mint-test";
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  await build({
+    entryPoints: ["./convex/migrations/celAssetDids.ts"],
+    outfile: `${dir}/celAssetDids.mjs`,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    external: ["convex/*"],
+    // Convex's generated server module needs a real deployment; the mint path
+    // under test never touches it, so stub it rather than stand one up.
+    plugins: [
+      {
+        name: "stub-convex-generated",
+        setup(b) {
+          b.onResolve({ filter: /_generated\// }, () => ({ path: "gen", namespace: "g" }));
+          b.onLoad({ filter: /.*/, namespace: "g" }, () => ({
+            contents:
+              "export const internalAction=(d)=>d; export const internalMutation=(d)=>d; export const internalQuery=(d)=>d; export const internal=new Proxy({},{get:()=>new Proxy({},{get:()=>undefined})});",
+            loader: "js",
+          }));
+        },
+      },
+    ],
+    banner: {
+      js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
+    },
+  });
+  return import(
+    `${pathToFileURL(`${process.cwd()}/${dir}/celAssetDids.mjs`).href}?t=${Date.now()}`
+  );
+}
+
+test("mintCelGenesis produces a verifiable envelope", async () => {
+  const minter = await loadMinter();
+
+  // A real mint. Under SDK 3.0 an implicit no-custody createAsset throws
+  // NO_CUSTODY, so this fails here rather than mid-migration against prod data.
+  const { assetDid, envelope } = await minter.mintCelGenesis(
+    "Groceries",
+    "did:webvh:example:alice",
+    Date.parse("2026-02-01T00:00:00.000Z")
+  );
+
+  assert.match(assetDid, /^did:cel:/);
+
+  const parsed = JSON.parse(envelope);
+  assert.equal(parsed.assetDid, assetDid);
+
+  // The migration's whole point is that migrated lists are verifiable. Replay
+  // the log the same way the client does rather than trusting it parses.
+  const { OriginalsSDK } = await import("@originals/sdk");
+  const sdk = OriginalsSDK.create({ network: "signet", defaultKeyType: "Ed25519" });
+  const { verification } = await sdk.lifecycle.loadAsset(envelope);
+  assert.equal(verification?.verified, true, "a migrated list must verify");
+
+  // The list's own createdAt is what the genesis resource commits to, so a
+  // migrated list keeps its real creation date even though the log is sealed now.
+  const resource = parsed.resources.find((r) => r.id === "list-metadata");
+  assert.equal(JSON.parse(resource.content).createdAt, "2026-02-01T00:00:00.000Z");
+});
