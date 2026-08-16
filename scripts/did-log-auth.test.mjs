@@ -223,6 +223,30 @@ async function rejects(promise, description) {
   );
 }
 
+// --- every didLogs write path is behind the ownership check ---------------
+
+// The helper being correct proves nothing if a new endpoint writes the table
+// without calling it — which is exactly how the re-mint path (#217) opened a
+// second door. Any file that runs a didLogs-writing mutation must import the
+// check; a bare unit test would not have caught this.
+{
+  const { readdir, readFile } = await import("node:fs/promises");
+  const files = (await readdir("convex", { recursive: true })).filter(
+    (f) => f.endsWith(".ts") && !f.startsWith("_generated")
+  );
+
+  const writers = /runMutation\(\s*internal\.[\w.]*(?:upsertDidLog|storeDidLog)/;
+
+  for (const file of files) {
+    const src = await readFile(`convex/${file}`, "utf8");
+    if (!writers.test(src)) continue;
+    assert.ok(
+      src.includes("assertDidLogOwnership"),
+      `convex/${file} writes a didLogs row without asserting ownership`
+    );
+  }
+}
+
 await rm(outdir, { recursive: true, force: true });
 
 console.log("did-log-auth: all assertions passed");
