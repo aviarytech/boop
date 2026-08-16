@@ -6,7 +6,9 @@
  */
 
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+import { requireAuth, AuthError } from "./lib/auth";
+import { assertDidLogOwnership, DidLogOwnershipError } from "./lib/didLogAuth";
 
 function getCorsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin") || "*";
@@ -19,20 +21,17 @@ function getCorsHeaders(request: Request): Record<string, string> {
 }
 
 /**
- * Store/update a DID log. Requires JWT auth.
+ * Store/update a DID log for the authenticated caller.
+ *
+ * The body's `userDid`/`path` are checked against the ones derivable from the
+ * caller's token, never trusted — this endpoint decides what the world resolves
+ * for an identity.
  */
 export const storeDidLog = httpAction(async (ctx, request) => {
   const corsHeaders = getCorsHeaders(request);
 
   try {
-    // Verify auth via Authorization header
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
-    }
+    const auth = await requireAuth(request);
 
     const body = await request.json();
     const { userDid, path, log } = body as { userDid: string; path: string; log: string };
@@ -44,13 +43,27 @@ export const storeDidLog = httpAction(async (ctx, request) => {
       });
     }
 
-    await ctx.runMutation(api.didLogs.upsertDidLog, { userDid, path, log });
+    assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid, path });
+
+    await ctx.runMutation(internal.didLogs.upsertDidLog, { userDid, path, log });
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    if (error instanceof DidLogOwnershipError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 403,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
     console.error("[didLogsHttp] Store error:", error);
     return new Response(JSON.stringify({ error: "Failed to store DID log" }), {
       status: 500,

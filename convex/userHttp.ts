@@ -12,6 +12,7 @@ import {
   unauthorizedResponseWithCors,
 } from "./lib/auth";
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
+import { assertDidLogOwnership, DidLogOwnershipError } from "./lib/didLogAuth";
 
 /** The domain encoded in a did:webvh, percent-decoded. Null if not a did:webvh. */
 function didWebvhDomain(did: string): string | null {
@@ -139,6 +140,13 @@ export const remintUserDID = httpAction(async (ctx, request) => {
       });
     }
 
+    // Checked before applyRemint: storeDidLog patches the didLogs row matching
+    // `path`, so an unchecked body could point any other account's serving path
+    // at this caller's log. Rejecting afterwards would leave rows already moved.
+    if (didLog && path) {
+      assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: newDid, path });
+    }
+
     const { rewritten } = await ctx.runMutation(
       internal.migrations.remintUserDidDb.applyRemint,
       { userId: user._id, oldDid: user.did, newDid }
@@ -159,6 +167,9 @@ export const remintUserDID = httpAction(async (ctx, request) => {
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorizedResponseWithCors(request, err.message);
+    }
+    if (err instanceof DidLogOwnershipError) {
+      return errorResponse(request, err.message, 403);
     }
     console.error("[userHttp] Re-mint error:", err);
     return errorResponse(

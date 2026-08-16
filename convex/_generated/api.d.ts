@@ -45,6 +45,7 @@ import type * as lib_apiKeyHelpers from "../lib/apiKeyHelpers.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authUser from "../lib/authUser.js";
 import type * as lib_bucket from "../lib/bucket.js";
+import type * as lib_didLogAuth from "../lib/didLogAuth.js";
 import type * as lib_httpResponses from "../lib/httpResponses.js";
 import type * as lib_itemCategories from "../lib/itemCategories.js";
 import type * as lib_jwt from "../lib/jwt.js";
@@ -123,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/authUser": typeof lib_authUser;
   "lib/bucket": typeof lib_bucket;
+  "lib/didLogAuth": typeof lib_didLogAuth;
   "lib/httpResponses": typeof lib_httpResponses;
   "lib/itemCategories": typeof lib_itemCategories;
   "lib/jwt": typeof lib_jwt;

@@ -6,12 +6,16 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 
 /**
  * Store or update a user's DID log.
+ *
+ * Internal: it writes whatever `userDid` it is handed, so the caller owns the
+ * ownership check. As a public mutation this was directly callable by anyone
+ * with the deployment URL. Go through didLogsHttp.storeDidLog.
  */
-export const upsertDidLog = mutation({
+export const upsertDidLog = internalMutation({
   args: {
     userDid: v.string(),
     path: v.string(),
