@@ -85,4 +85,30 @@ const originals = await loadOriginalsModule();
   assert.ok(garbage.error, "malformed input should report an error, not throw");
 }
 
+// --- envelopes sealed before the CEL cryptosuite rename still verify -------
+
+// SDK 3.0 renamed the CEL cryptosuite to `originals-cel-ed25519-jcs-v1` and
+// started signing the proof configuration. Logs sealed earlier cannot be
+// re-signed, so `eddsa-jcs-2022` stays accepted on READ — every list already in
+// the database depends on that. The fixture is a real envelope minted by SDK
+// 2.1.0; if a future bump drops the legacy suite, this fails instead of every
+// existing list silently going unverifiable.
+{
+  const { readFile } = await import("node:fs/promises");
+  const legacy = await readFile("scripts/fixtures/cel-envelope-sdk-2.1.0.json", "utf8");
+
+  assert.ok(
+    legacy.includes('"cryptosuite":"eddsa-jcs-2022"'),
+    "fixture must carry the pre-3.0 suite, else it proves nothing"
+  );
+
+  const result = await originals.verifyListEnvelope(legacy);
+  assert.equal(
+    result.verified,
+    true,
+    `2.x-sealed envelope must still verify, got: ${result.error ?? ""}`
+  );
+  assert.deepEqual(result.warnings, []);
+}
+
 console.log("originals helper tests passed");

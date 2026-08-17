@@ -13,6 +13,11 @@ import type { Doc } from "../../../convex/_generated/dataModel";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useSettings } from "../../hooks/useSettings";
 import { buildListResourceDid, buildListResourceUrl } from "../../lib/webvh";
+import {
+  buildListSnapshot,
+  recordPublishedVersion,
+  ListNotAuthorableError,
+} from "../../lib/originals";
 import { Panel } from "../ui/Panel";
 
 interface PublishModalProps {
@@ -29,11 +34,16 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
   const publicationStatus = useQuery(api.publication.getPublicationStatus, {
     listId: list._id,
   });
+  // Both feed the signed snapshot the publish records in the list's own log.
+  const storedEnvelope = useQuery(api.lists.getListEnvelope, { listId: list._id });
+  const items = useQuery(api.items.getListItems, { listId: list._id });
 
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Published, but the list could not sign the event recording it.
+  const [unrecorded, setUnrecorded] = useState(false);
 
   const isPublished = publicationStatus?.status === "active";
   const publicUrl = isPublished && did
@@ -54,13 +64,36 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
       // The list is a resource under the user's DID — no separate DID needed.
       const listResourceDid = buildListResourceDid(did, list._id);
 
-      // Record publication in Convex
+      // Record the published state in the list's own event log first, so the
+      // publication row and the log cannot disagree about what went public.
+      // A list whose key was lost to the migration still publishes; it just
+      // cannot sign the event, and we say so rather than failing the publish.
+      let celEnvelope: string | undefined;
+      setUnrecorded(false);
+
+      if (storedEnvelope?.envelope) {
+        try {
+          const recorded = await recordPublishedVersion(
+            storedEnvelope.envelope,
+            buildListSnapshot(list.name, items ?? [])
+          );
+          celEnvelope = recorded.envelope;
+        } catch (err) {
+          if (err instanceof ListNotAuthorableError) {
+            setUnrecorded(true);
+          } else {
+            throw err;
+          }
+        }
+      }
+
       await publishListMutation({
         listId: list._id,
         webvhDid: listResourceDid,
         publisherDid: did,
+        celEnvelope,
       });
-      
+
       haptic('success');
     } catch (err) {
       console.error("[PublishModal] Failed to publish:", err);
@@ -306,6 +339,14 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
               </div>
             </div>
           </>
+        )}
+
+        {unrecorded && (
+          <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm">
+            Published, but this list couldn't sign the event recording it — its
+            signing key isn't on this device. Make an authorable copy from the
+            list's provenance details to keep a verifiable history.
+          </div>
         )}
 
         {error && (

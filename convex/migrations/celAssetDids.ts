@@ -14,7 +14,8 @@
  *    a "will be replaced with proper DID" comment. It never replaced them, so
  *    every list made from a *saved* template carries a DID that was never real.
  *
- * Genesis is minted server-side here, with NO keyStore configured. That is
+ * Genesis is minted server-side here, as an explicitly `ephemeral` controller —
+ * no key is retained. That is
  * deliberate: the genesis controller key would otherwise be held by the server
  * rather than the owner, which is a custody change this migration has no mandate
  * to make. The consequence is that migrated lists are VERIFIABLE (the envelope
@@ -50,7 +51,7 @@ async function sha256Hex(value: string): Promise<string> {
  * Mint a did:cel for an existing list, using the same genesis resource shape as
  * buildListResource in src/lib/originals.ts so migrated and new lists agree.
  */
-async function mintCelGenesis(
+export async function mintCelGenesis(
   name: string,
   ownerDid: string,
   createdAt: number
@@ -61,15 +62,20 @@ async function mintCelGenesis(
     createdAt: new Date(createdAt).toISOString(),
   });
   const sdk = OriginalsSDK.create(config);
-  const asset = await sdk.lifecycle.createAsset([
-    {
-      id: "list-metadata",
-      type: "ListMetadata",
-      contentType: "application/json",
-      content,
-      hash: await sha256Hex(content),
-    },
-  ]);
+  // `ephemeral` is the explicit spelling of what this migration always did: mint
+  // without retaining the key. SDK 3.0 throws NO_CUSTODY on the implicit form.
+  const asset = await sdk.lifecycle.createAsset(
+    [
+      {
+        id: "list-metadata",
+        type: "ListMetadata",
+        contentType: "application/json",
+        content,
+        hash: await sha256Hex(content),
+      },
+    ],
+    { controller: "ephemeral" }
+  );
   return { assetDid: asset.id, envelope: JSON.stringify(asset.serialize()) };
 }
 

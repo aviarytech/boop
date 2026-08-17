@@ -7,6 +7,7 @@
 
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { upsertListEnvelope } from "./lib/listEnvelope";
 import { internal } from "./_generated/api";
 
 /**
@@ -20,6 +21,10 @@ export const publishList = mutation({
     didDocument: v.optional(v.string()),
     didLog: v.optional(v.string()),
     publisherDid: v.string(),
+    // The asset envelope after appending the published-version event. Optional:
+    // a list whose signing key was lost to the celAssetDids migration can still
+    // be published, it just cannot record the fact in its own log.
+    celEnvelope: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Verify user is owner
@@ -39,6 +44,13 @@ export const publishList = mutation({
 
     if (existing && existing.status === "active") {
       throw new Error("List is already published");
+    }
+
+    // The log is the record of what was published, so store it before the
+    // publication row — a publications row without its log would claim a
+    // provenance entry that does not exist.
+    if (args.celEnvelope) {
+      await upsertListEnvelope(ctx, args.listId, list.assetDid, args.celEnvelope);
     }
 
     if (existing) {
