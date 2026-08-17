@@ -16,7 +16,7 @@ import type {
   KeyPair,
   OriginalsConfig,
 } from "@originals/sdk";
-import { localCelKeyStore } from "./celKeyStore";
+import { localCelKeyStore, hasCelKey } from "./celKeyStore";
 
 // SDK configuration for testnet/development
 const config: OriginalsConfig = {
@@ -124,6 +124,48 @@ export async function verifyListEnvelope(envelope: string): Promise<EnvelopeVeri
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * When the genesis event's proof was signed.
+ *
+ * Distinct from the list's own createdAt: the celAssetDids migration minted
+ * genesis for existing lists, so it committed to the list's real creation date
+ * while signing the log on the migration's clock. That gap is the only
+ * server-observable difference between a migrated list and a client-minted one.
+ */
+export function genesisSealedAt(envelope: string): number | null {
+  try {
+    const proof = JSON.parse(envelope)?.eventLog?.events?.[0]?.proof;
+    const created = (Array.isArray(proof) ? proof[0] : proof)?.created;
+    const ms = created ? Date.parse(created) : NaN;
+    return Number.isNaN(ms) ? null : ms;
+  } catch {
+    return null;
+  }
+}
+
+/** Genesis sealed this long after list creation counts as a re-genesis. */
+const RETROACTIVE_GENESIS_MS = 60_000;
+
+/**
+ * True when this list's log was sealed well after the list already existed —
+ * i.e. the migration minted it, so no one holds its controller key and it can
+ * never author another event. Copying is the only way to get an authorable list.
+ */
+export function isRetroactiveGenesis(envelope: string, listCreatedAt: number): boolean {
+  const sealed = genesisSealedAt(envelope);
+  return sealed !== null && sealed - listCreatedAt > RETROACTIVE_GENESIS_MS;
+}
+
+/**
+ * True when THIS DEVICE holds the list's genesis key. Custody is per-origin
+ * localStorage, so a client-minted list is unauthorable from a second device
+ * too — which is a different problem from a migrated list, and not one copying
+ * should be offered for.
+ */
+export async function canAuthorList(assetDid: string): Promise<boolean> {
+  return hasCelKey(`${assetDid}#key-0`);
 }
 
 // Re-export types that consumers might need

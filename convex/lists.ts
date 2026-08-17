@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { withMutationObservability } from "./lib/observability";
 import { canUserViewList } from "./lib/permissions";
@@ -58,6 +59,47 @@ export function createListOwnershipVC(
 /**
  * Create a new list.
  */
+/**
+ * Free-plan list cap, shared by every path that inserts a list.
+ *
+ * Extracted rather than inlined so copyList cannot become a way around the
+ * limit — a copy is a new list and counts like one.
+ */
+async function assertListQuota(
+  ctx: MutationCtx,
+  ownerDid: string
+): Promise<{ owner: Doc<"users"> | null; isFirstList: boolean }> {
+  const owner = await ctx.db
+    .query("users")
+    .withIndex("by_did", (q) => q.eq("did", ownerDid))
+    .first();
+
+  if (!owner) return { owner: null, isFirstList: false };
+
+  const sub = await ctx.db
+    .query("subscriptions")
+    .withIndex("by_user", (q) => q.eq("userId", owner._id))
+    .first();
+  const hasPaidSub = sub && (sub.status === "active" || sub.status === "trialing");
+  const hasReferralPro = !hasPaidSub && owner.referralProUntil != null && owner.referralProUntil > Date.now();
+  const plan = hasPaidSub ? sub.plan : (hasReferralPro ? "pro" : "free");
+
+  const existingLists = await ctx.db
+    .query("lists")
+    .withIndex("by_owner", (q) => q.eq("ownerDid", ownerDid))
+    .collect();
+
+  if (plan === "free") {
+    const bonusLists = owner.bonusLists ?? 0;
+    const maxLists = 5 + bonusLists;
+    if (existingLists.length >= maxLists) {
+      throw new Error("PLAN_LIMIT: You've reached the free plan limit of 5 lists. Upgrade at /pricing to create unlimited lists.");
+    }
+  }
+
+  return { owner, isFirstList: existingLists.length === 0 };
+}
+
 export const createList = mutation({
   args: {
     assetDid: v.string(),
@@ -75,38 +117,7 @@ export const createList = mutation({
     if (args.name.trim().length === 0) throw new Error("List name cannot be empty");
     if (args.name.length > 200) throw new Error("List name cannot exceed 200 characters");
 
-    // Plan enforcement: free tier allows up to 5 lists
-    const owner = await ctx.db
-      .query("users")
-      .withIndex("by_did", (q) => q.eq("did", args.ownerDid))
-      .first();
-
-    let isFirstList = false;
-
-    if (owner) {
-      const sub = await ctx.db
-        .query("subscriptions")
-        .withIndex("by_user", (q) => q.eq("userId", owner._id))
-        .first();
-      const hasPaidSub = sub && (sub.status === "active" || sub.status === "trialing");
-      const hasReferralPro = !hasPaidSub && owner.referralProUntil != null && owner.referralProUntil > Date.now();
-      const plan = hasPaidSub ? sub.plan : (hasReferralPro ? "pro" : "free");
-
-      const existingLists = await ctx.db
-        .query("lists")
-        .withIndex("by_owner", (q) => q.eq("ownerDid", args.ownerDid))
-        .collect();
-
-      isFirstList = existingLists.length === 0;
-
-      if (plan === "free") {
-        const bonusLists = owner.bonusLists ?? 0;
-        const maxLists = 5 + bonusLists;
-        if (existingLists.length >= maxLists) {
-          throw new Error("PLAN_LIMIT: You've reached the free plan limit of 5 lists. Upgrade at /pricing to create unlimited lists.");
-        }
-      }
-    }
+    const { owner, isFirstList } = await assertListQuota(ctx, args.ownerDid);
 
     const listId = await ctx.db.insert("lists", {
       assetDid: args.assetDid,
@@ -145,6 +156,115 @@ export const createList = mutation({
     }
 
     return listId;
+  }),
+});
+
+/**
+ * Copy a list's contents into a brand-new list.
+ *
+ * This exists for provenance, not convenience. Lists re-minted by the
+ * celAssetDids migration were given their genesis server-side with an ephemeral
+ * controller, so no one holds their signing key and they can never record
+ * another CEL event — verifiable, but not authorable. A copy is minted in the
+ * owner's browser, so its key lands in their keyStore and the new list can
+ * author events for the rest of its life.
+ *
+ * The copy is honestly new: it gets today's genesis and its own DID, and makes
+ * no claim to the original's history. The source list is left untouched.
+ */
+export const copyList = mutation({
+  args: {
+    sourceListId: v.id("lists"),
+    // Minted client-side by createListAsset — that is the whole point, so both
+    // are required here rather than optional as they are on createList.
+    assetDid: v.string(),
+    celEnvelope: v.string(),
+    name: v.string(),
+    ownerDid: v.string(),
+    createdAt: v.number(),
+  },
+  handler: async (ctx, args) => withMutationObservability("lists.copyList", async () => {
+    if (args.name.trim().length === 0) throw new Error("List name cannot be empty");
+    if (args.name.length > 200) throw new Error("List name cannot exceed 200 characters");
+
+    const source = await ctx.db.get(args.sourceListId);
+    if (!source) throw new Error("List not found");
+    // Copying mints a new identity naming this owner, so viewers who can merely
+    // read a shared list must not be able to do it.
+    if (source.ownerDid !== args.ownerDid) {
+      throw new Error("Only the list's owner can copy it");
+    }
+
+    const { owner, isFirstList } = await assertListQuota(ctx, args.ownerDid);
+
+    const listId = await ctx.db.insert("lists", {
+      assetDid: args.assetDid,
+      name: args.name,
+      ownerDid: args.ownerDid,
+      categoryId: source.categoryId,
+      createdAt: args.createdAt,
+      // Presentation settings belong to the list, so the copy should look like
+      // the original rather than reverting to the built-in defaults.
+      customAisles: source.customAisles,
+      itemCategories: source.itemCategories,
+      itemViewMode: source.itemViewMode,
+    });
+
+    await ctx.db.patch(listId, {
+      vcProof: createListOwnershipVC(listId, args.assetDid, args.ownerDid, args.name, args.createdAt),
+    });
+
+    await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
+
+    const items = await ctx.db
+      .query("items")
+      .withIndex("by_list", (q) => q.eq("listId", args.sourceListId))
+      .collect();
+
+    // Two passes: parentId points at a sibling item, so every row needs an id
+    // before any parent link can be rewritten.
+    const idMap = new Map<Id<"items">, Id<"items">>();
+
+    // Rest-spread rather than an explicit field list, so a column added to items
+    // later is carried by a copy without anyone remembering to update this.
+    // Only these four must not cross: two are system-owned, parentId is rewritten
+    // in the second pass below, and vcProofs attest actions taken against the
+    // SOURCE asset's DID — carrying them would attribute one asset's provenance
+    // to another, the exact claim this copy exists to avoid making.
+    const DROP = ["_id", "_creationTime", "parentId", "vcProofs"] as const;
+
+    for (const item of items) {
+      const payload: Record<string, unknown> = { ...item };
+      for (const field of DROP) delete payload[field];
+      const newId = await ctx.db.insert(
+        "items",
+        { ...payload, listId } as Omit<Doc<"items">, "_id" | "_creationTime">
+      );
+      idMap.set(item._id, newId);
+    }
+
+    for (const item of items) {
+      if (!item.parentId) continue;
+      const newParent = idMap.get(item.parentId);
+      // A parent outside this list would be corrupt data; drop the link rather
+      // than point the copy back into the original list.
+      if (newParent) await ctx.db.patch(idMap.get(item._id)!, { parentId: newParent });
+    }
+
+    if (owner && isFirstList) {
+      const referral = await ctx.db
+        .query("referrals")
+        .withIndex("by_referee", (q) => q.eq("refereeId", owner._id))
+        .first();
+      if (referral && !referral.proGrantedAt) {
+        const proUntil = Date.now() + 30 * 24 * 60 * 60 * 1000;
+        await ctx.db.patch(owner._id, { referralProUntil: proUntil });
+        await ctx.db.patch(referral.referrerId, { referralProUntil: proUntil });
+        await ctx.db.patch(referral._id, { proGrantedAt: Date.now() });
+      }
+    }
+
+    return { listId, itemsCopied: items.length };
   }),
 });
 
