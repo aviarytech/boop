@@ -126,6 +126,106 @@ export async function verifyListEnvelope(envelope: string): Promise<EnvelopeVeri
   }
 }
 
+/** A list's published state, as committed to by a version's content hash. */
+export interface ListSnapshot {
+  name: string;
+  items: Array<{ name: string; checked: boolean }>;
+}
+
+export interface RecordedVersion {
+  /** The asset envelope after the append. Persist it — it is the new log. */
+  envelope: string;
+  /** 1 is genesis, so a first published version is 2. */
+  version: number;
+  hash: string;
+  /** False when the content matched the current version and nothing was appended. */
+  appended: boolean;
+}
+
+/**
+ * Thrown when a list cannot sign its own events, which is not a bug the user
+ * can act on except by copying the list.
+ */
+export class ListNotAuthorableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ListNotAuthorableError";
+  }
+}
+
+/**
+ * Build the content a published version commits to. Separate from
+ * buildListResource because genesis commits to the list's identity while a
+ * version commits to what was actually published.
+ */
+export function buildListSnapshot(
+  name: string,
+  items: Array<{ name: string; checked: boolean }>
+): ListSnapshot {
+  return { name, items: items.map(({ name, checked }) => ({ name, checked })) };
+}
+
+/**
+ * Append a signed snapshot of the list's published state to its CEL log.
+ *
+ * Publishing used to leave no trace in the chain that exists to record an
+ * asset's history — the `publications` row knew, the log did not. This appends
+ * a content-addressed `update` event so the published state is verifiable.
+ *
+ * Stays on did:cel deliberately: publishToWeb would migrate the asset to
+ * did:webvh, changing its DID and moving its public URL to a content-addressed
+ * key, and boop serves published lists live at a stable path.
+ *
+ * Signing needs the genesis controller key, which lives in this device's
+ * keyStore. Lists re-minted by the celAssetDids migration have no key at all —
+ * they get ListNotAuthorableError rather than the SDK's CEL_APPEND_FAILED, so
+ * the caller can point at the copy action instead of showing a raw SDK error.
+ */
+export async function recordPublishedVersion(
+  envelope: string,
+  snapshot: ListSnapshot,
+  changes = "Published to the web"
+): Promise<RecordedVersion> {
+  const sdk = OriginalsSDK.create(config);
+  const { asset } = await sdk.lifecycle.loadAsset(envelope);
+
+  if (!(await canAuthorList(asset.id))) {
+    throw new ListNotAuthorableError(
+      "This list's signing key isn't on this device, so its history can't be updated."
+    );
+  }
+
+  const content = JSON.stringify(snapshot);
+
+  try {
+    const resource = await asset.addResourceVersion(
+      "list-metadata",
+      content,
+      "application/json",
+      changes
+    );
+    return {
+      envelope: JSON.stringify(asset.serialize()),
+      version: resource.version ?? 0,
+      hash: resource.hash,
+      appended: true,
+    };
+  } catch (err) {
+    // Re-publishing an unchanged list is a no-op, not a failure. The SDK
+    // refuses a version identical to the current one.
+    if (err instanceof Error && /unchanged|identical|same content/i.test(err.message)) {
+      const current = asset.resources.find((r) => r.id === "list-metadata");
+      return {
+        envelope,
+        version: current?.version ?? 0,
+        hash: current?.hash ?? "",
+        appended: false,
+      };
+    }
+    throw err;
+  }
+}
+
 /**
  * When the genesis event's proof was signed.
  *
