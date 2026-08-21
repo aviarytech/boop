@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { withMutationObservability } from "./lib/observability";
 import { canUserViewList } from "./lib/permissions";
 import { upsertListEnvelope } from "./lib/listEnvelope";
+import { isLegacyGenesis } from "./lib/legacyList";
 
 /**
  * Creates a placeholder Verifiable Credential for list ownership.
@@ -449,6 +450,41 @@ export const getUserLists = query({
     return Array.from(listMap.values()).sort(
       (a, b) => b.createdAt - a.createdAt
     );
+  },
+});
+
+/**
+ * Which of these lists carry legacy provenance — a log sealed by the migration
+ * rather than by their owner, so they can never record another event.
+ *
+ * Separate from getUserLists, and returning only ids, so the list index can
+ * badge them without pulling every envelope into a hot subscription. Reads one
+ * indexed row per list and compares two numbers; the parsing happened once, at
+ * write time.
+ */
+export const getLegacyListIds = query({
+  args: { listIds: v.array(v.id("lists")) },
+  handler: async (ctx, args) => {
+    const legacy: Id<"lists">[] = [];
+
+    for (const listId of args.listIds) {
+      const list = await ctx.db.get(listId);
+      if (!list) continue;
+
+      const row = await ctx.db
+        .query("listEnvelopes")
+        .withIndex("by_list", (q) => q.eq("listId", listId))
+        .first();
+
+      // No envelope, or one we could not read, is "unknown" rather than legacy:
+      // claiming a list cannot record history when we simply do not know would
+      // push the owner into a copy they may not need.
+      if (!row || row.genesisSealedAt === undefined) continue;
+
+      if (isLegacyGenesis(row.genesisSealedAt, list.createdAt)) legacy.push(listId);
+    }
+
+    return legacy;
   },
 });
 

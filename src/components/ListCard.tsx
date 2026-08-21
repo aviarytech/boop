@@ -11,11 +11,15 @@ import { Link } from "react-router-dom";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";
 import { useSettings } from "../hooks/useSettings";
+import { LegacyBadge } from "./LegacyBadge";
 
 interface ListCardProps {
   list: Doc<"lists">;
   currentUserDid: string;
   showOwner?: boolean;
+  /** Provenance sealed by the migration — passed in so the index queries once,
+   *  not once per card. */
+  isLegacy?: boolean;
 }
 
 function truncateDid(did: string): string {
@@ -32,7 +36,7 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner }: ListCardProps) {
+export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner, isLegacy }: ListCardProps) {
   const { haptic } = useSettings();
   const isOwner = list.ownerDid === currentUserDid;
 
@@ -63,6 +67,7 @@ export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner
             style={{ fontFamily: 'Geist Mono, ui-monospace, monospace' }}
           >
             <span className="truncate">{tagParts.join(' · ')}</span>
+            {isLegacy && <LegacyBadge className="flex-shrink-0" />}
           </div>
           <h3
             className="text-stone-900 dark:text-stone-50 truncate"

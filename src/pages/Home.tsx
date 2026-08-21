@@ -157,6 +157,14 @@ export function Home() {
 
   const usingCache = !isOnline && !serverLists && cachedLists.length > 0;
 
+  // One query for every card on the page rather than one per card. Skipped
+  // until the lists arrive, and while offline, where the ids may be stale.
+  const legacyIds = useQuery(
+    api.lists.getLegacyListIds,
+    lists && !usingCache ? { listIds: lists.map((l) => l._id) } : "skip"
+  );
+  const legacySet = useMemo(() => new Set(legacyIds ?? []), [legacyIds]);
+
   // Filter and sort lists
   const processedLists = useMemo(() => {
     if (!lists) return undefined;
@@ -447,7 +455,7 @@ export function Home() {
               <div className="space-y-3">
                 {favouriteLists.map((list, index) => (
                   <div key={`fav-${list._id}`} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                    <ListCard list={list} currentUserDid={did} showOwner={list.ownerDid !== did && list.ownerDid !== legacyDid} />
+                    <ListCard list={list} currentUserDid={did} showOwner={list.ownerDid !== did && list.ownerDid !== legacyDid} isLegacy={legacySet.has(list._id)} />
                   </div>
                 ))}
               </div>
@@ -470,7 +478,7 @@ export function Home() {
                     <div className="space-y-3">
                       {categoryLists.map((list, index) => (
                         <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                          <ListCard list={list} currentUserDid={did} />
+                          <ListCard list={list} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
                         </div>
                       ))}
                     </div>
@@ -486,7 +494,7 @@ export function Home() {
                   <div className="space-y-3">
                     {ownedLists.uncategorized.map((list, index) => (
                       <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                        <ListCard list={list} currentUserDid={did} />
+                        <ListCard list={list} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
                       </div>
                     ))}
                   </div>
