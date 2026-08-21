@@ -11,6 +11,7 @@ import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { createListAsset } from "../lib/originals";
+import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
 
 type Template = Doc<"listTemplates">;
@@ -20,6 +21,7 @@ export function Templates() {
   const { haptic } = useSettings();
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch templates from API
   const userTemplates = useQuery(
@@ -67,6 +69,7 @@ export function Templates() {
       navigate(`/list/${listId}`);
     } catch (err) {
       console.error("Failed to create from template:", err);
+      setError(listCreationErrorMessage(err));
       haptic('error');
       setIsCreating(null);
     }
@@ -76,6 +79,7 @@ export function Templates() {
     if (!did) return;
     
     setIsCreating(template._id);
+    setError(null);
     haptic('medium');
 
     try {
@@ -92,6 +96,7 @@ export function Templates() {
       navigate(`/list/${listId}`);
     } catch (err) {
       console.error("Failed to create from saved template:", err);
+      setError(listCreationErrorMessage(err));
       haptic('error');
       setIsCreating(null);
     }
@@ -136,6 +141,18 @@ export function Templates() {
           <span>📁</span> Templates
         </h1>
       </div>
+
+      {error && (
+        <div className="mb-6 px-4 py-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm space-y-3">
+          <div>{error}</div>
+          <Link
+            to="/pricing"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-lg font-semibold text-sm transition-colors"
+          >
+            View pricing →
+          </Link>
+        </div>
+      )}
 
       {/* Built-in Templates */}
       <section className="mb-8">

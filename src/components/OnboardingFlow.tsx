@@ -13,6 +13,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { createListAsset } from "../lib/originals";
+import { listCreationErrorMessage } from "../lib/planLimit";
 import { buildListResourceDid, buildListResourceUrl } from "../lib/webvh";
 import { trackInviteSent } from "../lib/analytics";
 
@@ -107,7 +108,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       haptic("success");
       setStep("add-items");
     } catch (err) {
-      setCreateError("Couldn't create list. Try again.");
+      setCreateError(listCreationErrorMessage(err, "Couldn't create list. Try again."));
       haptic("error");
     } finally {
       setIsCreating(false);

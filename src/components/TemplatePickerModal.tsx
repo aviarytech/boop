@@ -12,6 +12,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { createListAsset } from "../lib/originals";
+import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
 import { Panel } from "./ui/Panel";
 
@@ -83,7 +84,7 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
       navigate(`/list/${listId}`);
     } catch (err) {
       console.error("Failed to create list from template:", err);
-      setError("Failed to create list. Please try again.");
+      setError(listCreationErrorMessage(err));
       haptic('error');
       setIsCreating(false);
     }
@@ -110,7 +111,7 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
       navigate(`/list/${listId}`);
     } catch (err) {
       console.error("Failed to create list from saved template:", err);
-      setError("Failed to create list. Please try again.");
+      setError(listCreationErrorMessage(err));
       haptic('error');
       setIsCreating(false);
     }
