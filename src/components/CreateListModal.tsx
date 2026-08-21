@@ -12,6 +12,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { createListAsset } from "../lib/originals";
+import { isPlanLimitError } from "../lib/planLimit";
 import { CategorySelector } from "./lists/CategorySelector";
 import { Panel } from "./ui/Panel";
 import { trackListCreated, trackFirstListCreated, trackFeatureGateHit, trackInviteSent } from "../lib/analytics";
@@ -77,8 +78,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
       onListCreated?.(listId, trimmedName);
     } catch (err) {
       console.error("Failed to create list:", err);
-      const msg = err instanceof Error ? err.message : "";
-      if (msg.includes("PLAN_LIMIT")) {
+      if (isPlanLimitError(err)) {
         setPlanLimitHit(true);
         trackFeatureGateHit("list_limit", "free");
       } else {
