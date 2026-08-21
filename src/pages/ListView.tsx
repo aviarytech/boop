@@ -28,6 +28,7 @@ import { AddItemInput } from "../components/AddItemInput";
 import { NestedListItem } from "../components/NestedListItem";
 import { useStreaks } from "../hooks/useStreaks";
 import { StreakBadge } from "../components/StreakBadge";
+import { LegacyBadge } from "../components/LegacyBadge";
 import { StreakCelebration } from "../components/StreakCelebration";
 import { NoItemsEmptyState } from "../components/ui/EmptyState";
 import { ListViewSkeleton } from "../components/ui/Skeleton";
@@ -84,6 +85,13 @@ export function ListView() {
 
   const listId = id as Id<"lists">;
   const list = useQuery(api.lists.getList, { listId });
+
+  // Same source of truth as the list index, asked for one id.
+  const legacyIds = useQuery(
+    api.lists.getLegacyListIds,
+    list ? { listIds: [list._id] } : "skip"
+  );
+  const isLegacyList = (legacyIds?.length ?? 0) > 0;
   const listLoadStartedAtRef = useRef(performance.now());
   const hasRecordedRenderLatencyRef = useRef(false);
 
@@ -724,6 +732,7 @@ export function ListView() {
                 {list.name}
               </h1>
               {streak > 0 && <StreakBadge streak={streak} size="sm" />}
+            {isLegacyList && <LegacyBadge />}
             {/* Verification badge for list */}
             <ListVerificationBadge
               hasVC={!!list.assetDid}

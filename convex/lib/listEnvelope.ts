@@ -8,6 +8,7 @@
 
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { genesisSealedAt } from "./legacyList";
 
 export async function upsertListEnvelope(
   ctx: MutationCtx,
@@ -25,6 +26,9 @@ export async function upsertListEnvelope(
       assetDid,
       envelope,
       updatedAt: Date.now(),
+      // events[0] never changes, so this is written once and then only
+      // repaired if an older row is missing it.
+      genesisSealedAt: existing.genesisSealedAt ?? genesisSealedAt(envelope) ?? undefined,
     });
     return;
   }
@@ -34,5 +38,6 @@ export async function upsertListEnvelope(
     assetDid,
     envelope,
     updatedAt: Date.now(),
+    genesisSealedAt: genesisSealedAt(envelope) ?? undefined,
   });
 }

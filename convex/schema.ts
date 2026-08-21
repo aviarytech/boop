@@ -156,6 +156,11 @@ export default defineSchema({
     assetDid: v.string(),
     envelope: v.string(), // JSON.stringify(AssetEnvelope)
     updatedAt: v.number(),
+    // When the GENESIS proof was signed, captured at write time so the list
+    // index never has to parse the envelope. Immutable once set: later events
+    // append, but events[0] does not change. Optional for rows written before
+    // this field existed; backfillGenesisSealedAt fills them.
+    genesisSealedAt: v.optional(v.number()),
   })
     .index("by_list", ["listId"])
     .index("by_asset_did", ["assetDid"]),
