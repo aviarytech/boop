@@ -5,8 +5,9 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { QueryCtx } from "./_generated/server";
 
 /**
  * Register or update a user after Turnkey authentication.
@@ -36,6 +37,14 @@ export const upsertUser = mutation({
       .first();
 
     if (existingByTurnkey) {
+      if (existingByTurnkey.email !== args.email) {
+        throw new Error("This identity is linked to a different email.");
+      }
+      // The operator may have repaired an account while its OTP was in flight.
+      const account = await resolveLoginAccount(ctx, args.email);
+      if (account?.turnkeySubOrgId !== args.turnkeySubOrgId) {
+        throw new Error("Your account changed. Please request a new code.");
+      }
       // Update last login, and upgrade DID if provided and not yet set
       const patch: Record<string, unknown> = { lastLoginAt: Date.now() };
       if (args.did && (!existingByTurnkey.did || !existingByTurnkey.did.startsWith("did:webvh:"))) {
@@ -68,10 +77,9 @@ export const upsertUser = mutation({
     }
 
     // Check if user exists by the new Turnkey DID (edge case: same DID)
-    const existingByDid = await ctx.db
-      .query("users")
-      .withIndex("by_did", (q) => q.eq("did", args.did))
-      .first();
+    const existingByDid = args.did
+      ? await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", args.did)).first()
+      : null;
 
     if (existingByDid) {
       // Link Turnkey to existing user
@@ -82,6 +90,14 @@ export const upsertUser = mutation({
         legacyIdentity: false,
       });
       return existingByDid._id;
+    }
+
+    // This index read and insert share a Convex transaction. If two signup
+    // sessions provision different identities, only the first may create a user.
+    const existingByEmail = await ctx.db.query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email)).first();
+    if (existingByEmail) {
+      throw new Error("An account already exists for this email. Please request a new code.");
     }
 
     // Create new user (DID will be set client-side via /api/user/updateDID)
@@ -128,5 +144,48 @@ export const getUserByEmail = query({
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
+  },
+});
+
+async function resolveLoginAccount(
+  ctx: Pick<QueryCtx, "db">,
+  email: string,
+): Promise<{ turnkeySubOrgId: string } | null> {
+  const users = await ctx.db.query("users")
+    .withIndex("by_email", (q) => q.eq("email", email)).collect();
+  if (users.length === 0) return null;
+
+  const selected = users.filter((user) => user.isCanonicalLogin === true);
+  const user = selected.length === 1 ? selected[0]
+    : selected.length === 0 && users.length === 1 && users[0].isCanonicalLogin !== false
+      ? users[0] : null;
+  if (!user?.turnkeySubOrgId) {
+    throw new Error("This email needs account recovery. Please contact support.");
+  }
+  return { turnkeySubOrgId: user.turnkeySubOrgId };
+}
+
+/** Resolve only an application-owned account; never infer one from Turnkey order. */
+export const getLoginAccount = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, { email }): Promise<{ turnkeySubOrgId: string } | null> => {
+    return resolveLoginAccount(ctx, email);
+  },
+});
+
+/** Operator-only repair: choose a verified existing account without moving its data. */
+export const selectLoginAccount = internalMutation({
+  args: { email: v.string(), userId: v.id("users") },
+  handler: async (ctx, { email, userId }) => {
+    const user = await ctx.db.get(userId);
+    if (!user || user.email !== email) throw new Error("User does not match the email.");
+    if (!user.turnkeySubOrgId) throw new Error("User has no Turnkey identity; account recovery is required.");
+    const users = await ctx.db.query("users")
+      .withIndex("by_email", (q) => q.eq("email", email)).collect();
+    const previous = users.map((row) => ({ userId: row._id, isCanonicalLogin: row.isCanonicalLogin ?? null }));
+    for (const row of users) {
+      await ctx.db.patch(row._id, { isCanonicalLogin: row._id === userId });
+    }
+    return { userId, turnkeySubOrgId: user.turnkeySubOrgId, previous };
   },
 });
