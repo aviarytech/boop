@@ -74,6 +74,7 @@ export function handlerErrorResponse(
   fallbackMessage: string
 ): Response {
   const auth = authErrorData(error);
+  if (auth?.code === "FORBIDDEN") return errorResponse(request, "Not authorized", 403);
   const message = auth?.message ?? (error instanceof Error ? error.message : "");
   if (/Authentication required|Invalid or expired token|Invalid API key|User not found/i.test(message)) return errorResponse(request, "Authentication required", 401);
   if (/not authorized|Only the list|Missing scope|Identity assertion/i.test(message)) {

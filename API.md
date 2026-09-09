@@ -33,7 +33,13 @@ API keys are long-lived credentials scoped to specific actions. Mint one with a
 JWT session (see [Agent API v1](#agent-api-v1)). When an `X-API-Key` header is
 present it takes precedence over the `Authorization` header. Keys carry scopes
 (`lists:read`, `items:read`, `items:write`); a request missing the required
-scope returns `401`. JWT sessions have full access.
+scope returns `403`. JWT sessions have full access.
+
+The authenticated-boundary cutover distinguishes `401` (missing, invalid, expired,
+or revoked credentials) from `403` (valid credentials without the required scope
+or resource access). API-key consumers that previously treated every denial as
+`401` must handle both. Missing and inaccessible resources behind the HTTP write boundary return the
+same `403` response to avoid disclosing private resource existence.
 
 ## Endpoints
 

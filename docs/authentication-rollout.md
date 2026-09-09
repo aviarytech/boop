@@ -35,9 +35,13 @@ Local version strings are not evidence of deployed or active versions. No releas
 
 `release/authentication-cutover.json` is the durable approval record. It is intentionally pending: fill in the deployed/supported versions and evidence for browser, iOS, Android and integrations, link the staging results, and have the named release owner record approval and its date in a reviewed commit. Evidence must identify actual releases and exercised behavior; source version strings alone are insufficient. If a platform has no supported deployments, record the inventory evidence establishing that fact.
 
-The Convex production workflow runs `scripts/check-authentication-cutover.mjs` before dependencies or deployment secrets are used. Railway's configured build runs the same check before the production frontend build. Missing or unknown environment names require approval; only `boop-pr-<number>`, `staging`, and `development` bypass the production approval check. Railway provides the environment name during builds ([reference variables](https://docs.railway.com/variables/reference)). Local builds remain available for verification. These guards cover the repository's configured deployment paths; operators must apply the same check before any manual production deploy.
+The Convex production workflow runs `scripts/check-authentication-cutover.mjs` before dependencies or deployment secrets are used. Railway's configured build runs the same check before the production frontend build. Missing or unknown environment names require approval; only `boop-pr-<number>`, `staging`, and `development` bypass the production approval check. Railway provides the environment name during builds ([reference variables](https://docs.railway.com/variables/reference)). Local builds remain available for verification.
 
-Until the record is approved, merging this PR will intentionally fail production deployment instead of silently changing authentication for old clients. Use staging/PR previews to collect the required evidence. No production settings or live client inventory were changed by this review fix.
+The record is an auditable release attestation, not proof of who approved it. On 2026-09-09, GitHub reported `main` as unprotected, no repository rulesets, and no `CODEOWNERS` file. Required owner review is therefore not enforced. The repository owner must configure required review/protected release settings before treating this as an owner-only approval mechanism; this task did not change live repository policy.
+
+These guards cover the repository's configured deployment paths; operators must apply the same check before any manual production deploy.
+
+Until the record is approved, merging this PR intentionally blocks every subsequent production Convex deployment, including unrelated hotfixes, and every production Railway build. A later full deployment includes this authentication change even when its latest commit is unrelated, so filtering by the latest changed files would bypass the cutover gate. Complete the inventory and staging approval before merging; if an urgent unrelated hotfix is needed first, ship it before this PR. Use staging/PR previews to collect the required evidence. No production settings or live client inventory were changed by this review fix.
 
 ## Compatibility retirement follow-up: AUTH-COMPAT-RETIREMENT
 
@@ -61,8 +65,8 @@ Regression tests exercise real signed JWT verification, database-owned identitie
 
 ## Local validation
 
-- `node --test scripts/*.test.mjs`: 221 passed.
-- `bun test`: 245 passed, including browser component and authentication lifecycle tests.
+- `node --test scripts/*.test.mjs`: 228 passed.
+- `bun test`: 252 passed, including browser component and authentication lifecycle tests.
 - `npx convex codegen --typecheck enable`, `npx tsc -b`, and `npx vite build`: passed. Code generation performs deployment analysis without completing a deployment. The build retains existing large-chunk warnings.
 - `npm run lint` does not pass: it includes existing source errors, nested checkouts and generated test bundles. A comparison restricted to `src` and `convex` reports 49 errors versus 51 on the pre-change baseline, with no new error diagnostics. This change does not claim a clean repository lint baseline.
 - The completed `ce-code-review` run (`20260908-223043-d36023ea`) reports no actionable findings after fixes. Ten local review passes and independent validation completed; the external cross-model pass timed out, so no cross-model corroboration is claimed.
@@ -72,3 +76,5 @@ The originally reported anonymous handler reproduction is now a regression test.
 PR preparation replayed the authorization change on `024144f` from `main`, preserving the canonical account-selection and duplicate-email signup protections from PR #235. The combined login and authorization tests pass; an independent conflict review found no issues.
 
 Review follow-up adds regression coverage for bounded restore/OTP verification, authenticated shared-list writes and visible failures, bookmark removal after unpublishing, expiry sweep limits and revoked tombstones, production-serialized access errors preserving offline edits, and deployment approval enforcement. The five review findings are addressed in code; deployed client evidence and live staging checks remain pending in the release record.
+
+The follow-up review distinguishes session failures from resource denials. Missing and inaccessible resources have the same structured `FORBIDDEN` response (single-list reads return `null` for either). Offline resource denials do not stop later edits; each denied edit uses the existing five-retry budget, then is discarded with a warning. Session failures preserve all remaining edits and retry counts. Regression tests cover permanent denial, restored access, production RPC response equality, and migrated bookmark-ID enumeration.

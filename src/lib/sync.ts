@@ -147,10 +147,11 @@ interface DeleteListPayload {
 }
 
 function accessFailure(error: unknown): boolean {
-  if (authErrorData(error)) return true;
+  const data = authErrorData(error);
+  if (data) return data.code !== "FORBIDDEN";
   // Compatibility with errors from a pre-cutover backend that has no RPC data.
   const message = error instanceof Error ? error.message : "";
-  return /Authentication required|Invalid or expired token|Invalid API key|User not found|Token has expired|Not authorized|Missing scope|Identity assertion/i.test(message);
+  return /Authentication required|Invalid or expired token|Invalid API key|User not found|Token has expired|Identity assertion/i.test(message);
 }
 
 // ============================================================================
@@ -198,6 +199,7 @@ export class SyncManager {
     try {
       const mutations = await getQueuedMutations();
 
+      let failureMessage: string | undefined;
       for (const mutation of mutations) {
         try {
           // Phase 5.8: Check for conflicts before executing check/uncheck mutations
@@ -224,6 +226,19 @@ export class SyncManager {
             return;
           }
 
+          if (authErrorData(error)?.code === "FORBIDDEN") {
+            // A resource denial must not block unrelated edits or prompt a new login.
+            if (mutation.retryCount >= MAX_RETRIES) {
+              await clearMutation(mutation.id!);
+              failureMessage = "An offline edit was discarded because access to its resource is unavailable.";
+            } else {
+              await updateMutationRetry(mutation.id!, mutation.retryCount + 1);
+              failureMessage = "Some offline edits could not sync because access to their resources is unavailable. Other edits can still sync.";
+            }
+            showGlobalToast(failureMessage, "warning");
+            continue;
+          }
+
           // Only missing resources imply deletion; a missing user is an auth failure.
           if (errorMessage.includes("Item not found") || errorMessage.includes("List not found")) {
             await clearMutation(mutation.id!);
@@ -234,14 +249,12 @@ export class SyncManager {
           if (mutation.retryCount >= MAX_RETRIES) {
             // Max retries reached - discard mutation and notify
             await clearMutation(mutation.id!);
-            this.notify({
-              status: "error",
-              message: `Failed to sync ${mutation.type}: ${errorMessage}`,
-            });
+            failureMessage = `Failed to sync ${mutation.type}: ${errorMessage}`;
           } else {
             // Increment retry count for next attempt
             await updateMutationRetry(mutation.id!, mutation.retryCount + 1);
 
+            failureMessage = "Some offline edits could not sync. Please try again.";
             // Wait before continuing to next mutation
             const delay = RETRY_DELAYS[mutation.retryCount] ?? 16000;
             await this.delay(delay);
@@ -249,7 +262,7 @@ export class SyncManager {
         }
       }
 
-      this.notify({ status: "synced" });
+      this.notify(failureMessage ? { status: "error", message: failureMessage } : { status: "synced" });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -305,7 +318,7 @@ export class SyncManager {
 
       return { hasConflict: false };
     } catch (error) {
-      if (accessFailure(error)) throw error;
+      if (accessFailure(error) || authErrorData(error)?.code === "FORBIDDEN") throw error;
       // If we can't check, allow the mutation to proceed
       // The actual mutation will fail if there's an issue
       return { hasConflict: false };

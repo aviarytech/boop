@@ -16,7 +16,6 @@ export const getLists = httpAction(async (ctx, request) => {
   try {
     const lists = await ctx.runQuery(internal.lists.getUserListsInternal, {
       ...await authenticatedRequest(ctx, request),
-
     });
     return jsonResponse(request, { lists });
   } catch (error) {
@@ -48,7 +47,6 @@ export const getListWithItems = httpAction(async (ctx, request) => {
     const result = await ctx.runQuery(internal.lists.getListWithItemsForViewer, {
       listId: listId as Id<"lists">,
       ...await authenticatedRequest(ctx, request),
-
     });
     if (!result) {
       return errorResponse(request, "List not found", 404);

@@ -163,7 +163,7 @@ test("a non-editor cannot change categories", async () => {
   const ctx = makeCtx();
   await assert.rejects(
     () => unwrap(mod.addListCategory)(ctx, { listId: "L1", authToken: strangerSession.authToken, name: "X", emoji: "🏷️" }),
-    /not authorized|permission/i
+    {data:{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'}}
   );
   assert.equal(ctx.rows.lists[0].itemCategories, undefined, "nothing persisted on refusal");
 });
@@ -189,6 +189,6 @@ test("a missing list is an error, not a silent no-op", async () => {
   const ctx = makeCtx();
   await assert.rejects(
     () => call("addListCategory", ctx, { listId: "nope", name: "X", emoji: "🏷️" }),
-    /List not found/
+    {data:{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'}}
   );
 });

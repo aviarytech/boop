@@ -372,10 +372,11 @@ export const { public: getUserBookmarkIds, internal: getUserBookmarkIdsInternal 
   scope: "lists:read",
   args: {},
   handler: async (ctx) => {
-    const bookmarks = await ctx.db
+    const dids = [...new Set([ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did))];
+    const bookmarks = await Promise.all(dids.map(did => ctx.db
       .query("bookmarks")
-      .withIndex("by_user", (q) => q.eq("userDid", ctx.actor.did))
-      .collect();
-    return bookmarks.map((b) => b.listId);
+      .withIndex("by_user", (q) => q.eq("userDid", did))
+      .collect()));
+    return [...new Set(bookmarks.flatMap(rows => rows.map(bookmark => bookmark.listId)))];
   },
 });

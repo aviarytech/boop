@@ -1,3 +1,4 @@
+import { resourceUnavailable } from "./lib/authError";
 import { isDirectChildKey } from "./lib/bucketKeys";
 import { canUserEditList } from "./lib/permissions";
 import { actorAction, actorMutation, actorQuery } from "./lib/authenticated";
@@ -57,7 +58,7 @@ export const { public: generateUploadUrl, internal: generateUploadUrlInternal } 
       legacyDid: ctx.actor.legacyDid,
     });
     if (!owned) {
-      throw new Error("Not authorized to add attachments to this item");
+      throw resourceUnavailable();
     }
 
     const key = makeBucketKey(
@@ -89,7 +90,7 @@ export const { public: addAttachment, internal: addAttachmentInternal } = actorM
 
     const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
-      throw new Error("Not authorized to add attachments to this item");
+      throw resourceUnavailable();
     }
 
     if (!isDirectChildKey(args.bucketKey, `attachments/${args.itemId}`)) throw new Error("Invalid attachment key");
@@ -123,7 +124,7 @@ export const { public: removeAttachment, internal: removeAttachmentInternal } = 
       legacyDid: ctx.actor.legacyDid,
     });
     if (!owned) {
-      throw new Error("Not authorized to remove attachments from this item");
+      throw resourceUnavailable();
     }
 
     if (!owned.keys.includes(args.bucketKey)) throw new Error("Attachment not found on this item");

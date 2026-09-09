@@ -7,7 +7,7 @@ const state = globalThis.__syncAuthTest = { queue: [], toasts: [] };
 await build({ entryPoints: ['src/lib/sync.ts', 'convex/lib/authError.ts', 'convex/lib/httpResponses.ts'], outdir: 'tmp/sync-auth', outbase: '.', bundle: true, platform: 'node', format: 'esm', outExtension: {'.js': '.mjs'}, external: ['convex/values', 'convex/server'], plugins: [{name: 'sync-fixtures', setup(b) {
   b.onResolve({filter: /^\.\/(offline|storageAdapter|toast)$/}, a => ({path: a.path.slice(2), namespace: 'fixture'}));
   b.onLoad({filter: /.*/, namespace: 'fixture'}, ({path}) => ({contents: {
-    offline: 'const s=globalThis.__syncAuthTest; export const getQueuedMutations=async()=>[...s.queue]; export const clearMutation=async id=>{s.queue=s.queue.filter(m=>m.id!==id)}; export const updateMutationRetry=async()=>{throw new Error("Auth must not consume retries")};',
+    offline: 'const s=globalThis.__syncAuthTest; export const getQueuedMutations=async()=>[...s.queue]; export const clearMutation=async id=>{s.queue=s.queue.filter(m=>m.id!==id)}; export const updateMutationRetry=async(id,retryCount)=>{s.queue.find(m=>m.id===id).retryCount=retryCount};',
     storageAdapter: 'export const storageAdapter={get:async()=>"session-token"};',
     toast: 'export const showGlobalToast=(...args)=>globalThis.__syncAuthTest.toasts.push(args);',
   }[path]}));
@@ -44,6 +44,37 @@ test('HTTP recognizes serialized authentication errors without matching their pr
   const request=new Request('https://example.test');
   for(const code of ['UNAUTHORIZED','INVALID_TOKEN','EXPIRED_TOKEN'])assert.equal(handlerErrorResponse(request,wireError(code),'Failed').status,401);
   assert.equal(handlerErrorResponse(request,new Error('Missing scope: write'),'Failed').status,403);
-  const denied=new ConvexError(jsonToConvex(convexToJson(new AuthError('Only the list owner can rename this list','UNAUTHORIZED').data)));
+  const denied=new ConvexError(jsonToConvex(convexToJson(new AuthError('Resource unavailable','FORBIDDEN').data)));
   assert.equal(handlerErrorResponse(request,denied,'Failed').status,403);
+});
+
+for(const phase of ['query','mutation']) {
+  test(`permanent ${phase} denial does not block later edits and exhausts only its own retry budget`,async()=>{
+    seed();state.queue.forEach(m=>m.retryCount=0);
+    const manager=new SyncManager();const statuses=[];manager.subscribe(s=>statuses.push(s));
+    const applied=[];
+    const client={
+      query:async(_ref,args)=>{if(phase==='query'&&args.itemId==='item-1')throw wireError('FORBIDDEN');return {updatedAt:1}},
+      mutation:async(_ref,args)=>{if(args.itemId==='item-1')throw wireError('FORBIDDEN');applied.push(args.itemId)},
+    };
+    await manager.sync(client);
+    assert.deepEqual(applied,['item-2']);assert.equal(state.queue.length,1);assert.equal(state.queue[0].retryCount,1);
+    assert.equal(statuses.at(-1).status,'error');
+    for(let attempt=1;attempt<=5;attempt++) {
+      // New authorized edits must progress even when the denied operation never recovers.
+      state.queue.push({id:attempt+2,type:'checkItem',payload:{itemId:`healthy-${attempt}`},timestamp:10,retryCount:0});
+      await manager.sync(client);
+      assert.ok(applied.includes(`healthy-${attempt}`));
+    }
+    assert.equal(state.queue.length,0);assert.equal(manager.syncing,false);
+    assert.equal(statuses.at(-1).status,'error');assert.match(statuses.at(-1).message,/discarded/);
+    assert.ok(!state.toasts.some(([m])=>/Sign in|deleted by another/.test(m)));
+  });
+}
+test('temporary resource denial can recover before exhausting its retry budget',async()=>{
+  seed();state.queue.forEach(m=>m.retryCount=0);const manager=new SyncManager();
+  await manager.sync({query:async()=>{throw wireError('FORBIDDEN')}});
+  assert.equal(state.queue.length,2);assert.ok(state.queue.every(m=>m.retryCount===1));
+  await manager.sync({query:async()=>({updatedAt:1}),mutation:async()=>{}});
+  assert.equal(state.queue.length,0);
 });

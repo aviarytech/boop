@@ -50,7 +50,7 @@ export async function resolveActor(ctx: ActionCtx, request: Request): Promise<Re
 }
 
 export function requireScope(actor: ResolvedActor, scope: Scope): void {
-  if (!hasScope(actor.scopes, scope)) throw new AuthError(`Missing scope: ${scope}`, "UNAUTHORIZED");
+  if (!hasScope(actor.scopes, scope)) throw new AuthError(`Missing scope: ${scope}`, "FORBIDDEN");
 }
 
 /** Compatibility for existing HTTP JWT clients: register verified sessions lazily. */

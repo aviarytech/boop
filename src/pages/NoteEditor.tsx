@@ -25,7 +25,7 @@ export function NoteEditor() {
   const data = useQuery(
     api.items.getItemForEditor,
     itemId && did
-      ? { itemId: itemId as Id<"items">,   }
+      ? { itemId: itemId as Id<"items"> }
       : "skip"
   );
   const updateItem = useMutation(api.items.updateItem);

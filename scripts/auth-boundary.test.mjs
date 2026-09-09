@@ -67,6 +67,7 @@ test('forged current, legacy, and wallet identities never confer access', async 
 test('anonymous and unrelated authenticated callers cannot read private list surfaces', async () => {
   const reads = [ ['lists','getList',{listId:'L1'}], ['lists','getListEnvelope',{listId:'L1'}], ['lists','getLegacyListIds',{listIds:['L1']}], ['items','getListItems',{listId:'L1'}], ['items','getItemForSync',{itemId:'I1'}], ['items','getSubItems',{parentId:'I1'}], ['attachments','getAttachmentUrls',{itemId:'I1'}], ['activity','getListActivity',{listId:'L1'}], ['presence','getListPresence',{listId:'L1'}], ['assignees','getItemAssignees',{itemId:'I1'}], ['comments','getCommentCount',{itemId:'I1'}], ['bitcoinAnchors','getListDataForAnchor',{listId:'L1'}] ];
   for (const [mod,fn,args] of reads) for (const authToken of [undefined,strangerToken]) {
+    if(fn==='getList' && authToken){assert.equal(await call(mod,fn,fixture(),{...args,authToken}),null);continue;}
     await assert.rejects(() => call(mod,fn,fixture(),{...args,authToken}), /auth|token/i, `${mod}.${fn}`);
   }
 });
@@ -106,7 +107,7 @@ test('published reads remain public, shared editing requires login, and unpublis
   assert.equal(await call('publication','getPublicList',ctx,{webvhDid:'did:webvh:public'}),null);
   assert.deepEqual(await call('lists','getUserLists',ctx,{authToken:strangerToken}),[]);
   assert.deepEqual(await call('items','getHighPriorityItems',ctx,{authToken:strangerToken}),[]);
-  await assert.rejects(() => call('items','uncheckItem',ctx,{authToken:strangerToken,itemId:'I1'}),/authorized/);
+  await assert.rejects(() => call('items','uncheckItem',ctx,{authToken:strangerToken,itemId:'I1'}),/Resource unavailable/);
 });
 test('private resource aliases cannot bypass publication protection', async () => {
   const ctx=fixture();
@@ -128,7 +129,7 @@ test('bookmarks remain actor-owned across unpublishing, migration, and republica
   assert.equal(await call('publication','getPublicationStatus',ctx,{authToken:strangerToken,listId:'L1'}),null);
   assert.equal(await call('publication','getPublicationStatus',ctx,{authToken:strangerToken,listId:'missing'}),null);
   assert.equal((await call('publication','getPublicationStatus',ctx,{authToken:ownerToken,listId:'L1'})).status,'unpublished');
-  await assert.rejects(()=>call('items','getListItems',ctx,{authToken:strangerToken,listId:'L1'}),/authorized/);
+  await assert.rejects(()=>call('items','getListItems',ctx,{authToken:strangerToken,listId:'L1'}),/Resource unavailable/);
 
   ctx.rows.bookmarks.push({_id:'current-bookmark',userDid:'did:stranger',listId:'L1'});
   await call('publication','unbookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
@@ -168,15 +169,15 @@ test('attachment registration is authorized and bound to the target item', async
 });
 test('batch operations refuse a mixed unauthorized list before any write', async () => {
   const ctx=fixture();
-  await assert.rejects(() => call('items','batchCheckItems',ctx,{authToken:ownerToken,itemIds:['I1','I2'],checkedAt:10}),/authorized/);
+  await assert.rejects(() => call('items','batchCheckItems',ctx,{authToken:ownerToken,itemIds:['I1','I2'],checkedAt:10}),/Resource unavailable/);
   assert.equal(ctx.rows.items[0].checked,false);
 });
 test('account and OTP storage cannot be used to forge a login or legacy link', async () => {
   const ctx=fixture();
   await assert.rejects(() => call('auth','upsertUser',ctx,{turnkeySubOrgId:'attacker',email:'attacker@example.test',legacyDid:'did:owner'}),/Authentication/);
-  await assert.rejects(() => call('auth','upsertUser',ctx,{authToken:strangerToken,turnkeySubOrgId:'stranger',email:'stranger@example.test',legacyDid:'did:owner'}),/authorized/);
+  await assert.rejects(() => call('auth','upsertUser',ctx,{authToken:strangerToken,turnkeySubOrgId:'stranger',email:'stranger@example.test',legacyDid:'did:owner'}),/Resource unavailable/);
   await assert.rejects(() => call('authSessions','markSessionVerified',ctx,{sessionId:'stolen',subOrgId:'owner'}),/Authentication/);
-  await assert.rejects(() => call('auth','getUserByTurnkeyId',ctx,{authToken:strangerToken,turnkeySubOrgId:'owner'}),/authorized/);
+  await assert.rejects(() => call('auth','getUserByTurnkeyId',ctx,{authToken:strangerToken,turnkeySubOrgId:'owner'}),/Resource unavailable/);
   assert.equal((await call('auth','getUserByTurnkeyId',ctx,{authToken:ownerToken,turnkeySubOrgId:'owner'})).did,'did:owner');
 });
 test('HTTP writes and reads execute the same authenticated internal boundary', async () => {
@@ -215,7 +216,7 @@ test('attachment capabilities reject forged callers and cross-item removal befor
   const ctx=fixture();ctx.rows.items[0].attachments=[{key:'attachments/I1/file.png',contentType:'image/png',size:10,sha256:'abc'}];
   const actionCtx={runQuery:ctx.runQuery,runMutation:ctx.runMutation};
   await assert.rejects(() => call('attachments','generateUploadUrl',actionCtx,{itemId:'I1',userDid:'did:owner',contentType:'image/png',byteLength:10}),/Authentication/);
-  await assert.rejects(() => call('attachments','generateUploadUrl',actionCtx,{authToken:strangerToken,itemId:'I1',contentType:'image/png',byteLength:10}),/authorized/);
+  await assert.rejects(() => call('attachments','generateUploadUrl',actionCtx,{authToken:strangerToken,itemId:'I1',contentType:'image/png',byteLength:10}),/Resource unavailable/);
   await assert.rejects(() => call('attachments','removeAttachment',actionCtx,{authToken:ownerToken,itemId:'I1',bucketKey:'attachments/I2/file.png'}),/Attachment not found/);
 });
 test('agent combined read preserves indistinguishable missing/private responses', async () => {
@@ -229,14 +230,14 @@ test('agent combined read preserves indistinguishable missing/private responses'
 test('missing parents and deleted lists never authorize retained private data', async()=>{
   const ctx=fixture();ctx.rows.items.push({_id:'child',listId:'L1',parentId:'I1',name:'Private child'});
   await call('items','removeItem',ctx,{authToken:ownerToken,itemId:'I1'});
-  await assert.rejects(()=>call('items','getSubItems',ctx,{authToken:strangerToken,parentId:'I1'}),/not found|authorized/i);
+  await assert.rejects(()=>call('items','getSubItems',ctx,{authToken:strangerToken,parentId:'I1'}),/Resource unavailable/);
   ctx.rows.activities=[{_id:'A1',listId:'L1',metadata:{note:'Private note'}}];
   ctx.rows.bitcoinAnchors=[{_id:'B1',listId:'L1',status:'pending',stateSnapshot:'Private snapshot'}];
   await call('lists','deleteList',ctx,{authToken:ownerToken,listId:'L1'});
-  await assert.rejects(()=>call('activity','getListActivity',ctx,{authToken:strangerToken,listId:'L1'}),/not found|authorized/i);
+  await assert.rejects(()=>call('activity','getListActivity',ctx,{authToken:strangerToken,listId:'L1'}),/Resource unavailable/);
   assert.deepEqual(await call('bitcoinAnchors','getPendingAnchors',ctx,{authToken:strangerToken}),[]);
   assert.equal(await call('lists','getList',ctx,{authToken:ownerToken,listId:'L1'}),null);
-  assert.equal(await call('items','getItemForSync',ctx,{authToken:ownerToken,itemId:'I1'}),null);
+  await assert.rejects(()=>call('items','getItemForSync',ctx,{authToken:ownerToken,itemId:'I1'}),/Resource unavailable/);
 });
 
 test('site publication and signing actions reject forged owner and signing identities', async()=>{
@@ -251,7 +252,7 @@ test('site publication and signing actions reject forged owner and signing ident
 });
 test('account-id callers cannot bypass the authenticated boundary through billing, referrals or feedback', async()=>{
   for(const [mod,fn] of [['billing','getUserPlan'],['referrals','getReferralCode'],['feedback','submit']]) {
-    await assert.rejects(()=>call(mod,fn,fixture(),{authToken:strangerToken,userId:'U1',body:'Forged',category:'bug'}),/authorized/);
+    await assert.rejects(()=>call(mod,fn,fixture(),{authToken:strangerToken,userId:'U1',body:'Forged',category:'bug'}),/Resource unavailable/);
     await assert.rejects(()=>call(mod,fn,fixture(),{userId:'U1',body:'Forged',category:'bug'}),/Authentication/);
   }
 });
@@ -265,7 +266,7 @@ test('upload references cannot traverse from an authorized prefix into private o
   assert.equal(ctx.rows.items[0].attachments,undefined);
 });
 test('referral redemption binds the referee account to the authenticated user',async()=>{
-  await assert.rejects(()=>call('referrals','redeemReferral',fixture(),{authToken:strangerToken,refereeUserId:'U1',code:'known'}),/authorized/);
+  await assert.rejects(()=>call('referrals','redeemReferral',fixture(),{authToken:strangerToken,refereeUserId:'U1',code:'known'}),/Resource unavailable/);
   assert.deepEqual(await call('referrals','redeemReferral',fixture(),{authToken:ownerToken,refereeUserId:'U1',code:'invalid'}),{success:false,reason:'invalid_code'});
 });
 
@@ -319,7 +320,6 @@ test('private resource denials preserve structured authorization data across RPC
   for (const [module, name, args] of [
     ['items','getItemForSync',{itemId:'I1'}],
     ['items','checkItem',{itemId:'I1',checkedAt:10}],
-    ['lists','getList',{listId:'L1'}],
     ['lists','renameList',{listId:'L1',name:'Renamed'}],
     ['lists','deleteList',{listId:'L1'}],
   ]) {
@@ -327,8 +327,30 @@ test('private resource denials preserve structured authorization data across RPC
     await assert.rejects(() => call(module,name,ctx,{...args,authToken:strangerToken}), error => {
       assert.ok(error instanceof ConvexError);
       const received=new ConvexError(jsonToConvex(convexToJson(error.data)));
-      assert.equal(received.data.kind,'auth');assert.equal(received.data.code,'UNAUTHORIZED');
-      assert.match(received.data.message,/Not authorized|Only the list owner/);return true;
+      assert.equal(received.data.kind,'auth');assert.equal(received.data.code,'FORBIDDEN');
+      assert.equal(received.data.message,"Resource unavailable");return true;
     });
   }
+});
+
+test('missing and inaccessible resources have identical production RPC responses', async () => {
+  for (const [module,name,field,existing,extra] of [
+    ['items','getItemForSync','itemId','I1',{}],
+    ['items','checkItem','itemId','I1',{checkedAt:10}],
+    ['items','getListItems','listId','L1',{}],
+  ]) {
+    const data=[];
+    for (const id of [existing,'missing']) {
+      await assert.rejects(()=>call(module,name,fixture(),{authToken:strangerToken,[field]:id,...extra}),error=>{
+        assert.ok(error instanceof ConvexError);
+        data.push(jsonToConvex(convexToJson(error.data)));return true;
+      });
+    }
+    assert.deepEqual(data[0],data[1]);
+    assert.deepEqual(data[0],{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'});
+  }
+});
+
+test('single-list reads return the same empty result for missing and inaccessible lists',async()=>{
+  for(const listId of ['L1','missing'])assert.equal(await call('lists','getList',fixture(),{authToken:strangerToken,listId}),null);
 });

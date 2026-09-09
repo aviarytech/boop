@@ -176,7 +176,7 @@ test("only the owner can copy a list", async () => {
   const ctx = makeCtx({ items: [] });
   await assert.rejects(
     () => unwrap(mod.copyList)(ctx, { sourceListId: "L1", ...MINTED, authToken: strangerSession.authToken }),
-    /not authorized|owner/i
+    {data:{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'}}
   );
 });
 

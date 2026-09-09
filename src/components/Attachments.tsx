@@ -68,7 +68,6 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
 
     const { uploadUrl, bucketKey } = await generateUploadUrl({
       itemId,
-
       contentType,
       byteLength: file.size,
     });
@@ -85,7 +84,6 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
 
     await addAttachment({
       itemId,
-
       bucketKey,
       contentType,
       size: file.size,
@@ -162,7 +160,6 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
       await removeAttachment({
         itemId,
         bucketKey,
-
       });
       setFailedPreviewKeys((prev) => {
         if (!prev[bucketKey]) return prev;

@@ -1,3 +1,4 @@
+import { resourceUnavailable } from "./lib/authError";
 import { requireSession } from "./lib/session";
 /**
  * Auth-related Convex functions for Turnkey authentication.
@@ -40,7 +41,7 @@ export const upsertUserInternal = internalMutation({
     if (args.did) {
       const claimed = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", args.did)).first()
         ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", args.did)).first();
-      if (claimed && claimed._id !== existingByTurnkey?._id) throw new Error("Not authorized to claim this DID");
+      if (claimed && claimed._id !== existingByTurnkey?._id) throw resourceUnavailable();
     }
     if (args.legacyDid) throw new Error("Identity migration requires verified account linking");
     if (existingByTurnkey) {
@@ -164,7 +165,7 @@ export const getUserByTurnkeyId = query({
   args: { turnkeySubOrgId: v.string(), authToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const auth = await requireSession(ctx, args.authToken);
-    if (auth.turnkeySubOrgId !== args.turnkeySubOrgId) throw new Error("Not authorized");
+    if (auth.turnkeySubOrgId !== args.turnkeySubOrgId) throw resourceUnavailable();
     return ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", auth.turnkeySubOrgId)).first();
   },
 });
@@ -172,7 +173,7 @@ export const getUserByEmail = query({
   args: { email: v.string(), authToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const auth = await requireSession(ctx, args.authToken);
-    if (auth.email !== args.email) throw new Error("Not authorized");
+    if (auth.email !== args.email) throw resourceUnavailable();
     return ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", auth.turnkeySubOrgId)).first();
   },
 });
@@ -180,9 +181,9 @@ export const upsertUser = mutation({
   args: { turnkeySubOrgId: v.string(), email: v.string(), did: v.optional(v.string()), displayName: v.optional(v.string()), legacyDid: v.optional(v.string()), authToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const auth = await requireSession(ctx, args.authToken);
-    if (auth.turnkeySubOrgId !== args.turnkeySubOrgId || auth.email !== args.email) throw new Error("Not authorized");
+    if (auth.turnkeySubOrgId !== args.turnkeySubOrgId || auth.email !== args.email) throw resourceUnavailable();
     const user = await ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", auth.turnkeySubOrgId)).first();
-    if (!user || (args.did && args.did !== user.did) || (args.legacyDid && args.legacyDid !== user.legacyDid)) throw new Error("Not authorized to assert identity; use authenticated account setup");
+    if (!user || (args.did && args.did !== user.did) || (args.legacyDid && args.legacyDid !== user.legacyDid)) throw resourceUnavailable();
     await ctx.db.patch(user._id, { lastLoginAt: Date.now() });
     return user._id;
   },
