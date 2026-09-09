@@ -244,7 +244,7 @@ export const { public: anchorListState, internal: anchorListStateInternal } = ac
       const simulatedInscriptionId = `${simulatedTxid}i0`;
 
       await ctx.runMutation(internal.bitcoinAnchors.updateAnchorStatusInternal, {
-      ...ctx.credentials,
+        ...ctx.credentials,
         anchorId,
         status: "inscribed",
         txid: simulatedTxid,

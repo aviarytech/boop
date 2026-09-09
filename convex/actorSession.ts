@@ -41,6 +41,21 @@ export const expire = internalMutation({
     if (record && record.expiresAt <= Date.now()) await ctx.db.delete(id);
   },
 });
+
+// Recover records whose individual expiry callback did not complete. Revoked
+// records remain until token expiry so they cannot be established again.
+export const cleanupExpiredSessions = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const expired = await ctx.db
+      .query("accessSessions")
+      .withIndex("by_expires_at", q => q.lte("expiresAt", Date.now()))
+      .take(100);
+    for (const session of expired) await ctx.db.delete(session._id);
+    return expired.length;
+  },
+});
+
 const revokeOperation = {
   args: { authToken: v.string() },
   handler: async (ctx: import("./_generated/server").MutationCtx, args: { authToken: string }) => {

@@ -1,3 +1,4 @@
+import { AuthError } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -160,7 +161,7 @@ export const { public: addItem, internal: addItemInternal } = actorMutation({
       ctx.actor.legacyDid
     );
     if (!canEdit) {
-      throw new Error("Not authorized to add items to this list");
+      throw new AuthError("Not authorized to add items to this list", "UNAUTHORIZED");
     }
 
     // If it's a sub-item, verify parent exists and belongs to same list
@@ -269,7 +270,7 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
 
     const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
-      throw new Error("Not authorized to update this item");
+      throw new AuthError("Not authorized to update this item", "UNAUTHORIZED");
     }
 
     const updates: Record<string, unknown> = {
@@ -350,7 +351,7 @@ export const { public: checkItem, internal: checkItemInternal } = actorMutation(
       ctx.actor.legacyDid
     );
     if (!canEdit) {
-      throw new Error("Not authorized to check items in this list");
+      throw new AuthError("Not authorized to check items in this list", "UNAUTHORIZED");
     }
 
     const now = Date.now();
@@ -458,7 +459,7 @@ export const { public: uncheckItem, internal: uncheckItemInternal } = actorMutat
       ctx.actor.legacyDid
     );
     if (!canEdit) {
-      throw new Error("Not authorized to uncheck items in this list");
+      throw new AuthError("Not authorized to uncheck items in this list", "UNAUTHORIZED");
     }
 
     await ctx.db.patch(args.itemId, {
@@ -494,7 +495,7 @@ export const { public: removeItem, internal: removeItemInternal } = actorMutatio
       ctx.actor.legacyDid
     );
     if (!canEdit) {
-      throw new Error("Not authorized to remove items from this list");
+      throw new AuthError("Not authorized to remove items from this list", "UNAUTHORIZED");
     }
 
     await ctx.db.delete(args.itemId);
@@ -571,7 +572,7 @@ export const { public: setAisleOverride, internal: setAisleOverrideInternal } = 
       ctx.actor.did,
       ctx.actor.legacyDid
     );
-    if (!canEdit) throw new Error("Not authorized to edit this item");
+    if (!canEdit) throw new AuthError("Not authorized to edit this item", "UNAUTHORIZED");
 
     await ctx.db.patch(args.itemId, {
       groceryAisle: args.aisleId ?? undefined,
@@ -590,7 +591,7 @@ export const { public: getItemForSync, internal: getItemForSyncInternal } = acto
   args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
-    if (item && !await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) throw new Error("Not authorized to access this item");
+    if (item && !await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) throw new AuthError("Not authorized to access this item", "UNAUTHORIZED");
     return item;
   },
 });
@@ -660,7 +661,7 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal } = ac
         listId = item.listId;
         const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
-          throw new Error("Not authorized to check items in this list");
+          throw new AuthError("Not authorized to check items in this list", "UNAUTHORIZED");
         }
       }
 
@@ -738,7 +739,7 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal } 
         listId = item.listId;
         const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
-          throw new Error("Not authorized to uncheck items in this list");
+          throw new AuthError("Not authorized to uncheck items in this list", "UNAUTHORIZED");
         }
       }
 
@@ -772,7 +773,7 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal } = 
         listId = item.listId;
         const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
-          throw new Error("Not authorized to delete items in this list");
+          throw new AuthError("Not authorized to delete items in this list", "UNAUTHORIZED");
         }
       }
 
@@ -922,7 +923,7 @@ export const { public: promoteItem, internal: promoteItemInternal } = actorMutat
 
     const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
-      throw new Error("Not authorized to edit this item");
+      throw new AuthError("Not authorized to edit this item", "UNAUTHORIZED");
     }
 
     // Remove parent to make it top-level
@@ -962,7 +963,7 @@ export const { public: demoteItem, internal: demoteItemInternal } = actorMutatio
 
     const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
-      throw new Error("Not authorized to edit this item");
+      throw new AuthError("Not authorized to edit this item", "UNAUTHORIZED");
     }
 
     // Check nesting depth: new parent can't already have a parent (max 2 levels)

@@ -11,6 +11,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
+import { useAuth } from "../hooks/useAuth";
 import type { Id } from "../../convex/_generated/dataModel";
 
 interface ListItem {
@@ -65,11 +66,13 @@ export function SharedListResource() {
   const listId = resourceId?.startsWith("list-") ? resourceId.slice(5) : resourceId;
   const [resource, setResource] = useState<ListResource | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Auth for favouriting
   const { did } = useCurrentUser();
+  const { token } = useAuth();
   const bookmarkMutation = useMutation(api.publication.bookmarkList);
   const unbookmarkMutation = useMutation(api.publication.unbookmarkList);
 
@@ -131,7 +134,9 @@ export function SharedListResource() {
   };
 
   const handleToggleItem = async (itemId: string, currentChecked: boolean) => {
-    if (!userPath || !listId || !resource) return;
+    if (!userPath || !listId || !resource || !token) return;
+
+    setToggleError(null);
 
     // Optimistic update
     setResource((prev) => {
@@ -152,15 +157,23 @@ export function SharedListResource() {
       const action = currentChecked ? "uncheck" : "check";
       const resp = await fetch(`${siteUrl}/d/${userPath}/resources/list-${listId}/items/${itemId}/${action}`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
 
       if (!resp.ok) {
-        throw new Error(`Failed to toggle item (${resp.status})`);
+        throw new Error(resp.status === 401 ? "Sign in again to update this list." : "Couldn't update this item. Please try again.");
       }
     } catch (err) {
       console.error("Failed to toggle shared item:", err);
-      // Rollback by refetching
-      await fetchResource();
+      setResource((prev) => {
+        if (!prev) return prev;
+        const items = prev.items.map((item) =>
+          item._id === itemId ? { ...item, checked: currentChecked } : item
+        );
+        return { ...prev, items, checkedCount: items.filter((item) => item.checked).length };
+      });
+      setToggleError(err instanceof Error ? err.message : "Couldn't update this item. Please try again.");
     }
   };
 
@@ -260,13 +273,19 @@ export function SharedListResource() {
         )}
 
         {/* Not logged in — nudge to sign up */}
-        {!did && (
+        {!token && (
           <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
-            <span>⭐</span>
+            <span>✓</span>
             <span>
               <Link to="/login" className="font-medium underline">Sign in</Link>
-              {" "}to save this list to your favourites
+              {" "}to check off items in this shared list
             </span>
+          </div>
+        )}
+
+        {toggleError && (
+          <div role="alert" className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl text-sm text-red-700 dark:text-red-400">
+            {toggleError}
           </div>
         )}
 
@@ -289,11 +308,13 @@ export function SharedListResource() {
             <button
               key={item._id}
               onClick={() => handleToggleItem(item._id, item.checked)}
+              disabled={!token}
+              title={!token ? "Sign in to update this shared list" : undefined}
               className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl transition-colors ${
                 item.checked
                   ? "bg-gray-100 dark:bg-gray-900/50"
                   : "bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-              }`}
+              } ${!token ? "cursor-not-allowed opacity-70" : ""}`}
             >
               <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                 item.checked

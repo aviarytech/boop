@@ -29,6 +29,73 @@ const fetchBefore=globalThis.fetch;
 afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.establish=async()=>{};});
 function seed(){state.storage.set('lisa-auth-state',JSON.stringify({user,token}));state.storage.set('lisa-jwt-token',token);}
 
+async function withEstablishClock(run) {
+  const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout;
+  const timers=new Map();let next=0;
+  globalThis.setTimeout=(fn,delay,...args)=>{
+    if(delay===15_000){const id={authTimer:++next};timers.set(id,fn);return id;}
+    return originalSet(fn,delay,...args);
+  };
+  globalThis.clearTimeout=id=>{if(!timers.delete(id))originalClear(id);};
+  try {await run({timers,expire:()=>{
+    assert.equal(timers.size,1,'one bounded session verification is pending');
+    const [id,fn]=timers.entries().next().value;timers.delete(id);fn();
+  }});} finally {globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;}
+}
+
+for(const flow of ['restore','OTP']){
+  test(`${flow} timeout releases authentication, permits logout and login, and ignores late completion`,async()=>{
+    await withEstablishClock(async({timers,expire})=>{
+      const pending=deferred();state.establish=()=>pending.promise;
+      const nextUser={...user,did:'did:webvh:next-owner',email:'next@example.test'};
+      const nextToken=`header.${btoa(JSON.stringify({exp:Math.floor(Date.now()/1000)+86400}))}.next-signature`;
+      let loginResult={user,token};
+      globalThis.fetch=async url=>Response.json(url.endsWith('/auth/initiate')?{sessionId:'otp-session'}:loginResult);
+      if(flow==='restore')seed();
+      const {result}=renderHook(()=>useAuth(),{wrapper:AuthProvider});await flush();
+      let verificationRejected;
+      if(flow==='OTP'){
+        await act(async()=>result.current.startOtp(user.email));
+        await act(async()=>{
+          verificationRejected=assert.rejects(result.current.verifyOtp('123456'),/Session verification timed out/);
+          await Promise.resolve();
+        });
+      }
+      assert.equal(result.current.isLoading,true);assert.equal(result.current.token,null);
+      await assert.rejects(()=>result.current.startOtp(user.email),/already in progress/);
+      await act(async()=>{expire();await verificationRejected;});
+      assert.equal(result.current.isLoading,false);assert.equal(result.current.isAuthenticated,false);
+      assert.equal(result.current.token,null);assert.equal(state.storage.size,0);assert.equal(timers.size,0);
+
+      await act(async()=>result.current.logout());
+      assert.equal(result.current.isLoading,false);
+      state.establish=async()=>{};loginResult={user:nextUser,token:nextToken};
+      await act(async()=>result.current.startOtp(nextUser.email));
+      await act(async()=>result.current.verifyOtp('654321'));
+      assert.equal(result.current.token,nextToken);assert.equal(result.current.user.did,nextUser.did);
+      assert.equal(result.current.isLoading,false);assert.equal(timers.size,0);
+      await act(async()=>pending.resolve());
+      assert.equal(result.current.token,nextToken);assert.equal(result.current.user.did,nextUser.did);
+      assert.equal(state.storage.get('lisa-jwt-token'),nextToken);
+      assert.equal(JSON.parse(state.storage.get('lisa-auth-state')).user.did,nextUser.did);
+    });
+  });
+}
+
+for(const outcome of ['accepted','rejected']){
+  test(`session verification cancels its timeout when ${outcome}`,async()=>{
+    await withEstablishClock(async({timers})=>{
+      seed();const pending=deferred();
+      state.establish=async()=>{await pending.promise;if(outcome==='rejected')throw new Error('revoked session');};
+      const {result}=renderHook(()=>useAuth(),{wrapper:AuthProvider});await flush();
+      assert.equal(timers.size,1);
+      await act(async()=>pending.resolve());
+      assert.equal(result.current.isLoading,false);assert.equal(timers.size,0);
+      assert.equal(result.current.isAuthenticated,outcome==='accepted');
+    });
+  });
+}
+
 test('restore exposes credentials only after the server accepts the session',async()=>{
   seed();const pending=deferred();state.establish=()=>pending.promise;
   const {result}=renderHook(()=>useAuth(),{wrapper:AuthProvider});await flush();

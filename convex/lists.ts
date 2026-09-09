@@ -1,3 +1,4 @@
+import { AuthError } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
 
@@ -196,7 +197,7 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
     // Copying mints a new identity naming this owner, so viewers who can merely
     // read a shared list must not be able to do it.
     if (![ctx.actor.did, ctx.actor.legacyDid].includes(source.ownerDid)) {
-      throw new Error("Only the list's owner can copy it");
+      throw new AuthError("Only the list's owner can copy it", "UNAUTHORIZED");
     }
 
     const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
@@ -290,7 +291,7 @@ export const { public: renameList, internal: renameListInternal } = actorMutatio
     if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
 
     if (!dids.includes(list.ownerDid)) {
-      throw new Error("Only the list owner can rename this list");
+      throw new AuthError("Only the list owner can rename this list", "UNAUTHORIZED");
     }
 
     const vcProof = createListOwnershipVC(
@@ -323,7 +324,7 @@ export const { public: updateListCategory, internal: updateListCategoryInternal 
     if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
 
     if (!dids.includes(list.ownerDid)) {
-      throw new Error("Only the list owner can change the category");
+      throw new AuthError("Only the list owner can change the category", "UNAUTHORIZED");
     }
 
     if (args.categoryId) {
@@ -344,7 +345,7 @@ export const { public: getList, internal: getListInternal } = actorQuery({
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
-    if (list && !await canUserViewList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid)) throw new Error("Not authorized to access this list");
+    if (list && !await canUserViewList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid)) throw new AuthError("Not authorized to access this list", "UNAUTHORIZED");
     return list;
   },
 });
@@ -513,7 +514,7 @@ export const { public: deleteList, internal: deleteListInternal } = actorMutatio
     if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
 
     if (!dids.includes(list.ownerDid)) {
-      throw new Error("Only the list owner can delete this list");
+      throw new AuthError("Only the list owner can delete this list", "UNAUTHORIZED");
     }
 
     // Delete all items
@@ -565,7 +566,7 @@ export const { public: addCustomAisle, internal: addCustomAisleInternal } = acto
     const dids = [ctx.actor.did];
     if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
     if (!dids.includes(list.ownerDid)) {
-      throw new Error("Only the list owner can add custom aisles");
+      throw new AuthError("Only the list owner can add custom aisles", "UNAUTHORIZED");
     }
 
     const existing = list.customAisles ?? [];
@@ -598,7 +599,7 @@ export const { public: updateItemViewMode, internal: updateItemViewModeInternal 
     const dids = [ctx.actor.did];
     if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
     if (!dids.includes(list.ownerDid)) {
-      throw new Error("Only the list owner can change view mode");
+      throw new AuthError("Only the list owner can change view mode", "UNAUTHORIZED");
     }
 
     await ctx.db.patch(args.listId, { itemViewMode: args.itemViewMode });
@@ -623,7 +624,7 @@ export const { public: removeCustomAisle, internal: removeCustomAisleInternal } 
     const dids = [ctx.actor.did];
     if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
     if (!dids.includes(list.ownerDid)) {
-      throw new Error("Only the list owner can remove custom aisles");
+      throw new AuthError("Only the list owner can remove custom aisles", "UNAUTHORIZED");
     }
 
     const existing = list.customAisles ?? [];

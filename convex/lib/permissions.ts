@@ -1,3 +1,4 @@
+import { AuthError } from "./authError";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
@@ -53,7 +54,7 @@ export async function authorizeResources(
   resources: ListResources,
 ): Promise<void> {
   for (const accountId of resources.accounts ?? []) {
-    if (accountId !== actor.userId) throw new Error("Not authorized to access this account");
+    if (accountId !== actor.userId) throw new AuthError("Not authorized to access this account", "UNAUTHORIZED");
   }
   const listIds = new Set((resources.lists ?? []).filter((id): id is Id<"lists"> => id !== undefined));
   for (const id of new Set(resources.items ?? [])) {
@@ -78,7 +79,7 @@ export async function authorizeResources(
     if (!list) throw new Error("List not found");
     if ([actor.did, actor.legacyDid].includes(list.ownerDid)) continue;
     const publication = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", listId)).first();
-    if (publication?.status !== "active") throw new Error("Not authorized to access this list");
+    if (publication?.status !== "active") throw new AuthError("Not authorized to access this list", "UNAUTHORIZED");
   }
 }
 

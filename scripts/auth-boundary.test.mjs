@@ -4,6 +4,7 @@ import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
 import { SignJWT } from 'jose';
 import { getFunctionName } from 'convex/server';
+import { ConvexError, convexToJson, jsonToConvex } from 'convex/values';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'boundary-test-secret-not-a-deployed-credential';
@@ -37,10 +38,11 @@ function fixture({ published = false, migrated = false, keyScopes = ['lists:read
     query: table => {
       let predicates = [];
       const q = {
-        withIndex: (_index, fn) => { const b = { eq: (key,value) => { predicates.push(row => row[key] === value); return b; } }; fn?.(b); return q; },
+        withIndex: (_index, fn) => { const b = { eq: (key,value) => { predicates.push(row => row[key] === value); return b; }, lte: (key,value) => { predicates.push(row => row[key] <= value); return b; } }; fn?.(b); return q; },
         order: () => q,
         filter: fn => { const b = { field: key => row => row[key], eq: (left,right) => row => (typeof left === 'function' ? left(row) : left) === right, or: (...ps) => row => ps.some(p => p(row)), and: (...ps) => row => ps.every(p => p(row)) }; predicates.push(fn(b)); return q; },
         collect: async () => (rows[table] ?? []).filter(row => predicates.every(p => p(row))),
+        take: async count => (await q.collect()).slice(0,count),
         first: async () => (await q.collect())[0] ?? null,
         unique: async () => (await q.collect())[0] ?? null,
       }; return q;
@@ -111,6 +113,45 @@ test('private resource aliases cannot bypass publication protection', async () =
   assert.equal(await call('didResources','getPublicList',ctx,{listId:'L1',ownerDid:'did:owner'}),null);
   assert.equal(await call('didResources','getListById',ctx,{listId:'L1'}),null);
   assert.deepEqual(await call('didResources','getPublicListItems',ctx,{listId:'L1'}),[]);
+});
+test('bookmarks remain actor-owned across unpublishing, migration, and republication', async () => {
+  const ctx=fixture({published:true});
+  ctx.rows.users[1].legacyDid='did:old-stranger';
+  ctx.rows.bookmarks=[
+    {_id:'owner-bookmark',userDid:'did:owner',listId:'L1'},
+    {_id:'legacy-bookmark',userDid:'did:old-stranger',listId:'L1'},
+  ];
+  assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),true);
+  assert.equal((await call('publication','getPublicationStatus',ctx,{authToken:strangerToken,listId:'L1'})).status,'active');
+  await call('publication','unpublishList',ctx,{authToken:ownerToken,listId:'L1'});
+  assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),true);
+  assert.equal(await call('publication','getPublicationStatus',ctx,{authToken:strangerToken,listId:'L1'}),null);
+  assert.equal(await call('publication','getPublicationStatus',ctx,{authToken:strangerToken,listId:'missing'}),null);
+  assert.equal((await call('publication','getPublicationStatus',ctx,{authToken:ownerToken,listId:'L1'})).status,'unpublished');
+  await assert.rejects(()=>call('items','getListItems',ctx,{authToken:strangerToken,listId:'L1'}),/authorized/);
+
+  ctx.rows.bookmarks.push({_id:'current-bookmark',userDid:'did:stranger',listId:'L1'});
+  await call('publication','unbookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
+  assert.deepEqual(ctx.rows.bookmarks.map(b=>b._id),['owner-bookmark']);
+  assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),false);
+  await call('publication','publishList',ctx,{authToken:ownerToken,listId:'L1',webvhDid:'did:webvh:public'});
+  assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),false);
+  assert.deepEqual(await call('lists','getUserLists',ctx,{authToken:strangerToken}),[]);
+  assert.ok(await call('publication','getPublicList',ctx,{webvhDid:'did:webvh:public'}));
+  await call('publication','bookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
+  assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),true);
+
+  ctx.rows.lists=[];
+  assert.equal(await call('publication','getPublicationStatus',ctx,{authToken:ownerToken,listId:'L1'}),null);
+  await call('publication','unbookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
+  assert.deepEqual(ctx.rows.bookmarks.map(b=>b._id),['owner-bookmark']);
+});
+test('bookmark state and publication status still require authentication and scopes', async () => {
+  for (const fn of ['isBookmarked','unbookmarkList','getPublicationStatus']) {
+    await assert.rejects(()=>call('publication',fn,fixture(),{listId:'L1'}),/Authentication/);
+    await assert.rejects(()=>call('publication',fn,fixture({keyScopes:[]}),{apiKey:'valid-key',listId:'L1'}),/Missing scope/);
+    await assert.rejects(()=>call('publication',fn,fixture(),{authToken:strangerToken,userDid:'did:owner',listId:'L1'}),/assertion/);
+  }
 });
 test('migrated owners can publish and edit categories, strangers cannot publish', async () => {
   const ctx=fixture({migrated:true});
@@ -253,4 +294,41 @@ test('session establishment is idempotent and premature or missing expiry callba
   await call('actorSession','expire',ctx,{id:'missing'});
   assert.equal(ctx.rows.accessSessions.length,count);
   assert.equal((await call('lists','getUserLists',ctx,{authToken:ownerToken})).length,1);
+});
+test('session cleanup is bounded and preserves live sessions and unexpired revocation tombstones',async()=>{
+  const ctx=fixture();
+  await call('actorSession','revoke',ctx,{authToken:strangerToken});
+  const expiresAt=Date.now()-1000;
+  ctx.rows.accessSessions.push(...Array.from({length:105},(_,i)=>({
+    _id:`expired${i}`,tokenHash:`expired-hash-${i}`,subject:'owner',expiresAt,
+    ...(i%2===0?{revokedAt:expiresAt-1000}:{}),
+  })));
+  assert.equal(await call('actorSession','cleanupExpiredSessions',ctx,{}),100);
+  assert.equal(ctx.rows.accessSessions.filter(s=>s.expiresAt===expiresAt).length,5);
+  assert.equal(ctx.rows.accessSessions.some(s=>s._id==='S0'),true);
+  assert.equal(ctx.rows.accessSessions.some(s=>s._id==='S1'&&s.revokedAt!==undefined),true);
+  await assert.rejects(()=>call('actorSession','establish',ctx,{authToken:strangerToken}),/token/);
+  assert.equal((await call('lists','getUserLists',ctx,{authToken:ownerToken})).length,1);
+  assert.equal(await call('actorSession','cleanupExpiredSessions',ctx,{}),5);
+  assert.equal(await call('actorSession','cleanupExpiredSessions',ctx,{}),0);
+  assert.deepEqual(ctx.rows.accessSessions.map(s=>s._id),['S0','S1']);
+});
+
+// Production strips ordinary Error messages; authorization data must survive RPC.
+test('private resource denials preserve structured authorization data across RPC', async () => {
+  for (const [module, name, args] of [
+    ['items','getItemForSync',{itemId:'I1'}],
+    ['items','checkItem',{itemId:'I1',checkedAt:10}],
+    ['lists','getList',{listId:'L1'}],
+    ['lists','renameList',{listId:'L1',name:'Renamed'}],
+    ['lists','deleteList',{listId:'L1'}],
+  ]) {
+    const ctx=fixture({published:name==='renameList'||name==='deleteList'});
+    await assert.rejects(() => call(module,name,ctx,{...args,authToken:strangerToken}), error => {
+      assert.ok(error instanceof ConvexError);
+      const received=new ConvexError(jsonToConvex(convexToJson(error.data)));
+      assert.equal(received.data.kind,'auth');assert.equal(received.data.code,'UNAUTHORIZED');
+      assert.match(received.data.message,/Not authorized|Only the list owner/);return true;
+    });
+  }
 });

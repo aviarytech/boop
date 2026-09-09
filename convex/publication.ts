@@ -10,6 +10,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 import { internal } from "./_generated/api";
+import { canUserViewList } from "./lib/permissions";
 
 /**
  * Record a publication for a list.
@@ -291,21 +292,20 @@ export const { public: bookmarkList, internal: bookmarkListInternal } = actorMut
  * Remove a bookmark.
  */
 export const { public: unbookmarkList, internal: unbookmarkListInternal } = actorMutation({
-  resources: args => ({ lists: [args.listId] }),
+  resources: () => ({}),
   scope: "*",
   args: {
     listId: v.id("lists"),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("bookmarks")
-      .withIndex("by_user_list", (q) =>
-        q.eq("userDid", ctx.actor.did).eq("listId", args.listId)
-      )
-      .first();
-
-    if (existing) {
-      await ctx.db.delete(existing._id);
+    for (const did of new Set([ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did))) {
+      const bookmarks = await ctx.db
+        .query("bookmarks")
+        .withIndex("by_user_list", (q) =>
+          q.eq("userDid", did).eq("listId", args.listId)
+        )
+        .collect();
+      for (const bookmark of bookmarks) await ctx.db.delete(bookmark._id);
     }
   },
 });
@@ -314,20 +314,22 @@ export const { public: unbookmarkList, internal: unbookmarkListInternal } = acto
  * Check if a list is bookmarked by the user.
  */
 export const { public: isBookmarked, internal: isBookmarkedInternal } = actorQuery({
-  resources: args => ({ lists: [args.listId] }),
+  resources: () => ({}),
   scope: "lists:read",
   args: {
     listId: v.id("lists"),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("bookmarks")
-      .withIndex("by_user_list", (q) =>
-        q.eq("userDid", ctx.actor.did).eq("listId", args.listId)
-      )
-      .first();
-
-    return !!existing;
+    for (const did of new Set([ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did))) {
+      const existing = await ctx.db
+        .query("bookmarks")
+        .withIndex("by_user_list", (q) =>
+          q.eq("userDid", did).eq("listId", args.listId)
+        )
+        .first();
+      if (existing) return true;
+    }
+    return false;
   },
 });
 
@@ -336,10 +338,11 @@ export const { public: isBookmarked, internal: isBookmarkedInternal } = actorQue
  * Returns publication info if the list is published, null otherwise.
  */
 export const { public: getPublicationStatus, internal: getPublicationStatusInternal } = actorQuery({
-  resources: args => ({ lists: [args.listId] }),
+  resources: () => ({}),
   scope: "lists:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
+    if (!await canUserViewList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid)) return null;
     const pub = await ctx.db
       .query("publications")
       .withIndex("by_list", (q) => q.eq("listId", args.listId))

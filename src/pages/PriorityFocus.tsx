@@ -28,8 +28,6 @@ function PriorityItem({
   itemData,
 }: {
   itemData: HighPriorityItem;
-  userDid: string;
-  legacyDid?: string;
 }) {
   const { haptic } = useSettings();
   const checkItem = useMutation(api.items.checkItem);
@@ -177,7 +175,7 @@ function NoPriorityItemsEmptyState() {
 }
 
 export function PriorityFocus() {
-  const { did, legacyDid, isLoading: userLoading } = useCurrentUser();
+  const { did, isLoading: userLoading } = useCurrentUser();
   const { haptic } = useSettings();
 
   // Query high-priority items across all lists
@@ -293,8 +291,6 @@ export function PriorityFocus() {
                   <PriorityItem
                     key={itemData.item._id}
                     itemData={itemData}
-                    userDid={did}
-                    legacyDid={legacyDid ?? undefined}
                   />
                 ))}
               </div>

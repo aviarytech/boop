@@ -1,3 +1,4 @@
+import { authErrorData } from "./authError";
 /**
  * Shared HTTP response helpers for Convex HTTP actions.
  *
@@ -72,11 +73,13 @@ export function handlerErrorResponse(
   error: unknown,
   fallbackMessage: string
 ): Response {
-  const message = error instanceof Error ? error.message : "";
+  const auth = authErrorData(error);
+  const message = auth?.message ?? (error instanceof Error ? error.message : "");
   if (/Authentication required|Invalid or expired token|Invalid API key|User not found/i.test(message)) return errorResponse(request, "Authentication required", 401);
-  if (/not authorized|Missing scope|Identity assertion/i.test(message)) {
+  if (/not authorized|Only the list|Missing scope|Identity assertion/i.test(message)) {
     return errorResponse(request, "Not authorized", 403);
   }
+  if (auth) return errorResponse(request, "Authentication required", 401);
   return errorResponse(request, fallbackMessage, 500);
 }
 

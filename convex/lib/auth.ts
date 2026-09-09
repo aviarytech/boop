@@ -14,21 +14,8 @@ import { getCorsHeaders } from "./httpResponses";
 
 export type { AuthTokenPayload };
 
-/**
- * Error thrown when authentication fails.
- */
-export class AuthError extends Error {
-  readonly code: "UNAUTHORIZED" | "INVALID_TOKEN" | "EXPIRED_TOKEN";
-
-  constructor(
-    message: string,
-    code: "UNAUTHORIZED" | "INVALID_TOKEN" | "EXPIRED_TOKEN"
-  ) {
-    super(message);
-    this.name = "AuthError";
-    this.code = code;
-  }
-}
+import { AuthError } from "./authError";
+export { AuthError } from "./authError";
 
 /**
  * Require authentication for an HTTP action.

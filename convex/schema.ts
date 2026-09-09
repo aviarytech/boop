@@ -14,7 +14,9 @@ export default defineSchema({
     subject: v.string(),
     expiresAt: v.number(),
     revokedAt: v.optional(v.number()),
-  }).index("by_hash", ["tokenHash"]),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_expires_at", ["expiresAt"]),
   // DID logs table - stores did:webvh logs for resolution
   didLogs: defineTable({
     userDid: v.string(), // The user's did:webvh

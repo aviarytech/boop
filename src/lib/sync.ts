@@ -1,3 +1,4 @@
+import { authErrorData } from "../../convex/lib/authError";
 import { storageAdapter } from "./storageAdapter";
 /**
  * Sync Manager for offline mutation synchronization (Phase 5.3)
@@ -145,6 +146,13 @@ interface DeleteListPayload {
   legacyDid?: string;
 }
 
+function accessFailure(error: unknown): boolean {
+  if (authErrorData(error)) return true;
+  // Compatibility with errors from a pre-cutover backend that has no RPC data.
+  const message = error instanceof Error ? error.message : "";
+  return /Authentication required|Invalid or expired token|Invalid API key|User not found|Token has expired|Not authorized|Missing scope|Identity assertion/i.test(message);
+}
+
 // ============================================================================
 // SyncManager Class
 // ============================================================================
@@ -208,8 +216,16 @@ export class SyncManager {
           const errorMessage =
             error instanceof Error ? error.message : "Unknown error";
 
-          // Check if item was deleted (server returns "Item not found")
-          if (errorMessage.includes("not found")) {
+          if (accessFailure(error)) {
+            // Preserve the entire remaining queue and its retry budget until access returns.
+            const message = "Sync paused. Sign in with the account that made these edits; your changes are still saved.";
+            this.notify({ status: "error", message });
+            showGlobalToast(message, "warning");
+            return;
+          }
+
+          // Only missing resources imply deletion; a missing user is an auth failure.
+          if (errorMessage.includes("Item not found") || errorMessage.includes("List not found")) {
             await clearMutation(mutation.id!);
             showGlobalToast("Item was deleted by another user", "warning");
             continue;
@@ -288,7 +304,8 @@ export class SyncManager {
       }
 
       return { hasConflict: false };
-    } catch {
+    } catch (error) {
+      if (accessFailure(error)) throw error;
       // If we can't check, allow the mutation to proceed
       // The actual mutation will fail if there's an issue
       return { hasConflict: false };

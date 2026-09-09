@@ -1,4 +1,5 @@
 import { onSessionExpiry } from "../lib/sessionExpiry";
+import { withAuthTimeout } from "../lib/authTimeout";
 import { useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 /**
@@ -70,8 +71,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   /** JWT token for API authentication, or null if not authenticated */
   token: string | null;
-  /** Start OTP flow by sending code to email. Pass legacyDid for migration. */
-  startOtp: (email: string, legacyDid?: string) => Promise<void>;
+  /** Start OTP flow by sending code to email. */
+  startOtp: (email: string) => Promise<void>;
   /** Verify OTP code and complete authentication */
   verifyOtp: (code: string) => Promise<void>;
   /** Log out and clear session */
@@ -91,8 +92,6 @@ interface OtpFlowState {
   /** Session ID from /auth/initiate (used for /auth/verify) */
   sessionId: string | null;
   email: string | null;
-  /** Legacy DID being migrated (from localStorage identity) */
-  legacyDid: string | null;
 }
 
 /**
@@ -122,7 +121,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [otpFlowState, setOtpFlowState] = useState<OtpFlowState>({
     sessionId: null,
     email: null,
-    legacyDid: null,
   });
 
   // Track mounted state to prevent setState after unmount
@@ -164,7 +162,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         // Restore auth state
-        await convex.mutation(api.actorSession.establish, { authToken: parsed.token });
+        await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: parsed.token }));
         setUser(parsed.user);
         setToken(parsed.token);
         await storageAdapter.set(JWT_STORAGE_KEY, parsed.token);
@@ -237,18 +235,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Calls /auth/initiate HTTP endpoint.
    *
    * @param email - User's email address
-   * @param legacyDid - Optional: User's old localStorage DID if migrating
    */
   const startOtp = useCallback(
-    async (email: string, legacyDid?: string) => {
+    async (email: string) => {
       if (authTransitionRef.current) throw new Error("Authentication is already in progress");
       authTransitionRef.current = true;
       setIsLoading(true);
       try {
         console.log("[useAuth] Sending OTP to:", email);
-        if (legacyDid) {
-          console.log("[useAuth] Migration mode, legacy DID:", legacyDid);
-        }
 
         const httpUrl = getConvexHttpUrl();
         const response = await fetch(`${httpUrl}/auth/initiate`, {
@@ -267,7 +261,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const { sessionId } = await response.json();
         console.log("[useAuth] OTP initiated, sessionId:", sessionId);
 
-        setOtpFlowState({ sessionId, email, legacyDid: legacyDid ?? null });
+        setOtpFlowState({ sessionId, email });
       } catch (err) {
         console.error("[useAuth] Failed to start OTP:", err);
         throw err;
@@ -317,7 +311,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const { token: jwtToken, user: serverUser } = await response.json();
         console.log("[useAuth] OTP verified, got JWT for:", serverUser.email);
 
-        await convex.mutation(api.actorSession.establish, { authToken: jwtToken });
+        await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
         // Start with server-provided DID. If it is not already did:webvh,
         // create did:webvh client-side and persist it.
@@ -365,7 +359,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         // Update state
         setUser(authUser);
-        setOtpFlowState({ sessionId: null, email: null, legacyDid: null });
+        setOtpFlowState({ sessionId: null, email: null });
 
         // Identify user in analytics
         identifyUser(authUser.turnkeySubOrgId, { email_domain: authUser.email.split('@')[1] });
@@ -396,7 +390,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsLoading(true);
     setToken(null);
     setUser(null);
-    setOtpFlowState({ sessionId: null, email: null, legacyDid: null });
+    setOtpFlowState({ sessionId: null, email: null });
     resetAnalytics();
 
     try {

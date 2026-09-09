@@ -45,6 +45,7 @@ import type * as lib_actor from "../lib/actor.js";
 import type * as lib_analytics from "../lib/analytics.js";
 import type * as lib_apiKeyHelpers from "../lib/apiKeyHelpers.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_authError from "../lib/authError.js";
 import type * as lib_authUser from "../lib/authUser.js";
 import type * as lib_authenticated from "../lib/authenticated.js";
 import type * as lib_bucket from "../lib/bucket.js";
@@ -133,6 +134,7 @@ declare const fullApi: ApiFromModules<{
   "lib/analytics": typeof lib_analytics;
   "lib/apiKeyHelpers": typeof lib_apiKeyHelpers;
   "lib/auth": typeof lib_auth;
+  "lib/authError": typeof lib_authError;
   "lib/authUser": typeof lib_authUser;
   "lib/authenticated": typeof lib_authenticated;
   "lib/bucket": typeof lib_bucket;
