@@ -6,6 +6,7 @@
  */
 
 import { internalAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import * as jose from "jose";
 
@@ -287,10 +288,6 @@ async function turnkeyRequest<T>(
 // Turnkey API Methods
 // ============================================================================
 
-interface GetSubOrgIdsResponse {
-  organizationIds: string[];
-}
-
 interface CreateSubOrgResponse {
   activity: {
     result: {
@@ -319,22 +316,6 @@ interface VerifyOtpResponse {
       };
     };
   };
-}
-
-async function getSubOrgIds(
-  email: string,
-  credentials: TurnkeyCredentials
-): Promise<string[]> {
-  const response = await turnkeyRequest<GetSubOrgIdsResponse>(
-    "/public/v1/query/list_suborgs",
-    {
-      organizationId: credentials.organizationId,
-      filterType: "EMAIL",
-      filterValue: email,
-    },
-    credentials
-  );
-  return response.organizationIds || [];
 }
 
 async function createSubOrganization(
@@ -393,28 +374,6 @@ async function createSubOrganization(
   if (!subOrgId) {
     throw new Error("No sub-organization ID returned from Turnkey");
   }
-  return subOrgId;
-}
-
-async function getOrCreateSubOrg(
-  email: string,
-  credentials: TurnkeyCredentials
-): Promise<string> {
-  console.log(`[authInternal] Checking for existing sub-org for ${email}...`);
-
-  try {
-    const subOrgIds = await getSubOrgIds(email, credentials);
-    if (subOrgIds.length > 0) {
-      console.log(`[authInternal] Found existing sub-org: ${subOrgIds[0]}`);
-      return subOrgIds[0];
-    }
-  } catch {
-    console.log(`[authInternal] No existing sub-org found, will create new one`);
-  }
-
-  console.log(`[authInternal] Creating new sub-org for ${email}...`);
-  const subOrgId = await createSubOrganization(email, credentials);
-  console.log(`[authInternal] Created sub-org: ${subOrgId}`);
   return subOrgId;
 }
 
@@ -539,7 +498,7 @@ export const initiateAuth = internalAction({
   args: {
     email: v.string(),
   },
-  handler: async (_ctx, args): Promise<{
+  handler: async (ctx, args): Promise<{
     sessionId: string;
     message: string;
     session: {
@@ -552,8 +511,10 @@ export const initiateAuth = internalAction({
 
     console.log(`[authInternal] Initiating auth for: ${args.email}`);
 
-    // Get or create sub-organization
-    const subOrgId = await getOrCreateSubOrg(args.email, credentials);
+    // The parent Turnkey organization is shared with other apps. Only Boop's
+    // saved account link identifies a returning user; a global email search does not.
+    const account = await ctx.runQuery(internal.auth.getLoginAccount, { email: args.email });
+    const subOrgId = account?.turnkeySubOrgId ?? await createSubOrganization(args.email, credentials);
 
     // Send OTP
     console.log(`[authInternal] Sending OTP to ${args.email}...`);
@@ -590,12 +551,19 @@ export const verifyAuth = internalAction({
       verified: v.boolean(),
     }),
   },
-  handler: async (_ctx, args): Promise<{
+  handler: async (ctx, args): Promise<{
     verified: boolean;
     email?: string;
     subOrgId?: string;
   }> => {
     const credentials = getTurnkeyCredentials();
+
+    // Recheck sessions initiated before a repair or a competing signup. Do this
+    // before consuming the OTP, and never silently retarget a pending session.
+    const account = await ctx.runQuery(internal.auth.getLoginAccount, { email: args.session.email });
+    if (account && account.turnkeySubOrgId !== args.session.subOrgId) {
+      throw new Error("Your account changed. Please request a new code.");
+    }
 
     console.log(`[authInternal] Verifying OTP for session: ${args.sessionId}`);
 

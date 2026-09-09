@@ -52,6 +52,7 @@ export default defineSchema({
     turnkeySubOrgId: v.optional(v.string()), // Turnkey sub-organization ID
     email: v.optional(v.string()), // User's email address
     lastLoginAt: v.optional(v.number()), // Last login timestamp
+    isCanonicalLogin: v.optional(v.boolean()), // Operator-selected account when an email has duplicates
     legacyIdentity: v.optional(v.boolean()), // true if still using localStorage
     // Migration support (Phase 1.6)
     legacyDid: v.optional(v.string()), // Original localStorage DID before Turnkey migration
