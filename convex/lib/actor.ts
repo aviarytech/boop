@@ -1,72 +1,63 @@
-/**
- * Shared actor resolver for HTTP handlers.
- *
- * Accepts either an API key (X-API-Key header) or the existing JWT session,
- * and resolves both to a single current DID plus a scope set. This is the only
- * new auth surface: the JWT path is unchanged and always resolves to scopes ["*"].
- */
+import { requireSession } from "./session";
+/** The credential boundary shared by reactive browser calls and HTTP actions. */
+import type { ActionCtx, QueryCtx, MutationCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
+import { AuthError } from "./auth";
+import { extractTokenFromRequest } from "./jwt";
+import { hasScope, hashApiKey, type Scope } from "./apiKeyHelpers";
 
-import type { ActionCtx } from "../_generated/server";
-import { api, internal } from "../_generated/api";
-import { requireAuth, AuthError } from "./auth";
-import { hasScope, hashApiKey } from "./apiKeyHelpers";
-
+export type Credentials = { authToken?: string; apiKey?: string };
 export type ResolvedActor = {
-  // Authorization identity. Everything downstream (ownership, canUserEditList)
-  // keys off this. For an API key it's the key owner's DID, not the agent's —
-  // so a key always acts *as its owner*. Distinct agent attribution is Step 5
-  // and requires splitting authz-vs-attribution in the mutations first.
   did: string;
-  // Legacy DID of a migrated Turnkey user, forwarded so the existing
-  // canUserEditList/ownerDid checks still match lists owned under the old DID.
-  // Only ever set on the JWT path; API keys are a clean, legacy-free surface.
+  userId: import("../_generated/dataModel").Id<"users">;
   legacyDid?: string;
-  scopes: string[]; // ["*"] for JWT sessions; the key's scopes otherwise
+  turnkeySubOrgId?: string;
+  scopes: string[];
   viaApiKey: boolean;
 };
 
-type UserInfo = { did?: string; legacyDid?: string } | null;
-
-/**
- * Resolve the actor behind a request. Prefers an API key; falls back to JWT.
- * @throws AuthError if neither credential is valid.
- */
-export async function resolveActor(
-  ctx: ActionCtx,
-  request: Request
-): Promise<ResolvedActor> {
-  const apiKey = request.headers.get("X-API-Key");
-  if (apiKey) {
-    const keyHash = await hashApiKey(apiKey);
-    const rec = await ctx.runQuery(internal.apiKeys.getByHash, { keyHash });
-    if (!rec || rec.revokedAt) {
-      throw new AuthError("Invalid API key", "INVALID_TOKEN");
-    }
-    return {
-      did: rec.ownerDid,
-      scopes: rec.scopes,
-      viaApiKey: true,
-    };
-  }
-
-  const auth = await requireAuth(request);
-  const user = (await ctx.runQuery(api.auth.getUserByTurnkeyId, {
-    turnkeySubOrgId: auth.turnkeySubOrgId,
-  })) as UserInfo;
-  if (!user?.did) {
-    throw new AuthError("User not found", "UNAUTHORIZED");
-  }
+export function requestCredentials(request: Request): Credentials {
   return {
-    did: user.did,
-    legacyDid: user.legacyDid,
-    scopes: ["*"],
-    viaApiKey: false,
+    authToken: extractTokenFromRequest(request) ?? undefined,
+    apiKey: request.headers.get("X-API-Key") ?? undefined,
   };
 }
 
-/** Throw AuthError if the actor lacks the required scope. */
-export function requireScope(actor: ResolvedActor, scope: string): void {
-  if (!hasScope(actor.scopes, scope)) {
-    throw new AuthError(`Missing scope: ${scope}`, "UNAUTHORIZED");
+export async function authenticate(
+  ctx: QueryCtx | MutationCtx,
+  credentials: Credentials,
+): Promise<ResolvedActor> {
+  if (credentials.apiKey !== undefined) {
+    const keyHash = await hashApiKey(credentials.apiKey);
+    const key = await ctx.db.query("agentApiKeys")
+      .withIndex("by_hash", q => q.eq("keyHash", keyHash)).first();
+    if (!key || key.revokedAt !== undefined) throw new AuthError("Invalid API key", "INVALID_TOKEN");
+    // Resolve the account on every operation, including keys minted before a DID migration.
+    const user = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", key.ownerDid)).first()
+      ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", key.ownerDid)).first();
+    if (!user?.did) throw new AuthError("User not found", "UNAUTHORIZED");
+    return { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes: key.scopes, viaApiKey: true };
   }
+  const session = await requireSession(ctx, credentials.authToken);
+  const user = await ctx.db.query("users")
+    .withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", session.turnkeySubOrgId)).first();
+  if (!user?.did) throw new AuthError("User not found", "UNAUTHORIZED");
+  return { userId: user._id, did: user.did, legacyDid: user.legacyDid, turnkeySubOrgId: session.turnkeySubOrgId, scopes: ["*"], viaApiKey: false };
+}
+
+export async function resolveActor(ctx: ActionCtx, request: Request): Promise<ResolvedActor> {
+  return ctx.runQuery(internal.actorSession.resolve, await authenticatedRequest(ctx, request));
+}
+
+export function requireScope(actor: ResolvedActor, scope: Scope): void {
+  if (!hasScope(actor.scopes, scope)) throw new AuthError(`Missing scope: ${scope}`, "FORBIDDEN");
+}
+
+/** Compatibility for existing HTTP JWT clients: register verified sessions lazily. */
+export async function authenticatedRequest(ctx: ActionCtx, request: Request): Promise<Credentials> {
+  const credentials = requestCredentials(request);
+  if (credentials.apiKey === undefined && credentials.authToken) {
+    await ctx.runMutation(internal.actorSession.establishInternal, { authToken: credentials.authToken });
+  }
+  return credentials;
 }

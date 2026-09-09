@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -25,7 +25,7 @@ export function SiteDetail() {
 
   const site = useQuery(
     api.sites.getSite,
-    did && siteId ? { ownerDid: did, siteId: siteId as Id<"sites"> } : "skip"
+    did && siteId ? {  siteId: siteId as Id<"sites"> } : "skip"
   );
 
   const hostname = site?.primaryHostname?.hostname ?? "";
@@ -39,7 +39,7 @@ export function SiteDetail() {
     }
     (async () => {
       try {
-        const url = await getPreviewUrl({ siteId: site._id, ownerDid: did });
+        const url = await getPreviewUrl({ siteId: site._id });
         if (!cancelled) setPreviewSrc(url ?? "");
       } catch {
         if (!cancelled) setPreviewSrc("");
@@ -66,7 +66,7 @@ export function SiteDetail() {
     setReplacing(true);
     haptic("medium");
     try {
-      const { uploadUrl, bucketKey } = await generateUploadUrl({ ownerDid: did });
+      const { uploadUrl, bucketKey } = await generateUploadUrl({});
       const uploadResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: { "Content-Type": "text/html; charset=utf-8" },

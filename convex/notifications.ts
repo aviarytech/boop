@@ -1,16 +1,18 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * Push notification management — queries & mutations (non-Node.js).
  * Actions that need Node.js are in notificationActions.ts.
  */
 
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+import { internalQuery } from "./_generated/server";
 
 // ─── Token registration ─────────────────────────────────────────────
 
-export const registerPushToken = mutation({
+export const { public: registerPushToken, internal: registerPushTokenInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "*",
   args: {
-    userDid: v.string(),
     token: v.string(),
     platform: v.union(v.literal("ios"), v.literal("android"), v.literal("web")),
     webPushKeys: v.optional(
@@ -25,7 +27,7 @@ export const registerPushToken = mutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        userDid: args.userDid,
+        userDid: ctx.actor.did,
         platform: args.platform,
         webPushKeys: args.webPushKeys,
       });
@@ -33,7 +35,7 @@ export const registerPushToken = mutation({
     }
 
     return await ctx.db.insert("pushTokens", {
-      userDid: args.userDid,
+      userDid: ctx.actor.did,
       token: args.token,
       platform: args.platform,
       webPushKeys: args.webPushKeys,
@@ -42,17 +44,18 @@ export const registerPushToken = mutation({
   },
 });
 
-export const unregisterPushToken = mutation({
+export const { public: unregisterPushToken, internal: unregisterPushTokenInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "*",
   args: {
     token: v.string(),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const tok = await ctx.db
       .query("pushTokens")
       .withIndex("by_token", (q) => q.eq("token", args.token))
       .first();
-    if (tok && tok.userDid === args.userDid) {
+    if (tok && [ctx.actor.did, ctx.actor.legacyDid].includes(tok.userDid)) {
       await ctx.db.delete(tok._id);
     }
   },
@@ -60,30 +63,30 @@ export const unregisterPushToken = mutation({
 
 // ─── Queries ─────────────────────────────────────────────────────────
 
-export const hasSubscription = query({
-  args: { userDid: v.string() },
-  handler: async (ctx, args) => {
-    const legacySub = await ctx.db
-      .query("pushSubscriptions")
-      .withIndex("by_user", (q) => q.eq("userDid", args.userDid))
-      .first();
-    if (legacySub) return true;
-
-    const token = await ctx.db
-      .query("pushTokens")
-      .withIndex("by_user", (q) => q.eq("userDid", args.userDid))
-      .first();
-    return token !== null;
+export const { public: hasSubscription, internal: hasSubscriptionInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "*",
+  args: {},
+  handler: async (ctx) => {
+    for (const did of [ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did)) {
+      const [subscription, token] = await Promise.all([
+        ctx.db.query("pushSubscriptions").withIndex("by_user", q => q.eq("userDid", did)).first(),
+        ctx.db.query("pushTokens").withIndex("by_user", q => q.eq("userDid", did)).first(),
+      ]);
+      if (subscription || token) return true;
+    }
+    return false;
   },
 });
 
-export const getUserSubscriptions = query({
-  args: { userDid: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("pushTokens")
-      .withIndex("by_user", (q) => q.eq("userDid", args.userDid))
-      .collect();
+export const { public: getUserSubscriptions, internal: getUserSubscriptionsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "*",
+  args: {},
+  handler: async (ctx) => {
+    const dids = [ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did);
+    return (await Promise.all(dids.map(did => ctx.db.query("pushTokens")
+      .withIndex("by_user", q => q.eq("userDid", did)).collect()))).flat();
   },
 });
 
@@ -129,9 +132,10 @@ export const getTokensForList = internalQuery({
 
 // ─── Legacy compatibility ────────────────────────────────────────────
 
-export const saveSubscription = mutation({
+export const { public: saveSubscription, internal: saveSubscriptionInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "*",
   args: {
-    userDid: v.string(),
     endpoint: v.string(),
     keys: v.object({ p256dh: v.string(), auth: v.string() }),
   },
@@ -141,11 +145,11 @@ export const saveSubscription = mutation({
       .withIndex("by_endpoint", (q) => q.eq("endpoint", args.endpoint))
       .first();
     if (existing) {
-      await ctx.db.patch(existing._id, { userDid: args.userDid, keys: args.keys });
+      await ctx.db.patch(existing._id, { userDid: ctx.actor.did, keys: args.keys });
       return existing._id;
     }
     return await ctx.db.insert("pushSubscriptions", {
-      userDid: args.userDid,
+      userDid: ctx.actor.did,
       endpoint: args.endpoint,
       keys: args.keys,
       createdAt: Date.now(),
@@ -153,14 +157,16 @@ export const saveSubscription = mutation({
   },
 });
 
-export const removeSubscription = mutation({
-  args: { endpoint: v.string(), userDid: v.string() },
+export const { public: removeSubscription, internal: removeSubscriptionInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "*",
+  args: { endpoint: v.string() },
   handler: async (ctx, args) => {
     const sub = await ctx.db
       .query("pushSubscriptions")
       .withIndex("by_endpoint", (q) => q.eq("endpoint", args.endpoint))
       .first();
-    if (sub && sub.userDid === args.userDid) {
+    if (sub && [ctx.actor.did, ctx.actor.legacyDid].includes(sub.userDid)) {
       await ctx.db.delete(sub._id);
     }
   },

@@ -1,3 +1,5 @@
+import { resourceUnavailable } from "./lib/authError";
+import { requireSession } from "./lib/session";
 /**
  * Auth-related Convex functions for Turnkey authentication.
  *
@@ -16,11 +18,10 @@ import type { QueryCtx } from "./_generated/server";
  * sub-organization ID is not found, otherwise updates the existing user's
  * last login timestamp.
  *
- * Migration flow: When legacyDid is provided, it means the user is migrating
- * from localStorage identity to Turnkey. We look up by legacyDid, update their
- * primary DID to the new Turnkey DID, and store the old DID as legacyDid.
+ * Existing verified account links are preserved. New links cannot be established
+ * by asserting a current or legacy DID.
  */
-export const upsertUser = mutation({
+export const upsertUserInternal = internalMutation({
   args: {
     turnkeySubOrgId: v.string(),
     email: v.string(),
@@ -36,6 +37,13 @@ export const upsertUser = mutation({
       .withIndex("by_turnkey_id", (q) => q.eq("turnkeySubOrgId", args.turnkeySubOrgId))
       .first();
 
+    // A supplied new DID must never take over another current or migrated account.
+    if (args.did) {
+      const claimed = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", args.did)).first()
+        ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", args.did)).first();
+      if (claimed && claimed._id !== existingByTurnkey?._id) throw resourceUnavailable();
+    }
+    if (args.legacyDid) throw new Error("Identity migration requires verified account linking");
     if (existingByTurnkey) {
       if (existingByTurnkey.email !== args.email) {
         throw new Error("This identity is linked to a different email.");
@@ -52,44 +60,6 @@ export const upsertUser = mutation({
       }
       await ctx.db.patch(existingByTurnkey._id, patch);
       return existingByTurnkey._id;
-    }
-
-    // Migration case: If legacyDid is provided, find user by their old DID
-    const legacyDid = args.legacyDid;
-    if (legacyDid) {
-      const existingByLegacyDid = await ctx.db
-        .query("users")
-        .withIndex("by_did", (q) => q.eq("did", legacyDid))
-        .first();
-
-      if (existingByLegacyDid) {
-        // Migrate user: update DID to new Turnkey DID, store old DID as legacy
-        await ctx.db.patch(existingByLegacyDid._id, {
-          did: args.did, // New Turnkey DID
-          legacyDid, // Store old DID for list lookup
-          turnkeySubOrgId: args.turnkeySubOrgId,
-          email: args.email,
-          lastLoginAt: Date.now(),
-          legacyIdentity: false,
-        });
-        return existingByLegacyDid._id;
-      }
-    }
-
-    // Check if user exists by the new Turnkey DID (edge case: same DID)
-    const existingByDid = args.did
-      ? await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", args.did)).first()
-      : null;
-
-    if (existingByDid) {
-      // Link Turnkey to existing user
-      await ctx.db.patch(existingByDid._id, {
-        turnkeySubOrgId: args.turnkeySubOrgId,
-        email: args.email,
-        lastLoginAt: Date.now(),
-        legacyIdentity: false,
-      });
-      return existingByDid._id;
     }
 
     // This index read and insert share a Convex transaction. If two signup
@@ -124,7 +94,7 @@ export const upsertUser = mutation({
 /**
  * Get a user by their Turnkey sub-organization ID.
  */
-export const getUserByTurnkeyId = query({
+export const getUserByTurnkeyIdInternal = internalQuery({
   args: { turnkeySubOrgId: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -137,7 +107,7 @@ export const getUserByTurnkeyId = query({
 /**
  * Get a user by their email address.
  */
-export const getUserByEmail = query({
+export const getUserByEmailInternal = internalQuery({
   args: { email: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -187,5 +157,34 @@ export const selectLoginAccount = internalMutation({
       await ctx.db.patch(row._id, { isCanonicalLogin: row._id === userId });
     }
     return { userId, turnkeySubOrgId: user.turnkeySubOrgId, previous };
+  },
+});
+
+// Preserve public names during rollout. Only a verified session may access its account.
+export const getUserByTurnkeyId = query({
+  args: { turnkeySubOrgId: v.string(), authToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const auth = await requireSession(ctx, args.authToken);
+    if (auth.turnkeySubOrgId !== args.turnkeySubOrgId) throw resourceUnavailable();
+    return ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", auth.turnkeySubOrgId)).first();
+  },
+});
+export const getUserByEmail = query({
+  args: { email: v.string(), authToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const auth = await requireSession(ctx, args.authToken);
+    if (auth.email !== args.email) throw resourceUnavailable();
+    return ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", auth.turnkeySubOrgId)).first();
+  },
+});
+export const upsertUser = mutation({
+  args: { turnkeySubOrgId: v.string(), email: v.string(), did: v.optional(v.string()), displayName: v.optional(v.string()), legacyDid: v.optional(v.string()), authToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const auth = await requireSession(ctx, args.authToken);
+    if (auth.turnkeySubOrgId !== args.turnkeySubOrgId || auth.email !== args.email) throw resourceUnavailable();
+    const user = await ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", auth.turnkeySubOrgId)).first();
+    if (!user || (args.did && args.did !== user.did) || (args.legacyDid && args.legacyDid !== user.legacyDid)) throw resourceUnavailable();
+    await ctx.db.patch(user._id, { lastLoginAt: Date.now() });
+    return user._id;
   },
 });

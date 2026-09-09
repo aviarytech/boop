@@ -1,3 +1,5 @@
+import { handlerErrorResponse } from "./lib/httpResponses";
+import { authenticatedRequest } from "./lib/actor";
 /**
  * HTTP actions for serving DID logs and list resources at canonical paths.
  *
@@ -7,7 +9,7 @@
  */
 
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin") || "*";
@@ -69,7 +71,7 @@ export const didResourceHandler = httpAction(async (ctx, request) => {
   ) {
     const listId = parts[2].slice("list-".length);
     const itemId = parts[4];
-    return await toggleItem(ctx, userPath, listId, itemId, true, headers);
+    return await toggleItem(ctx, userPath, listId, itemId, true, headers, request);
   }
 
   // POST /{userPath}/resources/list-{listId}/items/{itemId}/uncheck
@@ -83,7 +85,7 @@ export const didResourceHandler = httpAction(async (ctx, request) => {
   ) {
     const listId = parts[2].slice("list-".length);
     const itemId = parts[4];
-    return await toggleItem(ctx, userPath, listId, itemId, false, headers);
+    return await toggleItem(ctx, userPath, listId, itemId, false, headers, request);
   }
 
   return new Response("Not found", { status: 404, headers });
@@ -232,9 +234,11 @@ async function toggleItem(
   listId: string,
   itemId: string,
   checked: boolean,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  request: Request
 ): Promise<Response> {
   try {
+    const credentials = await authenticatedRequest(ctx as import("./_generated/server").ActionCtx, request);
     // Resolve list the same way as serveListResource (didLogs primary, publication fallback)
     const fullRecord = await ctx.runQuery(api.didLogs.getDidLogRecordByPath, { path: userPath });
     let userDid: string | null = fullRecord?.userDid ?? null;
@@ -261,12 +265,14 @@ async function toggleItem(
     }
 
     if (checked) {
-      await ctx.runMutation(api.didResources.checkSharedItem, {
+      await ctx.runMutation(internal.didResources.checkSharedItemInternal, {
+        ...credentials,
         listId: list._id,
         itemId,
       });
     } else {
-      await ctx.runMutation(api.didResources.uncheckSharedItem, {
+      await ctx.runMutation(internal.didResources.uncheckSharedItemInternal, {
+        ...credentials,
         listId: list._id,
         itemId,
       });
@@ -278,6 +284,6 @@ async function toggleItem(
     });
   } catch (error) {
     console.error("[didResources] Error toggling item:", error);
-    return new Response("Internal server error", { status: 500, headers });
+    return handlerErrorResponse(request, error, "Failed to update item");
   }
 }

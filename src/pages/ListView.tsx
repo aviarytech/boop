@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback, useRef, lazy, Suspense, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -270,7 +270,7 @@ export function ListView() {
   const unbookmarkMutation = useMutation(api.publication.unbookmarkList);
   const isBookmarked = useQuery(
     api.publication.isBookmarked,
-    did ? { listId, userDid: did } : "skip"
+    did ? { listId } : "skip"
   );
   const [favouritePending, setFavouritePending] = useState(false);
 
@@ -280,9 +280,9 @@ export function ListView() {
     haptic("light");
     try {
       if (isBookmarked) {
-        await unbookmarkMutation({ listId, userDid: did });
+        await unbookmarkMutation({ listId });
       } else {
-        await bookmarkMutation({ listId, userDid: did });
+        await bookmarkMutation({ listId });
       }
     } catch (err) {
       console.error("Failed to toggle favourite:", err);
@@ -394,8 +394,6 @@ export function ListView() {
     haptic('medium');
     await updateItemMutation({
       itemId: draggedId as Id<"items">,
-      userDid: did,
-      legacyDid: legacyDid ?? undefined,
       groceryAisle: targetAisleId,
     });
   }, [did, legacyDid, sortedItems, haptic, updateItemMutation]);
@@ -558,7 +556,7 @@ export function ListView() {
           const item = sortedItems[focusedIndex];
           if (item) {
             haptic('medium');
-            removeItemMutation({ itemId: item._id, userDid: did });
+            removeItemMutation({ itemId: item._id });
             // Move focus up if at end of list
             if (focusedIndex >= sortedItems.length - 1) {
               setFocusedIndex(Math.max(0, sortedItems.length - 2));
@@ -574,7 +572,7 @@ export function ListView() {
           const item = sortedItems[focusedIndex];
           if (item) {
             haptic('medium');
-            removeItemMutation({ itemId: item._id, userDid: did });
+            removeItemMutation({ itemId: item._id });
             // Move focus up if at end of list
             if (focusedIndex >= sortedItems.length - 1) {
               setFocusedIndex(Math.max(0, sortedItems.length - 2));
@@ -590,7 +588,7 @@ export function ListView() {
           const item = sortedItems[focusedIndex];
           if (item) {
             haptic('medium');
-            removeItemMutation({ itemId: item._id, userDid: did });
+            removeItemMutation({ itemId: item._id });
             // Move focus up if at end of list
             if (focusedIndex >= sortedItems.length - 1) {
               setFocusedIndex(Math.max(0, sortedItems.length - 2));
@@ -616,7 +614,6 @@ export function ListView() {
     enabled: viewMode === "list" && !editingItem,
     shortcuts,
   });
-
 
   // Reset focus when items change significantly
   useEffect(() => {
@@ -809,7 +806,7 @@ export function ListView() {
                 setViewMode("list");
                 if (itemViewMode !== "alphabetical") {
                   setLocalItemViewMode("alphabetical");
-                  updateItemViewModeMutation({ listId, itemViewMode: "alphabetical", userDid: did });
+                  updateItemViewModeMutation({ listId, itemViewMode: "alphabetical" });
                 }
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
@@ -830,7 +827,7 @@ export function ListView() {
                 setViewMode("list");
                 if (itemViewMode !== "categorized") {
                   setLocalItemViewMode("categorized");
-                  updateItemViewModeMutation({ listId, itemViewMode: "categorized", userDid: did });
+                  updateItemViewModeMutation({ listId, itemViewMode: "categorized" });
                 }
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
@@ -1016,10 +1013,10 @@ export function ListView() {
                         isFirst={groupIndex === 0}
                         isLast={groupIndex === aisleGroups.groups.length - 1}
                         haptic={haptic}
-                        onRename={(name) => renameCategoryMutation({ listId, categoryId: aisle.id, name, userDid: did })}
-                        onSetEmoji={(emoji) => setCategoryEmojiMutation({ listId, categoryId: aisle.id, emoji, userDid: did })}
-                        onMove={(direction) => moveCategoryMutation({ listId, categoryId: aisle.id, direction, userDid: did })}
-                        onDelete={() => deleteCategoryMutation({ listId, categoryId: aisle.id, userDid: did })}
+                        onRename={(name) => renameCategoryMutation({ listId, categoryId: aisle.id, name })}
+                        onSetEmoji={(emoji) => setCategoryEmojiMutation({ listId, categoryId: aisle.id, emoji })}
+                        onMove={(direction) => moveCategoryMutation({ listId, categoryId: aisle.id, direction })}
+                        onDelete={() => deleteCategoryMutation({ listId, categoryId: aisle.id })}
                       />
                     ) : (
                       <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 tabular-nums">
@@ -1086,7 +1083,7 @@ export function ListView() {
                         autoFocus
                         onKeyDown={e => {
                           if (e.key === "Enter" && newAisleName.trim()) {
-                            addCategoryMutation({ listId, name: newAisleName.trim(), emoji: newAisleEmoji || "🏷️", userDid: did });
+                            addCategoryMutation({ listId, name: newAisleName.trim(), emoji: newAisleEmoji || "🏷️" });
                             setNewAisleName("");
                             setNewAisleEmoji("🏷️");
                             setShowAddAisle(false);
@@ -1099,7 +1096,7 @@ export function ListView() {
                       <button
                         onClick={() => {
                           if (newAisleName.trim()) {
-                            addCategoryMutation({ listId, name: newAisleName.trim(), emoji: newAisleEmoji || "🏷️", userDid: did });
+                            addCategoryMutation({ listId, name: newAisleName.trim(), emoji: newAisleEmoji || "🏷️" });
                             setNewAisleName("");
                             setNewAisleEmoji("🏷️");
                             setShowAddAisle(false);

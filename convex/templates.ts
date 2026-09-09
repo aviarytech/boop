@@ -1,9 +1,10 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * List templates - save and reuse list structures.
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { query } from "./_generated/server";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 // Id type used in function arguments via v.id()
 
@@ -17,13 +18,14 @@ const templateItemValidator = v.object({
 /**
  * Create a template from an existing list.
  */
-export const createFromList = mutation({
+export const { public: createFromList, internal: createFromListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     templateName: v.string(),
     description: v.optional(v.string()),
     isPublic: v.optional(v.boolean()),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
@@ -49,7 +51,7 @@ export const createFromList = mutation({
     return await ctx.db.insert("listTemplates", {
       name: args.templateName,
       description: args.description,
-      ownerDid: args.userDid,
+      ownerDid: ctx.actor.did,
       items: templateItems,
       createdAt: Date.now(),
       isPublic: args.isPublic ?? false,
@@ -60,19 +62,20 @@ export const createFromList = mutation({
 /**
  * Create a new template manually.
  */
-export const createTemplate = mutation({
+export const { public: createTemplate, internal: createTemplateInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     name: v.string(),
     description: v.optional(v.string()),
     items: v.array(templateItemValidator),
     isPublic: v.optional(v.boolean()),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("listTemplates", {
       name: args.name,
       description: args.description,
-      ownerDid: args.userDid,
+      ownerDid: ctx.actor.did,
       items: args.items,
       createdAt: Date.now(),
       isPublic: args.isPublic ?? false,
@@ -83,19 +86,20 @@ export const createTemplate = mutation({
 /**
  * Update a template.
  */
-export const updateTemplate = mutation({
+export const { public: updateTemplate, internal: updateTemplateInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     templateId: v.id("listTemplates"),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     items: v.optional(v.array(templateItemValidator)),
     isPublic: v.optional(v.boolean()),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const template = await ctx.db.get(args.templateId);
     if (!template) throw new Error("Template not found");
-    if (template.ownerDid !== args.userDid) {
+    if (![ctx.actor.did, ctx.actor.legacyDid].includes(template.ownerDid)) {
       throw new Error("Not authorized to update this template");
     }
 
@@ -113,15 +117,16 @@ export const updateTemplate = mutation({
 /**
  * Delete a template.
  */
-export const deleteTemplate = mutation({
+export const { public: deleteTemplate, internal: deleteTemplateInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     templateId: v.id("listTemplates"),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const template = await ctx.db.get(args.templateId);
     if (!template) throw new Error("Template not found");
-    if (template.ownerDid !== args.userDid) {
+    if (![ctx.actor.did, ctx.actor.legacyDid].includes(template.ownerDid)) {
       throw new Error("Not authorized to delete this template");
     }
 
@@ -132,13 +137,14 @@ export const deleteTemplate = mutation({
 /**
  * Get user's templates.
  */
-export const getUserTemplates = query({
-  args: { userDid: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("listTemplates")
-      .withIndex("by_owner", (q) => q.eq("ownerDid", args.userDid))
-      .collect();
+export const { public: getUserTemplates, internal: getUserTemplatesInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "lists:read",
+  args: {},
+  handler: async (ctx) => {
+    const dids = [ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did);
+    return (await Promise.all(dids.map(did => ctx.db.query("listTemplates")
+      .withIndex("by_owner", q => q.eq("ownerDid", did)).collect()))).flat();
   },
 });
 
@@ -158,21 +164,26 @@ export const getPublicTemplates = query({
 /**
  * Get a single template.
  */
-export const getTemplate = query({
+export const { public: getTemplate, internal: getTemplateInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "lists:read",
   args: { templateId: v.id("listTemplates") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.templateId);
+    const template = await ctx.db.get(args.templateId);
+    if (template && !template.isPublic && ![ctx.actor.did, ctx.actor.legacyDid].includes(template.ownerDid)) throw new Error("Not authorized to read this template");
+    return template;
   },
 });
 
 /**
  * Create a new list from a template.
  */
-export const createListFromTemplate = mutation({
+export const { public: createListFromTemplate, internal: createListFromTemplateInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     templateId: v.id("listTemplates"),
     listName: v.string(),
-    userDid: v.string(),
     // Genesis happens client-side (only the client holds the key), same as lists.createList.
     assetDid: v.string(),
     celEnvelope: v.optional(v.string()),
@@ -182,7 +193,7 @@ export const createListFromTemplate = mutation({
     if (!template) throw new Error("Template not found");
 
     // Check if template is accessible
-    if (!template.isPublic && template.ownerDid !== args.userDid) {
+    if (!template.isPublic && ![ctx.actor.did, ctx.actor.legacyDid].includes(template.ownerDid)) {
       throw new Error("Not authorized to use this template");
     }
 
@@ -192,7 +203,7 @@ export const createListFromTemplate = mutation({
     const listId = await ctx.db.insert("lists", {
       assetDid: args.assetDid,
       name: args.listName,
-      ownerDid: args.userDid,
+      ownerDid: ctx.actor.did,
       createdAt: now,
     });
 
@@ -208,7 +219,7 @@ export const createListFromTemplate = mutation({
         description: templateItem.description,
         priority: templateItem.priority,
         checked: false,
-        createdByDid: args.userDid,
+        createdByDid: ctx.actor.did,
         createdAt: now,
         order: templateItem.order,
       });

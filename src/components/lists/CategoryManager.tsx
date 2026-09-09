@@ -6,7 +6,7 @@
  */
 
 import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery } from "../../lib/authenticatedConvex";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useCategories } from "../../hooks/useCategories";
@@ -19,7 +19,7 @@ interface CategoryManagerProps {
 }
 
 export function CategoryManager({ onClose }: CategoryManagerProps) {
-  const { did, legacyDid } = useCurrentUser();
+  const { did } = useCurrentUser();
   const { categories, createCategory, renameCategory, deleteCategory } =
     useCategories();
   const dialogRef = useFocusTrap<HTMLDivElement>({ onEscape: onClose });
@@ -34,7 +34,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
   // Get lists to count per category
   const lists = useQuery(
     api.lists.getUserLists,
-    did ? { userDid: did, legacyDid: legacyDid ?? undefined } : "skip"
+    did ? {} : "skip"
   );
 
   const getListCountForCategory = (categoryId: Id<"categories">) => {

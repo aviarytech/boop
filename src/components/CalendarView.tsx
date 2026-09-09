@@ -3,7 +3,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";

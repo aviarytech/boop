@@ -1,3 +1,5 @@
+import type { ActionCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
 /**
  * Authentication helper for protecting Convex HTTP actions.
  *
@@ -5,7 +7,6 @@
  */
 
 import {
-  verifyAuthToken,
   extractTokenFromRequest,
   type AuthTokenPayload,
 } from "./jwt";
@@ -13,21 +14,8 @@ import { getCorsHeaders } from "./httpResponses";
 
 export type { AuthTokenPayload };
 
-/**
- * Error thrown when authentication fails.
- */
-export class AuthError extends Error {
-  readonly code: "UNAUTHORIZED" | "INVALID_TOKEN" | "EXPIRED_TOKEN";
-
-  constructor(
-    message: string,
-    code: "UNAUTHORIZED" | "INVALID_TOKEN" | "EXPIRED_TOKEN"
-  ) {
-    super(message);
-    this.name = "AuthError";
-    this.code = code;
-  }
-}
+import { AuthError } from "./authError";
+export { AuthError } from "./authError";
 
 /**
  * Require authentication for an HTTP action.
@@ -42,12 +30,12 @@ export class AuthError extends Error {
  * @example
  * ```typescript
  * export const protectedAction = httpAction(async (ctx, request) => {
- *   const auth = await requireAuth(request);
+ *   const auth = await requireAuth(ctx, request);
  *   // auth.turnkeySubOrgId and auth.email are now available
  * });
  * ```
  */
-export async function requireAuth(request: Request): Promise<AuthTokenPayload> {
+export async function requireAuth(ctx: ActionCtx, request: Request): Promise<AuthTokenPayload> {
   // Extract token from request
   const token = extractTokenFromRequest(request);
 
@@ -59,8 +47,8 @@ export async function requireAuth(request: Request): Promise<AuthTokenPayload> {
   }
 
   try {
-    // Verify and decode the token
-    return await verifyAuthToken(token);
+    await ctx.runMutation(internal.actorSession.establishInternal, { authToken: token });
+    return await ctx.runQuery(internal.actorSession.identity, { authToken: token });
   } catch (error) {
     // Map specific error messages to error codes
     const message = error instanceof Error ? error.message : "Invalid token";
@@ -81,9 +69,9 @@ export async function requireAuth(request: Request): Promise<AuthTokenPayload> {
  * @param request - HTTP request object
  * @returns Authenticated user payload or null if not authenticated
  */
-export async function tryAuth(request: Request): Promise<AuthTokenPayload | null> {
+export async function tryAuth(ctx: ActionCtx, request: Request): Promise<AuthTokenPayload | null> {
   try {
-    return await requireAuth(request);
+    return await requireAuth(ctx, request);
   } catch {
     return null;
   }

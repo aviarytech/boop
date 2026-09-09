@@ -1,7 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { ConvexProvider, ConvexReactClient } from 'convex/react'
+import { ConvexProvider, ConvexReactClient } from "convex/react";
+
 import { Capacitor } from '@capacitor/core'
 import { AuthProvider } from './hooks/useAuth'
 import { ToastProvider } from './hooks/useToast'

@@ -5,7 +5,7 @@
  */
 
 import { httpAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import {
   requireAuth,
   AuthError,
@@ -37,7 +37,7 @@ function didWebvhDomain(did: string): string | null {
 export const updateUserDID = httpAction(async (ctx, request) => {
   try {
     // Require authentication
-    const auth = await requireAuth(request);
+    const auth = await requireAuth(ctx, request);
 
     // Parse request body
     const body = await request.json();
@@ -59,7 +59,7 @@ export const updateUserDID = httpAction(async (ctx, request) => {
     console.log(`[userHttp] Updating DID for ${auth.email} to ${did}`);
 
     // Call upsertUser which handles the DID upgrade logic
-    await ctx.runMutation(api.auth.upsertUser, {
+    await ctx.runMutation(internal.auth.upsertUserInternal, {
       turnkeySubOrgId: auth.turnkeySubOrgId,
       email: auth.email,
       did,
@@ -103,7 +103,7 @@ export const updateUserDID = httpAction(async (ctx, request) => {
  */
 export const remintUserDID = httpAction(async (ctx, request) => {
   try {
-    const auth = await requireAuth(request);
+    const auth = await requireAuth(ctx, request);
     const body = await request.json();
     const { did: newDid, didLog, path } = body as {
       did: string;

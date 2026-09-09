@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { createAuthFixture } from "./helpers/auth-fixture.mjs";
 
 const outdir = "tmp/copy-list-test";
 
@@ -28,6 +29,8 @@ const unwrap = (fn) => fn._handler ?? fn.handler;
 
 const OWNER = "did:webvh:QmS:boop.ad:user-owner";
 const STRANGER = "did:webvh:QmS:boop.ad:user-stranger";
+const ownerSession = await createAuthFixture(OWNER);
+const strangerSession = await createAuthFixture(STRANGER);
 
 /**
  * The source list is a migrated one: its envelope exists but nobody holds the
@@ -40,7 +43,8 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
       ...extraLists,
     ],
     items: items.map((i, n) => ({ _id: `I${n}`, listId: "L1", ...i })),
-    users: user ? [user] : [],
+    users: [{ ...ownerSession.user, ...user }, strangerSession.user],
+    accessSessions: [ownerSession.accessSession, strangerSession.accessSession],
     subscriptions: subscription ? [subscription] : [],
     referrals: [],
     listEnvelopes: [],
@@ -87,7 +91,7 @@ const MINTED = {
   assetDid: "did:cel:fresh",
   celEnvelope: '{"format":"originals/asset"}',
   name: "Camping (copy)",
-  ownerDid: OWNER,
+  authToken: ownerSession.authToken,
   createdAt: 5000,
 };
 
@@ -171,8 +175,8 @@ test("drops vcProofs — they attest actions against the source asset", async ()
 test("only the owner can copy a list", async () => {
   const ctx = makeCtx({ items: [] });
   await assert.rejects(
-    () => unwrap(mod.copyList)(ctx, { sourceListId: "L1", ...MINTED, ownerDid: STRANGER }),
-    /owner/i
+    () => unwrap(mod.copyList)(ctx, { sourceListId: "L1", ...MINTED, authToken: strangerSession.authToken }),
+    {data:{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'}}
   );
 });
 

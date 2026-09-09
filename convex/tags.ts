@@ -1,36 +1,16 @@
+import { canUserEditList } from "./lib/permissions";
+import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * Tag management for categorizing items.
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import type { Id, Doc } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+
+import type { Doc } from "./_generated/dataModel";
 
 /**
  * Helper to check if a user can edit a list (owner or editor).
  */
-async function canUserEditList(
-  ctx: MutationCtx | QueryCtx,
-  listId: Id<"lists">,
-  userDid: string,
-  legacyDid?: string
-): Promise<boolean> {
-  const list = await ctx.db.get(listId);
-  if (!list) return false;
-
-  const dids = [userDid];
-  if (legacyDid) dids.push(legacyDid);
-
-  if (dids.includes(list.ownerDid)) return true;
-
-  const pub = await ctx.db
-    .query("publications")
-    .withIndex("by_list", (q) => q.eq("listId", listId))
-    .first();
-
-  return pub?.status === "active";
-}
 
 // Predefined tag colors
 export const TAG_COLORS = [
@@ -48,16 +28,16 @@ export const TAG_COLORS = [
 /**
  * Create a new tag for a list.
  */
-export const createTag = mutation({
+export const { public: createTag, internal: createTagInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     name: v.string(),
     color: v.string(),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const canEdit = await canUserEditList(ctx, args.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to create tags for this list");
     }
@@ -76,7 +56,7 @@ export const createTag = mutation({
       listId: args.listId,
       name: args.name,
       color: args.color,
-      createdByDid: args.userDid,
+      createdByDid: ctx.actor.did,
       createdAt: Date.now(),
     });
   },
@@ -85,19 +65,19 @@ export const createTag = mutation({
 /**
  * Update a tag's name or color.
  */
-export const updateTag = mutation({
+export const { public: updateTag, internal: updateTagInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     tagId: v.id("tags"),
     name: v.optional(v.string()),
     color: v.optional(v.string()),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const tag = await ctx.db.get(args.tagId);
     if (!tag) throw new Error("Tag not found");
 
-    const canEdit = await canUserEditList(ctx, tag.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, tag.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to update this tag");
     }
@@ -114,17 +94,17 @@ export const updateTag = mutation({
 /**
  * Delete a tag and remove it from all items.
  */
-export const deleteTag = mutation({
+export const { public: deleteTag, internal: deleteTagInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     tagId: v.id("tags"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const tag = await ctx.db.get(args.tagId);
     if (!tag) throw new Error("Tag not found");
 
-    const canEdit = await canUserEditList(ctx, tag.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, tag.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to delete this tag");
     }
@@ -150,7 +130,9 @@ export const deleteTag = mutation({
 /**
  * Get all tags for a list.
  */
-export const getListTags = query({
+export const { public: getListTags, internal: getListTagsInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -163,18 +145,18 @@ export const getListTags = query({
 /**
  * Add a tag to an item.
  */
-export const addTagToItem = mutation({
+export const { public: addTagToItem, internal: addTagToItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
     tagId: v.id("tags"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
     if (!item) throw new Error("Item not found");
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to update this item");
     }
@@ -197,18 +179,18 @@ export const addTagToItem = mutation({
 /**
  * Remove a tag from an item.
  */
-export const removeTagFromItem = mutation({
+export const { public: removeTagFromItem, internal: removeTagFromItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
     tagId: v.id("tags"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
     if (!item) throw new Error("Item not found");
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to update this item");
     }

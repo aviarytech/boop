@@ -5,7 +5,7 @@
  */
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -34,7 +34,7 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
   // Fetch user's saved templates
   const userTemplates = useQuery(
     api.templates.getUserTemplates,
-    did ? { userDid: did } : "skip"
+    did ? {} : "skip"
   );
 
   // Mutations
@@ -63,7 +63,6 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
         name: listName,
-        ownerDid: did,
         createdAt: Date.now(),
       });
 
@@ -73,7 +72,6 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
         await addItem({
           listId,
           name: item.name,
-          createdByDid: did,
           createdAt: now,
           priority: item.priority,
           description: item.description,
@@ -102,7 +100,6 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
       const listId = await createListFromTemplate({
         templateId,
         listName: templateName,
-        userDid: did,
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
       });

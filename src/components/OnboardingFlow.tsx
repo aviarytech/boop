@@ -6,7 +6,7 @@
 
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -41,7 +41,7 @@ type Step = "welcome" | "create-list" | "add-items" | "share";
 const STEPS: Step[] = ["welcome", "create-list", "add-items", "share"];
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
-  const { did, legacyDid } = useCurrentUser();
+  const { did } = useCurrentUser();
   const navigate = useNavigate();
   const { haptic } = useSettings();
 
@@ -100,7 +100,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
         name,
-        ownerDid: did,
         createdAt: Date.now(),
       });
       setListId(id);
@@ -127,8 +126,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       await addItem({
         listId,
         name,
-        createdByDid: did,
-        legacyDid: legacyDid ?? undefined,
         createdAt: Date.now(),
       });
       setAddedItems((prev) => [...prev, name]);
@@ -157,7 +154,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
     try {
       const webvhDid = buildListResourceDid(did, listId);
-      await publishList({ listId, webvhDid, publisherDid: did });
+      await publishList({ listId, webvhDid });
       const url = buildListResourceUrl(did, listId);
       setShareUrl(url);
       haptic("success");
