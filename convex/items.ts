@@ -1,6 +1,7 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+
 import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList } from "./lib/permissions";
@@ -111,17 +112,16 @@ function createItemCompletionVC(
   };
 }
 
-
 /**
  * Add an item to a list.
  * Supports legacy DID for migrated users.
  */
-export const addItem = mutation({
+export const { public: addItem, internal: addItemInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId], items: [args.parentId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     name: v.string(),
-    createdByDid: v.string(),
-    legacyDid: v.optional(v.string()),
     createdAt: v.number(),
     // Optional enhanced fields
     description: v.optional(v.string()),
@@ -156,8 +156,8 @@ export const addItem = mutation({
     const canEdit = await canUserEditList(
       ctx,
       args.listId,
-      args.createdByDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canEdit) {
       throw new Error("Not authorized to add items to this list");
@@ -187,7 +187,7 @@ export const addItem = mutation({
       listId: args.listId,
       name: args.name,
       checked: false,
-      createdByDid: args.createdByDid,
+      createdByDid: ctx.actor.did,
       checkedByDid: undefined,
       createdAt: args.createdAt,
       checkedAt: undefined,
@@ -207,7 +207,7 @@ export const addItem = mutation({
     const authorshipVC = createItemAuthorshipVC(
       itemId,
       args.listId,
-      args.createdByDid,
+      ctx.actor.did,
       args.name,
       args.createdAt
     );
@@ -218,7 +218,7 @@ export const addItem = mutation({
     // Notify other list members (fire-and-forget via scheduler)
     await ctx.scheduler.runAfter(0, internal.notificationActions.sendListNotificationInternal, {
       listId: args.listId,
-      excludeDid: args.createdByDid,
+      excludeDid: ctx.actor.did,
       title: list.name,
       body: `"${args.name}" was added`,
       data: { listId: args.listId },
@@ -232,11 +232,11 @@ export const addItem = mutation({
  * Update an item's details (name, description, due date, url, recurrence, priority).
  * Supports legacy DID for migrated users.
  */
-export const updateItem = mutation({
+export const { public: updateItem, internal: updateItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
     // Fields that can be updated
     name: v.optional(v.string()),
     description: v.optional(v.string()),
@@ -267,7 +267,7 @@ export const updateItem = mutation({
       throw new Error("Item not found");
     }
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to update this item");
     }
@@ -329,11 +329,11 @@ function calculateNextDueDate(
  * Supports legacy DID for migrated users.
  * If the item has recurrence settings, creates a new unchecked copy with the next due date.
  */
-export const checkItem = mutation({
+export const { public: checkItem, internal: checkItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    checkedByDid: v.string(),
-    legacyDid: v.optional(v.string()),
     checkedAt: v.number(),
   },
   handler: async (ctx, args) => withMutationObservability("items.checkItem", async () => {
@@ -346,8 +346,8 @@ export const checkItem = mutation({
     const canEdit = await canUserEditList(
       ctx,
       item.listId,
-      args.checkedByDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canEdit) {
       throw new Error("Not authorized to check items in this list");
@@ -359,7 +359,7 @@ export const checkItem = mutation({
     const completionVC = createItemCompletionVC(
       args.itemId,
       item.listId,
-      args.checkedByDid,
+      ctx.actor.did,
       item.name,
       args.checkedAt
     );
@@ -373,7 +373,7 @@ export const checkItem = mutation({
     // Mark the current item as checked and add completion VC
     await ctx.db.patch(args.itemId, {
       checked: true,
-      checkedByDid: args.checkedByDid,
+      checkedByDid: ctx.actor.did,
       checkedAt: args.checkedAt,
       updatedAt: now,
       vcProofs: updatedProofs,
@@ -383,7 +383,7 @@ export const checkItem = mutation({
     const list = await ctx.db.get(item.listId);
     await ctx.scheduler.runAfter(0, internal.notificationActions.sendListNotificationInternal, {
       listId: item.listId,
-      excludeDid: args.checkedByDid,
+      excludeDid: ctx.actor.did,
       title: list?.name ?? "Your list",
       body: `"${item.name}" was completed`,
       data: { listId: item.listId },
@@ -416,7 +416,7 @@ export const checkItem = mutation({
           listId: item.listId,
           name: item.name,
           checked: false,
-          createdByDid: args.checkedByDid,
+          createdByDid: ctx.actor.did,
           createdAt: now,
           order: minOrder - 1,
           updatedAt: now,
@@ -438,11 +438,11 @@ export const checkItem = mutation({
  * Uncheck an item.
  * Supports legacy DID for migrated users.
  */
-export const uncheckItem = mutation({
+export const { public: uncheckItem, internal: uncheckItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -454,8 +454,8 @@ export const uncheckItem = mutation({
     const canEdit = await canUserEditList(
       ctx,
       item.listId,
-      args.userDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canEdit) {
       throw new Error("Not authorized to uncheck items in this list");
@@ -474,11 +474,11 @@ export const uncheckItem = mutation({
  * Remove an item from a list.
  * Supports legacy DID for migrated users.
  */
-export const removeItem = mutation({
+export const { public: removeItem, internal: removeItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -490,8 +490,8 @@ export const removeItem = mutation({
     const canEdit = await canUserEditList(
       ctx,
       item.listId,
-      args.userDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canEdit) {
       throw new Error("Not authorized to remove items from this list");
@@ -504,7 +504,9 @@ export const removeItem = mutation({
 /**
  * Get all items for a list, ordered by position.
  */
-export const getListItems = query({
+export const { public: getListItems, internal: getListItemsInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const items = await ctx.db
@@ -526,31 +528,14 @@ export const getListItems = query({
  * Takes the full ordered list of item IDs and updates their order values.
  * Supports legacy DID for migrated users.
  */
-export const reorderItems = mutation({
+export const { public: reorderItems, internal: reorderItemsInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     itemIds: v.array(v.id("items")),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Verify the list exists
-    const list = await ctx.db.get(args.listId);
-    if (!list) {
-      throw new Error("List not found");
-    }
-
-    // Verify user is authorized (owner or editor)
-    const canEdit = await canUserEditList(
-      ctx,
-      args.listId,
-      args.userDid,
-      args.legacyDid
-    );
-    if (!canEdit) {
-      throw new Error("Not authorized to reorder items in this list");
-    }
-
     // Update order for each item
     for (let i = 0; i < args.itemIds.length; i++) {
       const itemId = args.itemIds[i];
@@ -569,12 +554,12 @@ export const reorderItems = mutation({
  * Allows users to manually classify items into a different aisle.
  * Pass null/undefined aisleId to clear the override.
  */
-export const setAisleOverride = mutation({
+export const { public: setAisleOverride, internal: setAisleOverrideInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
     aisleId: v.optional(v.string()),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -583,8 +568,8 @@ export const setAisleOverride = mutation({
     const canEdit = await canUserEditList(
       ctx,
       item.listId,
-      args.userDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canEdit) throw new Error("Not authorized to edit this item");
 
@@ -599,10 +584,14 @@ export const setAisleOverride = mutation({
  * Get an item by ID for sync conflict checking.
  * Returns null if item doesn't exist (was deleted).
  */
-export const getItemForSync = query({
+export const { public: getItemForSync, internal: getItemForSyncInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "items:read",
   args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.itemId);
+    const item = await ctx.db.get(args.itemId);
+    if (item && !await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) throw new Error("Not authorized to access this item");
+    return item;
   },
 });
 
@@ -611,17 +600,17 @@ export const getItemForSync = query({
  * Returns null when the item does not exist OR the user cannot edit it
  * (in the current permission model, no edit access == no access).
  */
-export const getItemForEditor = query({
+export const { public: getItemForEditor, internal: getItemForEditorInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "items:read",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
     if (!item) return null;
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) return null;
 
     return {
@@ -636,7 +625,9 @@ export const getItemForEditor = query({
 /**
  * Get sub-items for a parent item.
  */
-export const getSubItems = query({
+export const { public: getSubItems, internal: getSubItemsInternal } = actorQuery({
+  resources: args => ({ items: [args.parentId] }),
+  scope: "items:read",
   args: { parentId: v.id("items") },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -650,11 +641,11 @@ export const getSubItems = query({
  * Batch check multiple items at once.
  * Handles recurring items by creating new copies with next due dates.
  */
-export const batchCheckItems = mutation({
+export const { public: batchCheckItems, internal: batchCheckItemsInternal } = actorMutation({
+  resources: args => ({ items: [...args.itemIds] }),
+  scope: "items:write",
   args: {
     itemIds: v.array(v.id("items")),
-    checkedByDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const checkedAt = Date.now();
@@ -667,7 +658,7 @@ export const batchCheckItems = mutation({
       // Verify authorization once per list
       if (listId !== item.listId) {
         listId = item.listId;
-        const canEdit = await canUserEditList(ctx, item.listId, args.checkedByDid, args.legacyDid);
+        const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
           throw new Error("Not authorized to check items in this list");
         }
@@ -675,7 +666,7 @@ export const batchCheckItems = mutation({
 
       await ctx.db.patch(itemId, {
         checked: true,
-        checkedByDid: args.checkedByDid,
+        checkedByDid: ctx.actor.did,
         checkedAt,
         updatedAt: checkedAt,
       });
@@ -707,7 +698,7 @@ export const batchCheckItems = mutation({
             listId: item.listId,
             name: item.name,
             checked: false,
-            createdByDid: args.checkedByDid,
+            createdByDid: ctx.actor.did,
             createdAt: checkedAt,
             order: minOrder - 1,
             updatedAt: checkedAt,
@@ -729,11 +720,11 @@ export const batchCheckItems = mutation({
 /**
  * Batch uncheck multiple items at once.
  */
-export const batchUncheckItems = mutation({
+export const { public: batchUncheckItems, internal: batchUncheckItemsInternal } = actorMutation({
+  resources: args => ({ items: [...args.itemIds] }),
+  scope: "items:write",
   args: {
     itemIds: v.array(v.id("items")),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -745,7 +736,7 @@ export const batchUncheckItems = mutation({
 
       if (listId !== item.listId) {
         listId = item.listId;
-        const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+        const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
           throw new Error("Not authorized to uncheck items in this list");
         }
@@ -764,11 +755,11 @@ export const batchUncheckItems = mutation({
 /**
  * Batch delete multiple items at once.
  */
-export const batchDeleteItems = mutation({
+export const { public: batchDeleteItems, internal: batchDeleteItemsInternal } = actorMutation({
+  resources: args => ({ items: [...args.itemIds] }),
+  scope: "items:write",
   args: {
     itemIds: v.array(v.id("items")),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     let listId: Id<"lists"> | null = null;
@@ -779,7 +770,7 @@ export const batchDeleteItems = mutation({
 
       if (listId !== item.listId) {
         listId = item.listId;
-        const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+        const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
           throw new Error("Not authorized to delete items in this list");
         }
@@ -803,7 +794,9 @@ export const batchDeleteItems = mutation({
 /**
  * Get items with due dates for calendar view.
  */
-export const getItemsWithDueDates = query({
+export const { public: getItemsWithDueDates, internal: getItemsWithDueDatesInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { 
     listId: v.id("lists"),
     startDate: v.optional(v.number()),
@@ -834,16 +827,15 @@ export const getItemsWithDueDates = query({
  * Get all high-priority items across all lists the user has access to.
  * Used for Priority Focus mode.
  */
-export const getHighPriorityItems = query({
-  args: {
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
+export const { public: getHighPriorityItems, internal: getHighPriorityItemsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "items:read",
+  args: {},
+  handler: async (ctx) => {
     // DIDs to check: current DID and optionally legacy DID
-    const didsToCheck = [args.userDid];
-    if (args.legacyDid) {
-      didsToCheck.push(args.legacyDid);
+    const didsToCheck = [ctx.actor.did];
+    if (ctx.actor.legacyDid) {
+      didsToCheck.push(ctx.actor.legacyDid);
     }
 
     // Get all list IDs the user has access to (owned + bookmarked)
@@ -878,7 +870,7 @@ export const getHighPriorityItems = query({
 
     for (const listId of listIds) {
       const list = await ctx.db.get(listId);
-      if (!list) continue;
+      if (!list || !(await canUserEditList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid))) continue;
 
       const items = await ctx.db
         .query("items")
@@ -916,11 +908,11 @@ export const getHighPriorityItems = query({
 /**
  * Promote an item to a top-level item (remove parent).
  */
-export const promoteItem = mutation({
+export const { public: promoteItem, internal: promoteItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -928,7 +920,7 @@ export const promoteItem = mutation({
       throw new Error("Item not found");
     }
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to edit this item");
     }
@@ -945,12 +937,12 @@ export const promoteItem = mutation({
  * Demote an item to become a subtask of another item.
  * Ensures we don't exceed max nesting depth (2 levels).
  */
-export const demoteItem = mutation({
+export const { public: demoteItem, internal: demoteItemInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
     newParentId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -968,7 +960,7 @@ export const demoteItem = mutation({
       throw new Error("Items must be in the same list");
     }
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to edit this item");
     }

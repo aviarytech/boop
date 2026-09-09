@@ -1,3 +1,4 @@
+import { actorQuery } from "./lib/authenticated";
 /**
  * Billing module — Stripe subscription management.
  *
@@ -8,7 +9,7 @@
  */
 
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +31,9 @@ export type Plan = keyof typeof PLANS;
 /**
  * Get current subscription for a user by userId. Returns null for free tier.
  */
-export const getUserSubscription = query({
+export const { public: getUserSubscription, internal: getUserSubscriptionAuthenticatedInternal } = actorQuery({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     return await ctx.db
@@ -44,7 +47,9 @@ export const getUserSubscription = query({
  * Get effective plan — defaults to "free" if no active subscription.
  * Also grants "pro" when a referral Pro credit is active (referralProUntil > now).
  */
-export const getUserPlan = query({
+export const { public: getUserPlan, internal: getUserPlanAuthenticatedInternal } = actorQuery({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }): Promise<Plan> => {
     const sub = await ctx.db

@@ -1,5 +1,6 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
-import { mutation, query, internalQuery } from "./_generated/server";
+
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { withMutationObservability } from "./lib/observability";
@@ -101,11 +102,12 @@ async function assertListQuota(
   return { owner, isFirstList: existingLists.length === 0 };
 }
 
-export const createList = mutation({
+export const { public: createList, internal: createListInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     assetDid: v.string(),
     name: v.string(),
-    ownerDid: v.string(),
     categoryId: v.optional(v.id("categories")),
     createdAt: v.number(),
     // Serialized AssetEnvelope from createListAsset. Optional so older clients
@@ -118,12 +120,12 @@ export const createList = mutation({
     if (args.name.trim().length === 0) throw new Error("List name cannot be empty");
     if (args.name.length > 200) throw new Error("List name cannot exceed 200 characters");
 
-    const { owner, isFirstList } = await assertListQuota(ctx, args.ownerDid);
+    const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
 
     const listId = await ctx.db.insert("lists", {
       assetDid: args.assetDid,
       name: args.name,
-      ownerDid: args.ownerDid,
+      ownerDid: ctx.actor.did,
       categoryId: args.categoryId,
       createdAt: args.createdAt,
     });
@@ -131,7 +133,7 @@ export const createList = mutation({
     const vcProof = createListOwnershipVC(
       listId,
       args.assetDid,
-      args.ownerDid,
+      ctx.actor.did,
       args.name,
       args.createdAt
     );
@@ -173,7 +175,9 @@ export const createList = mutation({
  * The copy is honestly new: it gets today's genesis and its own DID, and makes
  * no claim to the original's history. The source list is left untouched.
  */
-export const copyList = mutation({
+export const { public: copyList, internal: copyListInternal } = actorMutation({
+  resources: args => ({ lists: [args.sourceListId] }),
+  scope: "items:write",
   args: {
     sourceListId: v.id("lists"),
     // Minted client-side by createListAsset — that is the whole point, so both
@@ -181,7 +185,6 @@ export const copyList = mutation({
     assetDid: v.string(),
     celEnvelope: v.string(),
     name: v.string(),
-    ownerDid: v.string(),
     createdAt: v.number(),
   },
   handler: async (ctx, args) => withMutationObservability("lists.copyList", async () => {
@@ -192,16 +195,16 @@ export const copyList = mutation({
     if (!source) throw new Error("List not found");
     // Copying mints a new identity naming this owner, so viewers who can merely
     // read a shared list must not be able to do it.
-    if (source.ownerDid !== args.ownerDid) {
+    if (![ctx.actor.did, ctx.actor.legacyDid].includes(source.ownerDid)) {
       throw new Error("Only the list's owner can copy it");
     }
 
-    const { owner, isFirstList } = await assertListQuota(ctx, args.ownerDid);
+    const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
 
     const listId = await ctx.db.insert("lists", {
       assetDid: args.assetDid,
       name: args.name,
-      ownerDid: args.ownerDid,
+      ownerDid: ctx.actor.did,
       categoryId: source.categoryId,
       createdAt: args.createdAt,
       // Presentation settings belong to the list, so the copy should look like
@@ -212,7 +215,7 @@ export const copyList = mutation({
     });
 
     await ctx.db.patch(listId, {
-      vcProof: createListOwnershipVC(listId, args.assetDid, args.ownerDid, args.name, args.createdAt),
+      vcProof: createListOwnershipVC(listId, args.assetDid, ctx.actor.did, args.name, args.createdAt),
     });
 
     await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
@@ -272,19 +275,19 @@ export const copyList = mutation({
 /**
  * Rename a list. Only the owner can rename.
  */
-export const renameList = mutation({
+export const { public: renameList, internal: renameListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     name: v.string(),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 
-    const dids = [args.userDid];
-    if (args.legacyDid) dids.push(args.legacyDid);
+    const dids = [ctx.actor.did];
+    if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
 
     if (!dids.includes(list.ownerDid)) {
       throw new Error("Only the list owner can rename this list");
@@ -305,19 +308,19 @@ export const renameList = mutation({
 /**
  * Update the category of a list. Only owner can change.
  */
-export const updateListCategory = mutation({
+export const { public: updateListCategory, internal: updateListCategoryInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     categoryId: v.optional(v.id("categories")),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 
-    const dids = [args.userDid];
-    if (args.legacyDid) dids.push(args.legacyDid);
+    const dids = [ctx.actor.did];
+    if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
 
     if (!dids.includes(list.ownerDid)) {
       throw new Error("Only the list owner can change the category");
@@ -335,10 +338,14 @@ export const updateListCategory = mutation({
 /**
  * Get a list by its ID.
  */
-export const getList = query({
+export const { public: getList, internal: getListInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "lists:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.listId);
+    const list = await ctx.db.get(args.listId);
+    if (list && !await canUserViewList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid)) throw new Error("Not authorized to access this list");
+    return list;
   },
 });
 
@@ -347,11 +354,11 @@ export const getList = query({
  * getList so the hot list subscriptions don't carry it. Returns null when the
  * list predates envelope persistence.
  *
- * Unauthenticated, matching getList above: the envelope holds the DID document,
- * the signed CEL log and the list's own name/owner — the same surface getList
- * already returns to any caller with the id.
+ * Protected by the same authenticated list access check as getList.
  */
-export const getListEnvelope = query({
+export const { public: getListEnvelope, internal: getListEnvelopeInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "lists:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const row = await ctx.db
@@ -370,11 +377,12 @@ export const getListEnvelope = query({
  * Internal: only the server-side agent read handler may call it, so the viewer
  * DID it trusts always comes from an authenticated actor, never a raw client.
  */
-export const getListWithItemsForViewer = internalQuery({
+const listWithItemsOperation = actorQuery({
+  // This read returns null for both missing and inaccessible lists (HTTP 404).
+  resources: () => ({}),
+  scope: "items:read",
   args: {
     listId: v.id("lists"),
-    viewerDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
@@ -383,8 +391,8 @@ export const getListWithItemsForViewer = internalQuery({
     const canView = await canUserViewList(
       ctx,
       args.listId,
-      args.viewerDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canView) return null;
 
@@ -403,16 +411,13 @@ export const getListWithItemsForViewer = internalQuery({
 /**
  * Get all lists where user is the owner, plus any bookmarked published lists.
  */
-export const getUserLists = query({
-  args: {
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
-    walletDid: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const didsToCheck = [args.userDid];
-    if (args.legacyDid) didsToCheck.push(args.legacyDid);
-    if (args.walletDid) didsToCheck.push(args.walletDid);
+export const { public: getUserLists, internal: getUserListsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "lists:read",
+  args: {},
+  handler: async (ctx) => {
+    const didsToCheck = [ctx.actor.did];
+    if (ctx.actor.legacyDid) didsToCheck.push(ctx.actor.legacyDid);
 
     const listMap = new Map<string, Doc<"lists">>();
 
@@ -440,7 +445,7 @@ export const getUserLists = query({
       for (const bookmark of bookmarks) {
         if (!listMap.has(bookmark.listId.toString())) {
           const list = await ctx.db.get(bookmark.listId);
-          if (list) {
+          if (list && await canUserViewList(ctx, list._id, ctx.actor.did, ctx.actor.legacyDid)) {
             listMap.set(bookmark.listId.toString(), list);
           }
         }
@@ -462,7 +467,9 @@ export const getUserLists = query({
  * indexed row per list and compares two numbers; the parsing happened once, at
  * write time.
  */
-export const getLegacyListIds = query({
+export const { public: getLegacyListIds, internal: getLegacyListIdsInternal } = actorQuery({
+  resources: args => ({ lists: [...args.listIds] }),
+  scope: "lists:read",
   args: { listIds: v.array(v.id("lists")) },
   handler: async (ctx, args) => {
     const legacy: Id<"lists">[] = [];
@@ -492,18 +499,18 @@ export const getLegacyListIds = query({
  * Delete a list and all its items.
  * Only the owner can delete a list.
  */
-export const deleteList = mutation({
+export const { public: deleteList, internal: deleteListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 
-    const dids = [args.userDid];
-    if (args.legacyDid) dids.push(args.legacyDid);
+    const dids = [ctx.actor.did];
+    if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
 
     if (!dids.includes(list.ownerDid)) {
       throw new Error("Only the list owner can delete this list");
@@ -543,20 +550,20 @@ export const deleteList = mutation({
  * Add a custom grocery aisle to a list.
  * Only the list owner can add custom aisles.
  */
-export const addCustomAisle = mutation({
+export const { public: addCustomAisle, internal: addCustomAisleInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     name: v.string(),
     emoji: v.string(),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 
-    const dids = [args.userDid];
-    if (args.legacyDid) dids.push(args.legacyDid);
+    const dids = [ctx.actor.did];
+    if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
     if (!dids.includes(list.ownerDid)) {
       throw new Error("Only the list owner can add custom aisles");
     }
@@ -577,19 +584,19 @@ export const addCustomAisle = mutation({
  * Update the item view mode for a list.
  * Only the list owner can change view mode.
  */
-export const updateItemViewMode = mutation({
+export const { public: updateItemViewMode, internal: updateItemViewModeInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     itemViewMode: v.union(v.literal("alphabetical"), v.literal("categorized")),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 
-    const dids = [args.userDid];
-    if (args.legacyDid) dids.push(args.legacyDid);
+    const dids = [ctx.actor.did];
+    if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
     if (!dids.includes(list.ownerDid)) {
       throw new Error("Only the list owner can change view mode");
     }
@@ -602,19 +609,19 @@ export const updateItemViewMode = mutation({
  * Remove a custom grocery aisle from a list.
  * Only the list owner can remove custom aisles.
  */
-export const removeCustomAisle = mutation({
+export const { public: removeCustomAisle, internal: removeCustomAisleInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     aisleId: v.string(),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 
-    const dids = [args.userDid];
-    if (args.legacyDid) dids.push(args.legacyDid);
+    const dids = [ctx.actor.did];
+    if (ctx.actor.legacyDid) dids.push(ctx.actor.legacyDid);
     if (!dids.includes(list.ownerDid)) {
       throw new Error("Only the list owner can remove custom aisles");
     }
@@ -625,3 +632,5 @@ export const removeCustomAisle = mutation({
     });
   },
 });
+
+export const getListWithItemsForViewer = listWithItemsOperation.internal;

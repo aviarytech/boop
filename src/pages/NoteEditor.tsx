@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { api } from "../../convex/_generated/api";
@@ -25,7 +25,7 @@ export function NoteEditor() {
   const data = useQuery(
     api.items.getItemForEditor,
     itemId && did
-      ? { itemId: itemId as Id<"items">, userDid: did, legacyDid: legacyDid ?? undefined }
+      ? { itemId: itemId as Id<"items">,   }
       : "skip"
   );
   const updateItem = useMutation(api.items.updateItem);
@@ -52,8 +52,6 @@ export function NoteEditor() {
       try {
         await updateItem({
           itemId: itemId as Id<"items">,
-          userDid: did,
-          legacyDid: legacyDid ?? undefined,
           description: text,
         });
         // Resume tracking the server value, unless the user typed something newer.

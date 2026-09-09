@@ -1,13 +1,14 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+
 import { canUserEditList } from "./lib/permissions";
 
-export const recordActivity = mutation({
+export const { public: recordActivity, internal: recordActivityInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId], items: [args.itemId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     itemId: v.optional(v.id("items")),
-    actorDid: v.string(),
-    legacyDid: v.optional(v.string()),
     type: v.union(
       v.literal("item_assigned"),
       v.literal("item_unassigned"),
@@ -23,13 +24,13 @@ export const recordActivity = mutation({
     })),
   },
   handler: async (ctx, args) => {
-    const canEdit = await canUserEditList(ctx, args.listId, args.actorDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) throw new Error("Not authorized to write activity");
 
     return await ctx.db.insert("activities", {
       listId: args.listId,
       itemId: args.itemId,
-      actorDid: args.actorDid,
+      actorDid: ctx.actor.did,
       type: args.type,
       metadata: args.metadata,
       createdAt: Date.now(),
@@ -37,7 +38,9 @@ export const recordActivity = mutation({
   },
 });
 
-export const getListActivity = query({
+export const { public: getListActivity, internal: getListActivityInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: {
     listId: v.id("lists"),
     limit: v.optional(v.number()),

@@ -1,3 +1,4 @@
+import { extractTokenFromRequest } from "./lib/jwt";
 /**
  * Convex HTTP router for server-side endpoints.
  *
@@ -151,7 +152,7 @@ const initiate = httpAction(async (ctx, request) => {
     const result = await ctx.runAction(internal.authInternal.initiateAuth, { email });
 
     // Persist session to Convex database
-    await ctx.runMutation(api.authSessions.createSession, {
+    await ctx.runMutation(internal.authSessions.createSessionInternal, {
       sessionId: result.sessionId,
       email: result.session.email,
       subOrgId: result.session.subOrgId,
@@ -203,7 +204,7 @@ const verify = httpAction(async (ctx, request) => {
     console.log(`[authHttp] Verifying OTP for session: ${sessionId}`);
 
     // Get session from database
-    const dbSession = await ctx.runQuery(api.authSessions.getSession, { sessionId });
+    const dbSession = await ctx.runQuery(internal.authSessions.getSessionInternal, { sessionId });
     if (!dbSession) {
       return jsonResponse({ error: "Invalid or expired session" }, 400, {}, request);
     }
@@ -233,7 +234,7 @@ const verify = httpAction(async (ctx, request) => {
     console.log(`[authHttp] OTP verified for: ${result.email}`);
 
     // Mark session as verified
-    await ctx.runMutation(api.authSessions.markSessionVerified, {
+    await ctx.runMutation(internal.authSessions.markSessionVerifiedInternal, {
       sessionId,
       subOrgId: result.subOrgId,
     });
@@ -241,7 +242,7 @@ const verify = httpAction(async (ctx, request) => {
     // DID creation happens client-side after auth completes: for a NEW account
     // the client mints a did:webvh with BrowserWebVHSigner and posts it to
     // /api/user/updateDID.
-    await ctx.runMutation(api.auth.upsertUser, {
+    await ctx.runMutation(internal.auth.upsertUserInternal, {
       turnkeySubOrgId: result.subOrgId,
       email: result.email,
       did: undefined,
@@ -254,7 +255,7 @@ const verify = httpAction(async (ctx, request) => {
     // the client then treated the discarded DID as its identity. That burned a
     // keypair per login and, worse, left the client's DID disagreeing with the
     // database — which is why the stale-domain re-mint never fired.
-    const storedUser = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
+    const storedUser = await ctx.runQuery(internal.auth.getUserByTurnkeyIdInternal, {
       turnkeySubOrgId: result.subOrgId,
     });
 
@@ -264,8 +265,10 @@ const verify = httpAction(async (ctx, request) => {
       email: result.email,
     });
 
+    await ctx.runMutation(internal.actorSession.establishInternal, { authToken: authResult.token });
+
     // Clean up session
-    await ctx.runMutation(api.authSessions.deleteSession, { sessionId });
+    await ctx.runMutation(internal.authSessions.deleteSessionInternal, { sessionId });
 
     console.log(`[authHttp] Auth complete, JWT issued for: ${result.email}`);
 
@@ -300,6 +303,8 @@ const verify = httpAction(async (ctx, request) => {
 const logout = httpAction(async (ctx, request) => {
   console.log("[authHttp] Logging out");
 
+  const token = extractTokenFromRequest(request);
+  if (token) await ctx.runMutation(internal.actorSession.revokeInternal, { authToken: token });
   const result = await ctx.runAction(internal.authInternal.getLogoutCookie, {});
 
   return jsonResponse({ success: true }, 200, { "Set-Cookie": result.cookieValue }, request);
@@ -419,7 +424,6 @@ http.route({ path: "/api/sites/resolve-host", method: "GET", handler: resolveSit
 http.route({ path: "/api/sites/resolve-host", method: "OPTIONS", handler: resolveSiteHost });
 http.route({ path: "/api/sites/resolve-asset", method: "GET", handler: resolveSiteAsset });
 http.route({ path: "/api/sites/resolve-asset", method: "OPTIONS", handler: resolveSiteAsset });
-
 
 // ============================================================================
 // Agent API v1 (Plan 001)

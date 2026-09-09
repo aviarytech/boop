@@ -1,3 +1,4 @@
+import { actorQuery, actorMutation } from "./lib/authenticated";
 /**
  * Referral growth loop — invite a friend, unlock +1 list.
  *
@@ -10,7 +11,7 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,7 +36,9 @@ function generateCode(): string {
 /**
  * Get the referral code for a user (by userId). Returns null if none exists yet.
  */
-export const getReferralCode = query({
+export const { public: getReferralCode, internal: getReferralCodeAuthenticatedInternal } = actorQuery({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     return await ctx.db
@@ -48,7 +51,9 @@ export const getReferralCode = query({
 /**
  * Get referral stats for a user: total successful referrals and Pro credit status.
  */
-export const getReferralStats = query({
+export const { public: getReferralStats, internal: getReferralStatsAuthenticatedInternal } = actorQuery({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const referrals = await ctx.db
@@ -67,7 +72,9 @@ export const getReferralStats = query({
  * Get referral Pro credit status for the current user (as referee).
  * Returns whether they came via referral and when their Pro expires.
  */
-export const getReferralProStatus = query({
+export const { public: getReferralProStatus, internal: getReferralProStatusAuthenticatedInternal } = actorQuery({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     const user = await ctx.db.get(userId);
@@ -90,7 +97,9 @@ export const getReferralProStatus = query({
  * Get or create a referral code for the current user.
  * Idempotent — always returns the same code for the same user.
  */
-export const getOrCreateReferralCode = mutation({
+export const { public: getOrCreateReferralCode, internal: getOrCreateReferralCodeAuthenticatedInternal } = actorMutation({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     // Return existing code if one exists
@@ -135,7 +144,9 @@ export const getOrCreateReferralCode = mutation({
  *
  * Safe to call multiple times — idempotent via the referee uniqueness check.
  */
-export const redeemReferral = mutation({
+export const { public: redeemReferral, internal: redeemReferralAuthenticatedInternal } = actorMutation({
+  resources: args => ({ accounts: [args.refereeUserId] }),
+  scope: "*",
   args: {
     code: v.string(),
     refereeUserId: v.id("users"),

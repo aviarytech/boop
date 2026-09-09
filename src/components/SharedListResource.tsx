@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -79,7 +79,7 @@ export function SharedListResource() {
 
   const isBookmarked = useQuery(
     api.publication.isBookmarked,
-    did && convexListId ? { listId: convexListId, userDid: did } : "skip"
+    did && convexListId ? { listId: convexListId } : "skip"
   );
 
   const [favouritePending, setFavouritePending] = useState(false);
@@ -113,10 +113,10 @@ export function SharedListResource() {
     setFavouritePending(true);
     try {
       if (isBookmarked) {
-        await unbookmarkMutation({ listId: convexListId, userDid: did });
+        await unbookmarkMutation({ listId: convexListId });
         setBookmarkPlanLimit(false);
       } else {
-        await bookmarkMutation({ listId: convexListId, userDid: did });
+        await bookmarkMutation({ listId: convexListId });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";

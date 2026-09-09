@@ -1,16 +1,9 @@
-/**
- * HTTP read endpoints for agents.
- *
- * These GET handlers authenticate via resolveActor() (JWT session or agent
- * API key) and require read scopes. They wrap existing queries without changing
- * their logic, and resolve to a single current DID (no legacy/wallet threading).
- */
+/** HTTP adapter; authentication and authorization run in the shared operation. */
 
 import { httpAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { AuthError, unauthorizedResponseWithCors } from "./lib/auth";
-import { resolveActor, requireScope } from "./lib/actor";
+import { authenticatedRequest } from "./lib/actor";
 import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpResponses";
 
 /**
@@ -21,18 +14,12 @@ import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpRes
  */
 export const getLists = httpAction(async (ctx, request) => {
   try {
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "lists:read");
+    const lists = await ctx.runQuery(internal.lists.getUserListsInternal, {
+      ...await authenticatedRequest(ctx, request),
 
-    const lists = await ctx.runQuery(api.lists.getUserLists, {
-      userDid: actor.did,
-      legacyDid: actor.legacyDid,
     });
     return jsonResponse(request, { lists });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[agentReadHttp] getLists error:", error);
     return handlerErrorResponse(
       request,
@@ -51,9 +38,6 @@ export const getLists = httpAction(async (ctx, request) => {
  */
 export const getListWithItems = httpAction(async (ctx, request) => {
   try {
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:read");
-
     const listId = new URL(request.url).searchParams.get("listId");
     if (!listId) {
       return errorResponse(request, "listId query parameter is required");
@@ -63,17 +47,14 @@ export const getListWithItems = httpAction(async (ctx, request) => {
     // caller may not view it, so an items:read key can't read arbitrary lists.
     const result = await ctx.runQuery(internal.lists.getListWithItemsForViewer, {
       listId: listId as Id<"lists">,
-      viewerDid: actor.did,
-      legacyDid: actor.legacyDid,
+      ...await authenticatedRequest(ctx, request),
+
     });
     if (!result) {
       return errorResponse(request, "List not found", 404);
     }
     return jsonResponse(request, result);
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[agentReadHttp] getListWithItems error:", error);
     return handlerErrorResponse(
       request,

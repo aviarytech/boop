@@ -7,7 +7,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { useSearchParams, Link } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
@@ -70,9 +70,8 @@ export function Home() {
   // Query lists for current DID, including legacyDid for backwards compat
   const serverLists = useQuery(
     api.lists.getUserLists,
-    did ? { userDid: did, legacyDid: legacyDid ?? undefined } : "skip"
+    did ? {} : "skip"
   );
-
 
   // Cache lists when online and data is available
   useEffect(() => {
@@ -120,7 +119,6 @@ export function Home() {
           assetDid: listAsset.assetDid,
           celEnvelope: listAsset.envelope,
           name: "Getting Started",
-          ownerDid: did,
           createdAt: Date.now(),
         });
         const demoItems = [
@@ -132,8 +130,6 @@ export function Home() {
           await addItem({
             listId,
             name,
-            createdByDid: did,
-            legacyDid: legacyDid ?? undefined,
             createdAt: Date.now(),
           });
         }
@@ -200,7 +196,7 @@ export function Home() {
   // Get bookmarked list IDs for favourites section
   const bookmarkedIds = useQuery(
     api.publication.getUserBookmarkIds,
-    did ? { userDid: did } : "skip"
+    did ? {} : "skip"
   );
   const bookmarkedIdSet = useMemo(() => new Set(bookmarkedIds ?? []), [bookmarkedIds]);
 

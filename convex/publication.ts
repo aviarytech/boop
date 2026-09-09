@@ -1,3 +1,4 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * Publication functions for did:webvh public list publishing.
  *
@@ -6,7 +7,7 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query } from "./_generated/server";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 import { internal } from "./_generated/api";
 
@@ -14,13 +15,14 @@ import { internal } from "./_generated/api";
  * Record a publication for a list.
  * Only the owner can publish a list.
  */
-export const publishList = mutation({
+export const { public: publishList, internal: publishListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "*",
   args: {
     listId: v.id("lists"),
     webvhDid: v.string(),
     didDocument: v.optional(v.string()),
     didLog: v.optional(v.string()),
-    publisherDid: v.string(),
     // The asset envelope after appending the published-version event. Optional:
     // a list whose signing key was lost to the celAssetDids migration can still
     // be published, it just cannot record the fact in its own log.
@@ -32,7 +34,7 @@ export const publishList = mutation({
     if (!list) {
       throw new Error("List not found");
     }
-    if (list.ownerDid !== args.publisherDid) {
+    if (![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
       throw new Error("Only the owner can publish a list");
     }
 
@@ -72,7 +74,7 @@ export const publishList = mutation({
       didDocument: args.didDocument,
       didLog: args.didLog,
       publishedAt: Date.now(),
-      publishedByDid: args.publisherDid,
+      publishedByDid: ctx.actor.did,
       status: "active",
     });
   },
@@ -82,17 +84,18 @@ export const publishList = mutation({
  * Unpublish a list.
  * Only the owner can unpublish.
  */
-export const unpublishList = mutation({
+export const { public: unpublishList, internal: unpublishListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "*",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) {
       throw new Error("List not found");
     }
-    if (list.ownerDid !== args.userDid) {
+    if (![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
       throw new Error("Only the owner can unpublish a list");
     }
 
@@ -205,10 +208,11 @@ export const getPublicList = query({
 /**
  * Bookmark a published list so it shows in the user's list view.
  */
-export const bookmarkList = mutation({
+export const { public: bookmarkList, internal: bookmarkListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "*",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     // Verify list exists and is published
@@ -225,7 +229,7 @@ export const bookmarkList = mutation({
     const existing = await ctx.db
       .query("bookmarks")
       .withIndex("by_user_list", (q) =>
-        q.eq("userDid", args.userDid).eq("listId", args.listId)
+        q.eq("userDid", ctx.actor.did).eq("listId", args.listId)
       )
       .first();
 
@@ -257,12 +261,12 @@ export const bookmarkList = mutation({
     }
 
     const bookmarkId = await ctx.db.insert("bookmarks", {
-      userDid: args.userDid,
+      userDid: ctx.actor.did,
       listId: args.listId,
       bookmarkedAt: Date.now(),
     });
 
-    if (list && list.ownerDid !== args.userDid) {
+    if (list && ![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
       // Notify the list owner: a new collaborator joined
       await ctx.scheduler.runAfter(0, internal.notificationActions.sendPushNotificationInternal, {
         userDid: list.ownerDid,
@@ -272,7 +276,7 @@ export const bookmarkList = mutation({
       });
       // Notify the joiner: the list was shared with them (delivers to their other devices)
       await ctx.scheduler.runAfter(0, internal.notificationActions.sendPushNotificationInternal, {
-        userDid: args.userDid,
+        userDid: ctx.actor.did,
         title: list.name,
         body: "Added to your lists",
         data: { listId: args.listId },
@@ -286,16 +290,17 @@ export const bookmarkList = mutation({
 /**
  * Remove a bookmark.
  */
-export const unbookmarkList = mutation({
+export const { public: unbookmarkList, internal: unbookmarkListInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "*",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("bookmarks")
       .withIndex("by_user_list", (q) =>
-        q.eq("userDid", args.userDid).eq("listId", args.listId)
+        q.eq("userDid", ctx.actor.did).eq("listId", args.listId)
       )
       .first();
 
@@ -308,16 +313,17 @@ export const unbookmarkList = mutation({
 /**
  * Check if a list is bookmarked by the user.
  */
-export const isBookmarked = query({
+export const { public: isBookmarked, internal: isBookmarkedInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "lists:read",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("bookmarks")
       .withIndex("by_user_list", (q) =>
-        q.eq("userDid", args.userDid).eq("listId", args.listId)
+        q.eq("userDid", ctx.actor.did).eq("listId", args.listId)
       )
       .first();
 
@@ -329,7 +335,9 @@ export const isBookmarked = query({
  * Get publication status for a list.
  * Returns publication info if the list is published, null otherwise.
  */
-export const getPublicationStatus = query({
+export const { public: getPublicationStatus, internal: getPublicationStatusInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "lists:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const pub = await ctx.db
@@ -356,14 +364,14 @@ export const getPublicationStatus = query({
 /**
  * Get all bookmarked list IDs for a user.
  */
-export const getUserBookmarkIds = query({
-  args: {
-    userDid: v.string(),
-  },
-  handler: async (ctx, args) => {
+export const { public: getUserBookmarkIds, internal: getUserBookmarkIdsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "lists:read",
+  args: {},
+  handler: async (ctx) => {
     const bookmarks = await ctx.db
       .query("bookmarks")
-      .withIndex("by_user", (q) => q.eq("userDid", args.userDid))
+      .withIndex("by_user", (q) => q.eq("userDid", ctx.actor.did))
       .collect();
     return bookmarks.map((b) => b.listId);
   },

@@ -4,7 +4,7 @@
  */
 
 import { Link } from "react-router-dom";
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
@@ -18,7 +18,7 @@ export function Profile() {
   // Fetch user's lists
   const lists = useQuery(
     api.lists.getUserLists,
-    did ? { userDid: did, legacyDid: legacyDid ?? undefined } : "skip"
+    did ? {} : "skip"
   );
 
   // Fetch user stats

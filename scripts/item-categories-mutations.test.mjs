@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { createAuthFixture } from "./helpers/auth-fixture.mjs";
 
 const outdir = "tmp/item-categories-mutations-test";
 
@@ -28,10 +29,17 @@ const unwrap = (fn) => fn._handler ?? fn.handler;
 
 const OWNER = "did:webvh:QmS:boop.ad:user-owner";
 const STRANGER = "did:webvh:QmS:boop.ad:user-stranger";
+const ownerSession = await createAuthFixture(OWNER);
+const strangerSession = await createAuthFixture(STRANGER);
 
 function makeCtx({ list, items = [] } = {}) {
   const lists = [{ _id: "L1", ownerDid: OWNER, name: "Rachel's 40th", ...list }];
-  const rows = { lists, items: items.map((i) => ({ listId: "L1", ...i })) };
+  const rows = {
+    lists,
+    items: items.map((i) => ({ listId: "L1", ...i })),
+    users: [ownerSession.user, strangerSession.user],
+    accessSessions: [ownerSession.accessSession, strangerSession.accessSession],
+  };
   const byId = new Map();
   rows.lists.forEach((l) => byId.set(l._id, l));
   rows.items.forEach((i) => byId.set(i._id, i));
@@ -42,11 +50,20 @@ function makeCtx({ list, items = [] } = {}) {
       get: async (id) => byId.get(id) ?? null,
       patch: async (id, fields) => Object.assign(byId.get(id), fields),
       query: (table) => {
+        let working = rows[table] ?? [];
         const result = {
-          // Index filtering is irrelevant here: each fixture holds one list.
-          withIndex: () => result,
-          collect: async () => rows[table] ?? [],
-          first: async () => (rows[table] ?? [])[0] ?? null,
+          withIndex: (_name, fn) => {
+            const builder = {
+              eq: (field, value) => {
+                working = working.filter((row) => row[field] === value);
+                return builder;
+              },
+            };
+            fn?.(builder);
+            return result;
+          },
+          collect: async () => working,
+          first: async () => working[0] ?? null,
         };
         return result;
       },
@@ -54,7 +71,7 @@ function makeCtx({ list, items = [] } = {}) {
   };
 }
 
-const call = (fn, ctx, args) => unwrap(mod[fn])(ctx, { listId: "L1", userDid: OWNER, ...args });
+const call = (fn, ctx, args) => unwrap(mod[fn])(ctx, { listId: "L1", authToken: ownerSession.authToken, ...args });
 
 test("the first edit materialises the grocery set onto the list", async () => {
   const ctx = makeCtx();
@@ -145,8 +162,8 @@ test("the Other bucket is protected at the mutation layer too", async () => {
 test("a non-editor cannot change categories", async () => {
   const ctx = makeCtx();
   await assert.rejects(
-    () => unwrap(mod.addListCategory)(ctx, { listId: "L1", userDid: STRANGER, name: "X", emoji: "🏷️" }),
-    /permission/
+    () => unwrap(mod.addListCategory)(ctx, { listId: "L1", authToken: strangerSession.authToken, name: "X", emoji: "🏷️" }),
+    /not authorized|permission/i
   );
   assert.equal(ctx.rows.lists[0].itemCategories, undefined, "nothing persisted on refusal");
 });
@@ -171,7 +188,7 @@ test("a rejected edit leaves the stored set untouched", async () => {
 test("a missing list is an error, not a silent no-op", async () => {
   const ctx = makeCtx();
   await assert.rejects(
-    () => unwrap(mod.addListCategory)(ctx, { listId: "nope", userDid: OWNER, name: "X", emoji: "🏷️" }),
+    () => call("addListCategory", ctx, { listId: "nope", name: "X", emoji: "🏷️" }),
     /List not found/
   );
 });

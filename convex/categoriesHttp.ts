@@ -1,3 +1,4 @@
+import { authenticatedRequest } from "./lib/actor";
 /**
  * HTTP action handlers for protected category mutations.
  *
@@ -6,19 +7,9 @@
  */
 
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import {
-  requireAuth,
-  AuthError,
-  unauthorizedResponseWithCors,
-} from "./lib/auth";
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
-
-/**
- * Helper type for user info.
- */
-type UserInfo = { did: string; legacyDid?: string } | null;
 
 /**
  * POST /api/categories/create
@@ -31,15 +22,8 @@ type UserInfo = { did: string; legacyDid?: string } | null;
 export const createCategory = httpAction(async (ctx, request) => {
   try {
     // Require authentication
-    const auth = await requireAuth(request);
 
     // Get user's DID from their turnkeySubOrgId
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
-      turnkeySubOrgId: auth.turnkeySubOrgId,
-    }) as UserInfo;
-    if (!user) {
-      return errorResponse(request, "User not found", 404);
-    }
 
     // Parse request body
     const body = await request.json();
@@ -50,17 +34,15 @@ export const createCategory = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified DID
-    const categoryId = await ctx.runMutation(api.categories.createCategory, {
-      userDid: user.did,
+    const categoryId = await ctx.runMutation(internal.categories.createCategoryInternal, {
+      ...await authenticatedRequest(ctx, request),
+
       name,
       createdAt: Date.now(),
     });
 
     return jsonResponse(request, { categoryId });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[categoriesHttp] createCategory error:", error);
     return errorResponse(
       request,
@@ -81,15 +63,8 @@ export const createCategory = httpAction(async (ctx, request) => {
 export const renameCategory = httpAction(async (ctx, request) => {
   try {
     // Require authentication
-    const auth = await requireAuth(request);
 
     // Get user's DID from their turnkeySubOrgId
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
-      turnkeySubOrgId: auth.turnkeySubOrgId,
-    }) as UserInfo;
-    if (!user) {
-      return errorResponse(request, "User not found", 404);
-    }
 
     // Parse request body
     const body = await request.json();
@@ -100,17 +75,14 @@ export const renameCategory = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified DID
-    await ctx.runMutation(api.categories.renameCategory, {
+    await ctx.runMutation(internal.categories.renameCategoryInternal, {
+      ...await authenticatedRequest(ctx, request),
       categoryId: categoryId as Id<"categories">,
-      userDid: user.did,
       name,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[categoriesHttp] renameCategory error:", error);
     return errorResponse(
       request,
@@ -131,15 +103,8 @@ export const renameCategory = httpAction(async (ctx, request) => {
 export const deleteCategory = httpAction(async (ctx, request) => {
   try {
     // Require authentication
-    const auth = await requireAuth(request);
 
     // Get user's DID from their turnkeySubOrgId
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
-      turnkeySubOrgId: auth.turnkeySubOrgId,
-    }) as UserInfo;
-    if (!user) {
-      return errorResponse(request, "User not found", 404);
-    }
 
     // Parse request body
     const body = await request.json();
@@ -150,16 +115,13 @@ export const deleteCategory = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified DID
-    await ctx.runMutation(api.categories.deleteCategory, {
+    await ctx.runMutation(internal.categories.deleteCategoryInternal, {
+      ...await authenticatedRequest(ctx, request),
       categoryId: categoryId as Id<"categories">,
-      userDid: user.did,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[categoriesHttp] deleteCategory error:", error);
     return errorResponse(
       request,
@@ -180,15 +142,8 @@ export const deleteCategory = httpAction(async (ctx, request) => {
 export const setListCategory = httpAction(async (ctx, request) => {
   try {
     // Require authentication
-    const auth = await requireAuth(request);
 
     // Get user's DID from their turnkeySubOrgId
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
-      turnkeySubOrgId: auth.turnkeySubOrgId,
-    }) as UserInfo;
-    if (!user) {
-      return errorResponse(request, "User not found", 404);
-    }
 
     // Parse request body
     const body = await request.json();
@@ -199,18 +154,14 @@ export const setListCategory = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified DID
-    await ctx.runMutation(api.categories.setListCategory, {
+    await ctx.runMutation(internal.categories.setListCategoryInternal, {
+      ...await authenticatedRequest(ctx, request),
       listId: listId as Id<"lists">,
       categoryId: categoryId as Id<"categories">,
-      userDid: user.did,
-      legacyDid: user.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[categoriesHttp] setListCategory error:", error);
     return errorResponse(
       request,

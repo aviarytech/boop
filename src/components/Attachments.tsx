@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
@@ -40,7 +40,7 @@ const ALLOWED_TYPES = [
   "application/json",
 ];
 
-export function Attachments({ itemId, userDid, legacyDid, canEdit }: AttachmentsProps) {
+export function Attachments({ itemId, canEdit }: AttachmentsProps) {
   const { haptic } = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -68,8 +68,7 @@ export function Attachments({ itemId, userDid, legacyDid, canEdit }: Attachments
 
     const { uploadUrl, bucketKey } = await generateUploadUrl({
       itemId,
-      userDid,
-      legacyDid,
+
       contentType,
       byteLength: file.size,
     });
@@ -86,8 +85,7 @@ export function Attachments({ itemId, userDid, legacyDid, canEdit }: Attachments
 
     await addAttachment({
       itemId,
-      userDid,
-      legacyDid,
+
       bucketKey,
       contentType,
       size: file.size,
@@ -164,8 +162,7 @@ export function Attachments({ itemId, userDid, legacyDid, canEdit }: Attachments
       await removeAttachment({
         itemId,
         bucketKey,
-        userDid,
-        legacyDid,
+
       });
       setFailedPreviewKeys((prev) => {
         if (!prev[bucketKey]) return prev;

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useOffline } from "../hooks/useOffline";
@@ -29,7 +29,7 @@ export function Explorer() {
 
   const data = useQuery(
     api.originals.listOwnedOriginals,
-    did ? { ownerDid: did } : "skip",
+    did ? {} : "skip",
   );
 
   const filteredSorted = useMemo(() => {

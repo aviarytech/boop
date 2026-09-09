@@ -10,6 +10,7 @@ import * as jose from "jose";
  * Result of a successful token verification.
  */
 export interface AuthTokenPayload {
+  expiresAt: number;
   /** Turnkey sub-organization ID (stable user identifier) */
   turnkeySubOrgId: string;
   /** User's email address */
@@ -71,6 +72,7 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload> 
     }
 
     return {
+      expiresAt: jwtPayload.exp! * 1000,
       turnkeySubOrgId: jwtPayload.sub,
       email: jwtPayload.email,
       sessionToken: jwtPayload.sessionToken,

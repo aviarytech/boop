@@ -31,7 +31,7 @@ export const storeDidLog = httpAction(async (ctx, request) => {
   const corsHeaders = getCorsHeaders(request);
 
   try {
-    const auth = await requireAuth(request);
+    const auth = await requireAuth(ctx, request);
 
     const body = await request.json();
     const { userDid, path, log } = body as { userDid: string; path: string; log: string };

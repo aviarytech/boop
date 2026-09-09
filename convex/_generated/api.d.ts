@@ -10,6 +10,7 @@
 
 import type * as activity from "../activity.js";
 import type * as activityHttp from "../activityHttp.js";
+import type * as actorSession from "../actorSession.js";
 import type * as adminGrants from "../adminGrants.js";
 import type * as agentReadHttp from "../agentReadHttp.js";
 import type * as apiKeys from "../apiKeys.js";
@@ -45,7 +46,10 @@ import type * as lib_analytics from "../lib/analytics.js";
 import type * as lib_apiKeyHelpers from "../lib/apiKeyHelpers.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authUser from "../lib/authUser.js";
+import type * as lib_authenticated from "../lib/authenticated.js";
 import type * as lib_bucket from "../lib/bucket.js";
+import type * as lib_bucketKeys from "../lib/bucketKeys.js";
+import type * as lib_clientAuth from "../lib/clientAuth.js";
 import type * as lib_didLogAuth from "../lib/didLogAuth.js";
 import type * as lib_httpResponses from "../lib/httpResponses.js";
 import type * as lib_itemCategories from "../lib/itemCategories.js";
@@ -54,6 +58,7 @@ import type * as lib_legacyList from "../lib/legacyList.js";
 import type * as lib_listEnvelope from "../lib/listEnvelope.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_session from "../lib/session.js";
 import type * as lib_turnkeyClient from "../lib/turnkeyClient.js";
 import type * as lib_turnkeySigner from "../lib/turnkeySigner.js";
 import type * as lists from "../lists.js";
@@ -93,6 +98,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   activity: typeof activity;
   activityHttp: typeof activityHttp;
+  actorSession: typeof actorSession;
   adminGrants: typeof adminGrants;
   agentReadHttp: typeof agentReadHttp;
   apiKeys: typeof apiKeys;
@@ -128,7 +134,10 @@ declare const fullApi: ApiFromModules<{
   "lib/apiKeyHelpers": typeof lib_apiKeyHelpers;
   "lib/auth": typeof lib_auth;
   "lib/authUser": typeof lib_authUser;
+  "lib/authenticated": typeof lib_authenticated;
   "lib/bucket": typeof lib_bucket;
+  "lib/bucketKeys": typeof lib_bucketKeys;
+  "lib/clientAuth": typeof lib_clientAuth;
   "lib/didLogAuth": typeof lib_didLogAuth;
   "lib/httpResponses": typeof lib_httpResponses;
   "lib/itemCategories": typeof lib_itemCategories;
@@ -137,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   "lib/listEnvelope": typeof lib_listEnvelope;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;
+  "lib/session": typeof lib_session;
   "lib/turnkeyClient": typeof lib_turnkeyClient;
   "lib/turnkeySigner": typeof lib_turnkeySigner;
   lists: typeof lists;

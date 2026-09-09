@@ -5,7 +5,7 @@
  * All signing and DID operations are now handled server-side.
  */
 
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useAuth } from "./useAuth";
 

@@ -73,7 +73,8 @@ export function handlerErrorResponse(
   fallbackMessage: string
 ): Response {
   const message = error instanceof Error ? error.message : "";
-  if (/not authorized/i.test(message)) {
+  if (/Authentication required|Invalid or expired token|Invalid API key|User not found/i.test(message)) return errorResponse(request, "Authentication required", 401);
+  if (/not authorized|Missing scope|Identity assertion/i.test(message)) {
     return errorResponse(request, "Not authorized", 403);
   }
   return errorResponse(request, fallbackMessage, 500);

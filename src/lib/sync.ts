@@ -1,3 +1,4 @@
+import { storageAdapter } from "./storageAdapter";
 /**
  * Sync Manager for offline mutation synchronization (Phase 5.3)
  *
@@ -268,7 +269,7 @@ export class SyncManager {
     const itemId = payload.itemId;
 
     try {
-      const serverItem = await convex.query(api.items.getItemForSync, { itemId });
+      const serverItem = await convex.query(api.items.getItemForSync, { itemId, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
 
       if (!serverItem) {
         // Item was deleted remotely
@@ -304,73 +305,73 @@ export class SyncManager {
     switch (mutation.type) {
       case "addItem": {
         const payload = mutation.payload as AddItemPayload;
-        await convex.mutation(api.items.addItem, payload);
+        await convex.mutation(api.items.addItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "checkItem": {
         const payload = mutation.payload as CheckItemPayload;
-        await convex.mutation(api.items.checkItem, payload);
+        await convex.mutation(api.items.checkItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "uncheckItem": {
         const payload = mutation.payload as UncheckItemPayload;
-        await convex.mutation(api.items.uncheckItem, payload);
+        await convex.mutation(api.items.uncheckItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "reorderItem": {
         const payload = mutation.payload as ReorderItemPayload;
-        await convex.mutation(api.items.reorderItems, payload);
+        await convex.mutation(api.items.reorderItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "updateItem": {
         const payload = mutation.payload as UpdateItemPayload;
-        await convex.mutation(api.items.updateItem, payload);
+        await convex.mutation(api.items.updateItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "removeItem": {
         const payload = mutation.payload as RemoveItemPayload;
-        await convex.mutation(api.items.removeItem, payload);
+        await convex.mutation(api.items.removeItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "batchCheckItems": {
         const payload = mutation.payload as BatchCheckItemsPayload;
-        await convex.mutation(api.items.batchCheckItems, payload);
+        await convex.mutation(api.items.batchCheckItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "batchUncheckItems": {
         const payload = mutation.payload as BatchUncheckItemsPayload;
-        await convex.mutation(api.items.batchUncheckItems, payload);
+        await convex.mutation(api.items.batchUncheckItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "batchDeleteItems": {
         const payload = mutation.payload as BatchDeleteItemsPayload;
-        await convex.mutation(api.items.batchDeleteItems, payload);
+        await convex.mutation(api.items.batchDeleteItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "createList": {
         const payload = mutation.payload as CreateListPayload;
-        await convex.mutation(api.lists.createList, payload);
+        await convex.mutation(api.lists.createList, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "renameList": {
         const payload = mutation.payload as RenameListPayload;
-        await convex.mutation(api.lists.renameList, payload);
+        await convex.mutation(api.lists.renameList, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "deleteList": {
         const payload = mutation.payload as DeleteListPayload;
-        await convex.mutation(api.lists.deleteList, payload);
+        await convex.mutation(api.lists.deleteList, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 

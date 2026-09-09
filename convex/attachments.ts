@@ -1,18 +1,13 @@
+import { isDirectChildKey } from "./lib/bucketKeys";
+import { canUserEditList } from "./lib/permissions";
+import { actorAction, actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * File attachments for list items — stored in Railway Bucket.
  */
 
 import { v } from "convex/values";
-import {
-  action,
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-} from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   bucketKey as makeBucketKey,
   deleteObject,
@@ -37,33 +32,11 @@ function extensionFor(contentType: string): string {
   return EXT_BY_CONTENT_TYPE[contentType] ?? "bin";
 }
 
-async function canUserEditList(
-  ctx: MutationCtx | QueryCtx,
-  listId: Id<"lists">,
-  userDid: string,
-  legacyDid?: string
-): Promise<boolean> {
-  const list = await ctx.db.get(listId);
-  if (!list) return false;
-
-  const dids = [userDid];
-  if (legacyDid) dids.push(legacyDid);
-
-  if (dids.includes(list.ownerDid)) return true;
-
-  const pub = await ctx.db
-    .query("publications")
-    .withIndex("by_list", (q) => q.eq("listId", listId))
-    .first();
-
-  return pub?.status === "active";
-}
-
-export const generateUploadUrl = action({
+export const { public: generateUploadUrl, internal: generateUploadUrlInternal } = actorAction({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
     contentType: v.string(),
     byteLength: v.number(),
   },
@@ -80,8 +53,8 @@ export const generateUploadUrl = action({
 
     const owned = await ctx.runQuery(internal.attachments.assertItemEditable, {
       itemId: args.itemId,
-      userDid: args.userDid,
-      legacyDid: args.legacyDid,
+      userDid: ctx.actor.did,
+      legacyDid: ctx.actor.legacyDid,
     });
     if (!owned) {
       throw new Error("Not authorized to add attachments to this item");
@@ -100,11 +73,11 @@ export const generateUploadUrl = action({
   },
 });
 
-export const addAttachment = mutation({
+export const { public: addAttachment, internal: addAttachmentInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
     bucketKey: v.string(),
     contentType: v.string(),
     size: v.number(),
@@ -114,11 +87,12 @@ export const addAttachment = mutation({
     const item = await ctx.db.get(args.itemId);
     if (!item) throw new Error("Item not found");
 
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
+    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
       throw new Error("Not authorized to add attachments to this item");
     }
 
+    if (!isDirectChildKey(args.bucketKey, `attachments/${args.itemId}`)) throw new Error("Invalid attachment key");
     const current = item.attachments ?? [];
     await ctx.db.patch(args.itemId, {
       attachments: [
@@ -135,23 +109,24 @@ export const addAttachment = mutation({
   },
 });
 
-export const removeAttachment = action({
+export const { public: removeAttachment, internal: removeAttachmentInternal } = actorAction({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
     bucketKey: v.string(),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<void> => {
     const owned = await ctx.runQuery(internal.attachments.assertItemEditable, {
       itemId: args.itemId,
-      userDid: args.userDid,
-      legacyDid: args.legacyDid,
+      userDid: ctx.actor.did,
+      legacyDid: ctx.actor.legacyDid,
     });
     if (!owned) {
       throw new Error("Not authorized to remove attachments from this item");
     }
 
+    if (!owned.keys.includes(args.bucketKey)) throw new Error("Attachment not found on this item");
     await deleteObject(args.bucketKey);
     await ctx.runMutation(internal.attachments.dropAttachment, {
       itemId: args.itemId,
@@ -160,7 +135,9 @@ export const removeAttachment = action({
   },
 });
 
-export const getAttachmentUrls = query({
+export const { public: getAttachmentUrls, internal: getAttachmentUrlsInternal } = actorQuery({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:read",
   args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -194,7 +171,7 @@ export const assertItemEditable = internalQuery({
     const item = await ctx.db.get(args.itemId);
     if (!item) return null;
     const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
-    return canEdit ? { itemId: item._id } : null;
+    return canEdit ? { itemId: item._id, keys: (item.attachments ?? []).filter(entry => typeof entry === "object").map(entry => entry.key) } : null;
   },
 });
 

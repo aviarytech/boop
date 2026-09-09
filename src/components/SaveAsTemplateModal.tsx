@@ -4,7 +4,7 @@
  */
 
 import { useState, type FormEvent } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -57,7 +57,6 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
         templateName: trimmedName,
         description: description.trim() || undefined,
         isPublic,
-        userDid: did,
       });
 
       haptic('success');

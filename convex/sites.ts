@@ -1,5 +1,7 @@
+import { isResourceOwner } from "./lib/permissions";
+import { actorAction, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
-import { action, internalQuery, query } from "./_generated/server";
+import { internalQuery, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
   bucketKey as makeBucketKey,
@@ -11,17 +13,18 @@ const UPLOAD_EXPIRY_SEC = 600;
 const PREVIEW_EXPIRY_SEC = 300;
 const SITE_HTML_CONTENT_TYPE = "text/html; charset=utf-8";
 
-function newSiteBucketKey(): string {
-  return makeBucketKey("siteFiles", `${crypto.randomUUID()}.html`);
+function newSiteBucketKey(ownerDid: string): string {
+  return makeBucketKey("siteFiles", encodeURIComponent(ownerDid), `${crypto.randomUUID()}.html`);
 }
 
-export const generateSiteUploadUrl = action({
-  args: { ownerDid: v.string() },
+export const { public: generateSiteUploadUrl, internal: generateSiteUploadUrlInternal } = actorAction({
+  resources: () => ({}),
+  scope: "*",
+  args: {},
   handler: async (
-    _ctx,
-    _args
+    ctx
   ): Promise<{ uploadUrl: string; bucketKey: string }> => {
-    const key = newSiteBucketKey();
+    const key = newSiteBucketKey(ctx.actor.did);
     const uploadUrl = await presignPut(key, {
       contentType: SITE_HTML_CONTENT_TYPE,
       expiresSec: UPLOAD_EXPIRY_SEC,
@@ -30,14 +33,14 @@ export const generateSiteUploadUrl = action({
   },
 });
 
-export const listSites = query({
-  args: { ownerDid: v.string() },
-  handler: async (ctx, args) => {
-    const sites = await ctx.db
-      .query("sites")
-      .withIndex("by_owner", (q) => q.eq("ownerDid", args.ownerDid))
-      .order("desc")
-      .collect();
+export const { public: listSites, internal: listSitesInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "*",
+  args: {},
+  handler: async (ctx) => {
+    const identities = [ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did);
+    const sites = (await Promise.all(identities.map(did => ctx.db.query("sites")
+      .withIndex("by_owner", q => q.eq("ownerDid", did)).order("desc").collect()))).flat();
 
     return Promise.all(
       sites.map(async (site) => {
@@ -50,14 +53,15 @@ export const listSites = query({
   },
 });
 
-export const getSite = query({
+export const { public: getSite, internal: getSiteInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "*",
   args: {
     siteId: v.id("sites"),
-    ownerDid: v.string(),
   },
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) return null;
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, ctx.actor.did)) return null;
 
     const [file, key, hostnames, didLogEntries] = await Promise.all([
       ctx.db.get(site.fileId),
@@ -101,12 +105,14 @@ export const getSite = query({
   },
 });
 
-export const getSitePreviewUrl = action({
-  args: { siteId: v.id("sites"), ownerDid: v.string() },
+export const { public: getSitePreviewUrl, internal: getSitePreviewUrlInternal } = actorAction({
+  resources: () => ({}),
+  scope: "*",
+  args: { siteId: v.id("sites") },
   handler: async (ctx, args): Promise<string | null> => {
     const site = await ctx.runQuery(internal.sites.getSiteFileBucketKey, {
       siteId: args.siteId,
-      ownerDid: args.ownerDid,
+      ownerDid: ctx.actor.did,
     });
     if (!site?.bucketKey) return null;
     return await presignGet(site.bucketKey, { expiresSec: PREVIEW_EXPIRY_SEC });
@@ -117,7 +123,7 @@ export const getSiteFileBucketKey = internalQuery({
   args: { siteId: v.id("sites"), ownerDid: v.string() },
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) return null;
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, args.ownerDid)) return null;
     const file = await ctx.db.get(site.fileId);
     if (!file) return null;
     return { bucketKey: file.bucketKey ?? null };

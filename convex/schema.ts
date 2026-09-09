@@ -9,6 +9,12 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  accessSessions: defineTable({
+    tokenHash: v.string(),
+    subject: v.string(),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  }).index("by_hash", ["tokenHash"]),
   // DID logs table - stores did:webvh logs for resolution
   didLogs: defineTable({
     userDid: v.string(), // The user's did:webvh

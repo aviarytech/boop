@@ -1,61 +1,30 @@
+import { canUserEditList, canUserViewList } from "./lib/permissions";
+import { actorQuery, actorMutation } from "./lib/authenticated";
 /**
  * Comments API - Threaded discussions on items for shared lists.
  * Enables collaboration through item-level comments.
  */
 
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
 
 /**
  * Helper to check if a user can view a list.
  * Owner can always view. Published lists are viewable by anyone.
  */
-async function canUserViewList(
-  ctx: MutationCtx | QueryCtx,
-  listId: Id<"lists">,
-  userDid: string,
-  legacyDid?: string
-): Promise<boolean> {
-  const list = await ctx.db.get(listId);
-  if (!list) return false;
-
-  const dids = [userDid];
-  if (legacyDid) dids.push(legacyDid);
-
-  if (dids.includes(list.ownerDid)) return true;
-
-  // Published lists are viewable by anyone
-  const pub = await ctx.db
-    .query("publications")
-    .withIndex("by_list", (q) => q.eq("listId", listId))
-    .first();
-
-  return pub?.status === "active";
-}
 
 /**
  * Helper to check if a user can edit a list.
  * Owner can always edit. Published lists are editable by anyone.
  */
-async function canUserEditList(
-  ctx: MutationCtx | QueryCtx,
-  listId: Id<"lists">,
-  userDid: string,
-  legacyDid?: string
-): Promise<boolean> {
-  return canUserViewList(ctx, listId, userDid, legacyDid);
-}
 
 /**
  * Get all comments for an item, ordered by creation time.
  */
-export const getItemComments = query({
+export const { public: getItemComments, internal: getItemCommentsInternal } = actorQuery({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:read",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -67,8 +36,8 @@ export const getItemComments = query({
     const canView = await canUserViewList(
       ctx,
       item.listId,
-      args.userDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canView) {
       throw new Error("Not authorized to view comments on this item");
@@ -88,11 +57,11 @@ export const getItemComments = query({
  * Add a comment to an item.
  * Any collaborator (owner, editor, or viewer) can comment.
  */
-export const addComment = mutation({
+export const { public: addComment, internal: addCommentInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
   args: {
     itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
     text: v.string(),
   },
   handler: async (ctx, args) => {
@@ -109,8 +78,8 @@ export const addComment = mutation({
     const canView = await canUserViewList(
       ctx,
       item.listId,
-      args.userDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
     if (!canView) {
       throw new Error("Not authorized to comment on this item");
@@ -118,7 +87,7 @@ export const addComment = mutation({
 
     return await ctx.db.insert("comments", {
       itemId: args.itemId,
-      userDid: args.userDid,
+      userDid: ctx.actor.did,
       text: args.text.trim(),
       createdAt: Date.now(),
     });
@@ -129,11 +98,11 @@ export const addComment = mutation({
  * Delete a comment.
  * Only the comment author or list owner/editor can delete.
  */
-export const deleteComment = mutation({
+export const { public: deleteComment, internal: deleteCommentInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "items:write",
   args: {
     commentId: v.id("comments"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const comment = await ctx.db.get(args.commentId);
@@ -146,9 +115,9 @@ export const deleteComment = mutation({
       throw new Error("Item not found");
     }
 
-    const didsToCheck = [args.userDid];
-    if (args.legacyDid) {
-      didsToCheck.push(args.legacyDid);
+    const didsToCheck = [ctx.actor.did];
+    if (ctx.actor.legacyDid) {
+      didsToCheck.push(ctx.actor.legacyDid);
     }
 
     // Check if user is the comment author
@@ -158,8 +127,8 @@ export const deleteComment = mutation({
     const canEdit = await canUserEditList(
       ctx,
       item.listId,
-      args.userDid,
-      args.legacyDid
+      ctx.actor.did,
+      ctx.actor.legacyDid
     );
 
     if (!isAuthor && !canEdit) {
@@ -173,7 +142,9 @@ export const deleteComment = mutation({
 /**
  * Get comment count for an item (useful for showing badge on item).
  */
-export const getCommentCount = query({
+export const { public: getCommentCount, internal: getCommentCountInternal } = actorQuery({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:read",
   args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
     const comments = await ctx.db
