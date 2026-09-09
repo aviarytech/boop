@@ -939,7 +939,7 @@ export const { public: promoteItem, internal: promoteItemInternal } = actorMutat
  * Ensures we don't exceed max nesting depth (2 levels).
  */
 export const { public: demoteItem, internal: demoteItemInternal } = actorMutation({
-  resources: args => ({ items: [args.itemId] }),
+  resources: args => ({ items: [args.itemId, args.newParentId] }),
   scope: "items:write",
   args: {
     itemId: v.id("items"),

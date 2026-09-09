@@ -230,19 +230,14 @@ export class SyncManager {
             // A resource denial must not block unrelated edits or prompt a new login.
             if (mutation.retryCount >= MAX_RETRIES) {
               await clearMutation(mutation.id!);
-              failureMessage = "An offline edit was discarded because access to its resource is unavailable.";
+              failureMessage = "An offline edit was discarded because its resource may have been removed or access is unavailable.";
             } else {
               await updateMutationRetry(mutation.id!, mutation.retryCount + 1);
-              failureMessage = "Some offline edits could not sync because access to their resources is unavailable. Other edits can still sync.";
+              failureMessage = "Some offline edits could not sync because their resources may have been removed or access is unavailable. Other edits can still sync.";
+              const delay = RETRY_DELAYS[mutation.retryCount] ?? 16000;
+              await this.delay(delay);
             }
             showGlobalToast(failureMessage, "warning");
-            continue;
-          }
-
-          // Only missing resources imply deletion; a missing user is an auth failure.
-          if (errorMessage.includes("Item not found") || errorMessage.includes("List not found")) {
-            await clearMutation(mutation.id!);
-            showGlobalToast("Item was deleted by another user", "warning");
             continue;
           }
 
@@ -299,14 +294,6 @@ export class SyncManager {
 
     try {
       const serverItem = await convex.query(api.items.getItemForSync, { itemId, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
-
-      if (!serverItem) {
-        // Item was deleted remotely
-        return {
-          hasConflict: true,
-          reason: "Item was deleted by another user",
-        };
-      }
 
       // Check if server has newer data
       if (serverItem.updatedAt && serverItem.updatedAt > mutation.timestamp) {

@@ -1,5 +1,6 @@
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { actorQuery, actorMutation } from "./lib/authenticated";
+import { resourceUnavailable } from "./lib/authError";
 /**
  * Comments API - Threaded discussions on items for shared lists.
  * Enables collaboration through item-level comments.
@@ -107,12 +108,12 @@ export const { public: deleteComment, internal: deleteCommentInternal } = actorM
   handler: async (ctx, args) => {
     const comment = await ctx.db.get(args.commentId);
     if (!comment) {
-      throw new Error("Comment not found");
+      throw resourceUnavailable();
     }
 
     const item = await ctx.db.get(comment.itemId);
     if (!item) {
-      throw new Error("Item not found");
+      throw resourceUnavailable();
     }
 
     const didsToCheck = [ctx.actor.did];
@@ -132,7 +133,7 @@ export const { public: deleteComment, internal: deleteCommentInternal } = actorM
     );
 
     if (!isAuthor && !canEdit) {
-      throw new Error("Not authorized to delete this comment");
+      throw resourceUnavailable();
     }
 
     await ctx.db.delete(args.commentId);

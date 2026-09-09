@@ -66,7 +66,7 @@ export function errorResponse(
  *
  * Convex wraps handler throws with a stack trace naming internal source files,
  * so never echo the raw message to an API client: authorization failures become
- * a clean 403, everything else a generic 500 (details go to the server log).
+ * a clean 401 or 403, everything else a generic 500 (details go to the server log).
  */
 export function handlerErrorResponse(
   request: Request,
@@ -74,13 +74,14 @@ export function handlerErrorResponse(
   fallbackMessage: string
 ): Response {
   const auth = authErrorData(error);
-  if (auth?.code === "FORBIDDEN") return errorResponse(request, "Not authorized", 403);
-  const message = auth?.message ?? (error instanceof Error ? error.message : "");
+  if (auth) return auth.code === "FORBIDDEN"
+    ? errorResponse(request, "Not authorized", 403)
+    : errorResponse(request, "Authentication required", 401);
+  const message = error instanceof Error ? error.message : "";
   if (/Authentication required|Invalid or expired token|Invalid API key|User not found/i.test(message)) return errorResponse(request, "Authentication required", 401);
   if (/not authorized|Only the list|Missing scope|Identity assertion/i.test(message)) {
     return errorResponse(request, "Not authorized", 403);
   }
-  if (auth) return errorResponse(request, "Authentication required", 401);
   return errorResponse(request, fallbackMessage, 500);
 }
 

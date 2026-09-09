@@ -8,7 +8,7 @@ import { ConvexError, convexToJson, jsonToConvex } from 'convex/values';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'boundary-test-secret-not-a-deployed-credential';
-const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','didCreation','billing','referrals','feedback','notificationActions','categories','templates','notifications'];
+const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','didCreation','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses'];
 await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/auth-boundary-test', bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*','@originals/*','@turnkey/*','didwebvh-ts','@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/auth-boundary-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
@@ -353,4 +353,58 @@ test('missing and inaccessible resources have identical production RPC responses
 
 test('single-list reads return the same empty result for missing and inaccessible lists',async()=>{
   for(const listId of ['L1','missing'])assert.equal(await call('lists','getList',fixture(),{authToken:strangerToken,listId}),null);
+});
+
+test('demotion conceals unknown and inaccessible parent IDs before changing an owned item',async()=>{
+  for(const fn of ['demoteItem','demoteItemInternal']) {
+    const errors=[];
+    for(const newParentId of ['missing','I2']) {
+      const ctx=fixture();const before=structuredClone(ctx.rows.items);
+      await assert.rejects(()=>call('items',fn,ctx,{authToken:ownerToken,itemId:'I1',newParentId}),error=>{
+        assert.ok(error instanceof ConvexError);errors.push(jsonToConvex(convexToJson(error.data)));return true;
+      });
+      assert.deepEqual(ctx.rows.items,before);
+    }
+    assert.deepEqual(errors[0],errors[1]);
+    assert.deepEqual(errors[0],{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'});
+    const ctx=fixture({migrated:true});
+    ctx.rows.items.push({_id:'parent',listId:'L1',name:'Parent',createdAt:1});
+    await call('items',fn,ctx,{authToken:ownerToken,itemId:'I1',newParentId:'parent'});
+    assert.equal(ctx.rows.items[0].parentId,'parent');
+  }
+});
+
+test('comment deletion conceals missing, orphaned, and inaccessible comments while retaining author and editor access',async()=>{
+  const errors=[];
+  for(const commentId of ['missing','private','orphan']) {
+    const ctx=fixture();
+    ctx.rows.comments=[{_id:'private',itemId:'I2',userDid:'did:other',text:'Private'},
+      {_id:'orphan',itemId:'missing-item',userDid:'did:other',text:'Orphan'}];
+    const before=structuredClone(ctx.rows.comments);
+    await assert.rejects(()=>call('comments','deleteComment',ctx,{authToken:ownerToken,commentId}),error=>{
+      assert.ok(error instanceof ConvexError);errors.push(jsonToConvex(convexToJson(error.data)));return true;
+    });
+    assert.deepEqual(ctx.rows.comments,before);
+  }
+  assert.ok(errors.every(e=>JSON.stringify(e)===JSON.stringify(errors[0])));
+  assert.deepEqual(errors[0],{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'});
+  for(const [author,itemId] of [['did:owner','I2'],['did:legacy','I2'],['did:other','I1']]) {
+    const ctx=fixture({migrated:true});ctx.rows.comments=[{_id:'comment',itemId,userDid:author,text:'Comment'}];
+    await call('comments','deleteComment',ctx,{authToken:ownerToken,commentId:'comment'});
+    assert.deepEqual(ctx.rows.comments,[]);
+  }
+  const shared=fixture({published:true});shared.rows.comments=[{_id:'comment',itemId:'I1',userDid:'did:owner',text:'Shared'}];
+  await call('comments','deleteComment',shared,{authToken:strangerToken,commentId:'comment'});
+  assert.deepEqual(shared.rows.comments,[]);
+});
+
+test('identity assertion RPC errors retain their authentication status over HTTP',async()=>{
+  const ctx=fixture();let received;
+  await assert.rejects(()=>call('items','checkItem',ctx,{authToken:ownerToken,itemId:'I1',checkedAt:10,checkedByDid:'did:stranger'}),error=>{
+    assert.ok(error instanceof ConvexError);received=new ConvexError(jsonToConvex(convexToJson(error.data)));return true;
+  });
+  assert.equal(received.data.code,'UNAUTHORIZED');
+  const response=modules['lib/httpResponses'].handlerErrorResponse(new Request('https://test/api/items/check'),received,'Failed');
+  assert.equal(response.status,401);assert.deepEqual(await response.json(),{error:'Authentication required'});
+  assert.equal(ctx.rows.items[0].checked,false);
 });
