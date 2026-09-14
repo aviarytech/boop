@@ -79,10 +79,10 @@ export function Settings({ onClose }: SettingsProps) {
     setLogoutSubmitting(true);
     try {
       await logout();
+    } catch (error) {
+      console.error('[Settings] Logout cleanup failed:', error);
+    } finally {
       onClose();
-    } catch {
-      addToast('Failed to log out. Please try again.', 'error');
-      setLogoutSubmitting(false);
     }
   };
 
