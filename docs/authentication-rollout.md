@@ -1,6 +1,6 @@
 # Authenticated operations rollout
 
-This change is under review in PR #241; Railway has built a PR preview. Production cutover remains unapproved. Do not retire compatibility names or deploy the authorization cutover until the deployed-client inventory below is confirmed. Merely retaining a function name does not make an old unauthenticated client compatible.
+The authenticated boundary was merged in PR #241. The release owner requested removal of the automatic deployment gate on 2026-09-14 and selected the existing dev environment for staging validation. The client inventory and staging results below remain pending; removing the build check does not attest that they passed. Do not retire compatibility names until supported client versions and usage have been confirmed. Merely retaining a function name does not make an old unauthenticated client compatible.
 
 ## Client evidence required
 
@@ -11,7 +11,7 @@ This change is under review in PR #241; Railway has built a PR preview. Producti
 | Android | versionName 1.0, versionCode 1 | Play/internal-track releases, supported installed versions, and minimum-version/update policy |
 | HTTP/agents | JWT and X-API-Key adapters retained | Active integrations and confirmation whether any bypass HTTP and call Convex directly |
 
-Local version strings are not evidence of deployed or active versions. No release inventory or production verification was available in this task. The release owner must record confirmation before production deployment. Unauthenticated direct callers must upgrade; there is no safe fallback that accepts an asserted identity.
+Local version strings are not evidence of deployed or active versions. No release inventory or production verification was available in this task. Record actual confirmation as rollout validation proceeds. Unauthenticated direct callers must upgrade; there is no safe fallback that accepts an asserted identity.
 
 ## Boundary and compatibility
 
@@ -29,19 +29,17 @@ Local version strings are not evidence of deployed or active versions. No releas
 1. Confirm the inventory above, including old mobile builds and stale browser tabs. Choose the supported client floor and user update/reauthentication messaging.
 2. In staging, deploy the schema/functions together, then the matching browser/native clients. Verify scheduling is operational for session expiry. A frontend deployed against the previous backend will not find `actorSession.establish`; an old frontend against the secured backend cannot make unauthenticated direct calls. Coordinate the cutover or enforce an update window.
 3. Validate OTP login/new-account DID setup, session restore, logout/expired-session invalidation, private list reads, shared edit/unpublish, attachment upload/read/removal, publishing and migrated accounts on web/iOS/Android. Test old valid JWT HTTP clients and current/legacy-owner API keys, then revoke keys and test insufficient scopes. Use designated test accounts and lists.
-4. Approve the production cutover only after those checks and version confirmation. Remove old public names/assertion validators only in a later release after usage and supported versions demonstrate they are unused.
+4. Record the results and any remaining gaps for the release owner. Production deployment no longer waits on this record. Remove old public names/assertion validators only in a later release after usage and supported versions demonstrate they are unused.
 
-## Enforced production gate
+## Release evidence and manual checks
 
-`release/authentication-cutover.json` is the durable approval record. It is intentionally pending: fill in the deployed/supported versions and evidence for browser, iOS, Android and integrations, link the staging results, and have the named release owner record approval and its date in a reviewed commit. Evidence must identify actual releases and exercised behavior; source version strings alone are insufficient. If a platform has no supported deployments, record the inventory evidence establishing that fact.
+`release/authentication-cutover.json` retains the rollout evidence and approval record. It is intentionally pending: fill in the deployed/supported versions and evidence for browser, iOS, Android and integrations, link the staging results, and record owner approval only when it is actually given. Evidence must identify actual releases and exercised behavior; source version strings alone are insufficient. If a platform has no supported deployments, record the inventory evidence establishing that fact.
 
-The Convex production workflow runs `scripts/check-authentication-cutover.mjs` before dependencies or deployment secrets are used. Railway's configured build runs the same check before the production frontend build. Missing or unknown environment names require approval; only `boop-pr-<number>`, `staging`, and `development` bypass the production approval check. Railway provides the environment name during builds ([reference variables](https://docs.railway.com/variables/reference)). Local builds remain available for verification.
+The Convex workflow and Railway build no longer invoke `scripts/check-authentication-cutover.mjs`. The checker remains available as an optional manual completeness check; run `node scripts/check-authentication-cutover.mjs` when validating the record. It will report missing evidence until the record is complete. Local, dev, preview, and production builds do not depend on its result.
 
-The record is an auditable release attestation, not proof of who approved it. On 2026-09-09, GitHub reported `main` as unprotected, no repository rulesets, and no `CODEOWNERS` file. Required owner review is therefore not enforced. The repository owner must configure required review/protected release settings before treating this as an owner-only approval mechanism; this task did not change live repository policy.
+The record is an auditable release attestation, not proof of who approved it. On 2026-09-09, GitHub reported `main` as unprotected, no repository rulesets, and no `CODEOWNERS` file. This change does not configure required owner review or change live repository policy.
 
-These guards cover the repository's configured deployment paths; operators must apply the same check before any manual production deploy.
-
-Until the record is approved, merging this PR intentionally blocks every subsequent production Convex deployment, including unrelated hotfixes, and every production Railway build. A later full deployment includes this authentication change even when its latest commit is unrelated, so filtering by the latest changed files would bypass the cutover gate. Complete the inventory and staging approval before merging; if an urgent unrelated hotfix is needed first, ship it before this PR. Use staging/PR previews to collect the required evidence. No production settings or live client inventory were changed by this review fix.
+The removal lifts the automatic block on all configured production builds and Convex deployments, including unrelated hotfixes. It does not change authentication, resource authorization, API scopes, migrated-account access, or compatibility retirement requirements. Use the existing dev environment for staging checks with designated test accounts; record observed results rather than filling the evidence fields merely to satisfy the checker.
 
 ## Compatibility retirement follow-up: AUTH-COMPAT-RETIREMENT
 
@@ -61,7 +59,7 @@ Release owner: Brian (`brianorwhatever`, PR author). Observe continuously for th
 
 ## Evidence limits
 
-Regression tests exercise real signed JWT verification, database-owned identities, handler business behavior and HTTP-to-internal dispatch against in-memory fixtures. React provider tests exercise restore acceptance, rejection cleanup, and logout/login serialization; adapter tests cover token changes and long-session expiry. Convex code generation/type analysis, TypeScript and the application build validate integration statically. The repository lint baseline and any new diagnostics are checked separately. These do not prove live OTP delivery, WebSocket cache invalidation timing, bucket upload completion or deployed native behavior. Those checks remain staging/production release gates above.
+Regression tests exercise real signed JWT verification, database-owned identities, handler business behavior and HTTP-to-internal dispatch against in-memory fixtures. React provider tests exercise restore acceptance, rejection cleanup, and logout/login serialization; adapter tests cover token changes and long-session expiry. Convex code generation/type analysis, TypeScript and the application build validate integration statically. The repository lint baseline and any new diagnostics are checked separately. These do not prove live OTP delivery, WebSocket cache invalidation timing, bucket upload completion or deployed native behavior. Those checks remain part of the rollout validation checklist above.
 
 ## Local validation
 

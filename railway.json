@@ -2,7 +2,7 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "node scripts/check-authentication-cutover.mjs --railway && npm run build"
+    "buildCommand": "npm run build"
   },
   "deploy": {
     "startCommand": "bun server.ts",
