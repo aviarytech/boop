@@ -1,3 +1,4 @@
+import { actorMutation } from "./lib/authenticated";
 /**
  * Queries for serving list resources publicly.
  *
@@ -6,7 +7,7 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -32,7 +33,8 @@ export const getPublicList = query({
       return null;
     }
 
-    return list;
+    const pub = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", list._id)).first();
+    return pub?.status === "active" ? list : null;
   },
 });
 
@@ -45,6 +47,8 @@ export const getPublicListItems = query({
     listId: v.id("lists"),
   },
   handler: async (ctx, args) => {
+    const pub = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", args.listId)).first();
+    if (pub?.status !== "active") return [];
     const items = await ctx.db
       .query("items")
       .withIndex("by_list", (q) => q.eq("listId", args.listId))
@@ -83,7 +87,10 @@ export const getListById = query({
   args: { listId: v.string() },
   handler: async (ctx, args) => {
     try {
-      return await ctx.db.get(args.listId as Id<"lists">);
+      const list = await ctx.db.get(args.listId as Id<"lists">);
+      if (!list) return null;
+      const pub = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", list._id)).first();
+      return pub?.status === "active" ? list : null;
     } catch {
       return null;
     }
@@ -109,7 +116,9 @@ export const getActivePublicationByListId = query({
 /**
  * Mark a shared-list item as checked (public link access).
  */
-export const checkSharedItem = mutation({
+export const { public: checkSharedItem, internal: checkSharedItemInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId], items: [args.itemId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     itemId: v.id("items"),
@@ -122,6 +131,7 @@ export const checkSharedItem = mutation({
 
     await ctx.db.patch(args.itemId, {
       checked: true,
+      checkedByDid: ctx.actor.did,
       checkedAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -133,7 +143,9 @@ export const checkSharedItem = mutation({
 /**
  * Mark a shared-list item as unchecked (public link access).
  */
-export const uncheckSharedItem = mutation({
+export const { public: uncheckSharedItem, internal: uncheckSharedItemInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId], items: [args.itemId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     itemId: v.id("items"),
@@ -146,6 +158,7 @@ export const uncheckSharedItem = mutation({
 
     await ctx.db.patch(args.itemId, {
       checked: false,
+      checkedByDid: undefined,
       checkedAt: undefined,
       updatedAt: Date.now(),
     });

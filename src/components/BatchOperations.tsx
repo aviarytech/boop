@@ -3,7 +3,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";

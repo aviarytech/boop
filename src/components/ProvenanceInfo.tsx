@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { useNavigate } from "react-router-dom";
@@ -272,7 +272,6 @@ function CopyForProvenance({ list }: { list: Doc<"lists"> }) {
         assetDid: asset.assetDid,
         celEnvelope: asset.envelope,
         name,
-        ownerDid: did,
         createdAt: Date.now(),
       });
       navigate(`/list/${listId}`);

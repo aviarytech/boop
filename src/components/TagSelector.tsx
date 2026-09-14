@@ -3,7 +3,7 @@
  */
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
@@ -33,8 +33,6 @@ export function TagSelector({
   listId,
   itemId,
   selectedTagIds,
-  userDid,
-  legacyDid,
   canEdit,
 }: TagSelectorProps) {
   const { haptic } = useSettings();
@@ -60,16 +58,14 @@ export function TagSelector({
         listId,
         name: newTagName.trim(),
         color: newTagColor,
-        userDid,
-        legacyDid,
+
       });
       
       // Automatically add the new tag to the current item
       await addTagToItem({
         itemId,
         tagId: newTagId,
-        userDid,
-        legacyDid,
+
       });
       
       haptic("success");
@@ -92,15 +88,13 @@ export function TagSelector({
         await removeTagFromItem({
           itemId,
           tagId,
-          userDid,
-          legacyDid,
+
         });
       } else {
         await addTagToItem({
           itemId,
           tagId,
-          userDid,
-          legacyDid,
+
         });
       }
     } catch (err) {

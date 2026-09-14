@@ -6,7 +6,7 @@
  */
 
 import { memo } from "react";
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";

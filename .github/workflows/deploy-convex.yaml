@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'convex/**'
+      - 'release/authentication-cutover.json'
+      - 'scripts/check-authentication-cutover.mjs'
+      - '.github/workflows/deploy-convex.yaml'
   workflow_dispatch:
 
 jobs:
@@ -17,6 +20,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Require authenticated-client rollout evidence
+        run: node scripts/check-authentication-cutover.mjs
 
       - name: Install dependencies
         run: npm ci

@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { Link } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
@@ -26,12 +26,8 @@ type HighPriorityItem = {
  */
 function PriorityItem({
   itemData,
-  userDid,
-  legacyDid,
 }: {
   itemData: HighPriorityItem;
-  userDid: string;
-  legacyDid?: string;
 }) {
   const { haptic } = useSettings();
   const checkItem = useMutation(api.items.checkItem);
@@ -41,8 +37,6 @@ function PriorityItem({
     haptic("success");
     await checkItem({
       itemId: item._id,
-      checkedByDid: userDid,
-      legacyDid: legacyDid ?? undefined,
       checkedAt: Date.now(),
     });
   };
@@ -181,13 +175,13 @@ function NoPriorityItemsEmptyState() {
 }
 
 export function PriorityFocus() {
-  const { did, legacyDid, isLoading: userLoading } = useCurrentUser();
+  const { did, isLoading: userLoading } = useCurrentUser();
   const { haptic } = useSettings();
 
   // Query high-priority items across all lists
   const highPriorityData = useQuery(
     api.items.getHighPriorityItems,
-    did ? { userDid: did, legacyDid: legacyDid ?? undefined } : "skip"
+    did ? {} : "skip"
   );
 
   // Group items by list for better organization
@@ -297,8 +291,6 @@ export function PriorityFocus() {
                   <PriorityItem
                     key={itemData.item._id}
                     itemData={itemData}
-                    userDid={did}
-                    legacyDid={legacyDid ?? undefined}
                   />
                 ))}
               </div>

@@ -7,7 +7,7 @@
  */
 
 import { useState, useRef, lazy, Suspense, memo } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ItemAttribution } from "./ItemAttribution";
@@ -119,7 +119,7 @@ export const ListItem = memo(function ListItem({
         if (onUncheck) {
           await onUncheck(item._id, userDid, legacyDid);
         } else {
-          await uncheckItemMutation({ itemId: item._id, userDid, legacyDid });
+          await uncheckItemMutation({ itemId: item._id,   });
         }
       } else {
         if (onCheck) {
@@ -127,8 +127,7 @@ export const ListItem = memo(function ListItem({
         } else {
           await checkItemMutation({
             itemId: item._id,
-            checkedByDid: userDid,
-            legacyDid,
+
             checkedAt: Date.now(),
           });
         }

@@ -3,7 +3,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -20,7 +20,7 @@ export function ChangeCategoryDialog({
   currentCategoryId,
   onClose,
 }: ChangeCategoryDialogProps) {
-  const { did, legacyDid } = useCurrentUser();
+  const { did } = useCurrentUser();
   const updateCategory = useMutation(api.lists.updateListCategory);
   const [categoryId, setCategoryId] = useState<Id<"categories"> | undefined>(currentCategoryId);
   const [saving, setSaving] = useState(false);
@@ -34,8 +34,6 @@ export function ChangeCategoryDialog({
       await updateCategory({
         listId,
         categoryId,
-        userDid: did,
-        legacyDid: legacyDid ?? undefined,
       });
       onClose();
     } catch (err) {

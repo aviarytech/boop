@@ -1,3 +1,5 @@
+import { authErrorData } from "../../convex/lib/authError";
+import { storageAdapter } from "./storageAdapter";
 /**
  * Sync Manager for offline mutation synchronization (Phase 5.3)
  *
@@ -144,6 +146,14 @@ interface DeleteListPayload {
   legacyDid?: string;
 }
 
+function accessFailure(error: unknown): boolean {
+  const data = authErrorData(error);
+  if (data) return data.code !== "FORBIDDEN";
+  // Compatibility with errors from a pre-cutover backend that has no RPC data.
+  const message = error instanceof Error ? error.message : "";
+  return /Authentication required|Invalid or expired token|Invalid API key|User not found|Token has expired|Identity assertion/i.test(message);
+}
+
 // ============================================================================
 // SyncManager Class
 // ============================================================================
@@ -189,6 +199,7 @@ export class SyncManager {
     try {
       const mutations = await getQueuedMutations();
 
+      let failureMessage: string | undefined;
       for (const mutation of mutations) {
         try {
           // Phase 5.8: Check for conflicts before executing check/uncheck mutations
@@ -207,24 +218,38 @@ export class SyncManager {
           const errorMessage =
             error instanceof Error ? error.message : "Unknown error";
 
-          // Check if item was deleted (server returns "Item not found")
-          if (errorMessage.includes("not found")) {
-            await clearMutation(mutation.id!);
-            showGlobalToast("Item was deleted by another user", "warning");
+          if (accessFailure(error)) {
+            // Preserve the entire remaining queue and its retry budget until access returns.
+            const message = "Sync paused. Sign in with the account that made these edits; your changes are still saved.";
+            this.notify({ status: "error", message });
+            showGlobalToast(message, "warning");
+            return;
+          }
+
+          if (authErrorData(error)?.code === "FORBIDDEN") {
+            // A resource denial must not block unrelated edits or prompt a new login.
+            if (mutation.retryCount >= MAX_RETRIES) {
+              await clearMutation(mutation.id!);
+              failureMessage = "An offline edit was discarded because its resource may have been removed or access is unavailable.";
+            } else {
+              await updateMutationRetry(mutation.id!, mutation.retryCount + 1);
+              failureMessage = "Some offline edits could not sync because their resources may have been removed or access is unavailable. Other edits can still sync.";
+              const delay = RETRY_DELAYS[mutation.retryCount] ?? 16000;
+              await this.delay(delay);
+            }
+            showGlobalToast(failureMessage, "warning");
             continue;
           }
 
           if (mutation.retryCount >= MAX_RETRIES) {
             // Max retries reached - discard mutation and notify
             await clearMutation(mutation.id!);
-            this.notify({
-              status: "error",
-              message: `Failed to sync ${mutation.type}: ${errorMessage}`,
-            });
+            failureMessage = `Failed to sync ${mutation.type}: ${errorMessage}`;
           } else {
             // Increment retry count for next attempt
             await updateMutationRetry(mutation.id!, mutation.retryCount + 1);
 
+            failureMessage = "Some offline edits could not sync. Please try again.";
             // Wait before continuing to next mutation
             const delay = RETRY_DELAYS[mutation.retryCount] ?? 16000;
             await this.delay(delay);
@@ -232,7 +257,7 @@ export class SyncManager {
         }
       }
 
-      this.notify({ status: "synced" });
+      this.notify(failureMessage ? { status: "error", message: failureMessage } : { status: "synced" });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -268,15 +293,7 @@ export class SyncManager {
     const itemId = payload.itemId;
 
     try {
-      const serverItem = await convex.query(api.items.getItemForSync, { itemId });
-
-      if (!serverItem) {
-        // Item was deleted remotely
-        return {
-          hasConflict: true,
-          reason: "Item was deleted by another user",
-        };
-      }
+      const serverItem = await convex.query(api.items.getItemForSync, { itemId, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
 
       // Check if server has newer data
       if (serverItem.updatedAt && serverItem.updatedAt > mutation.timestamp) {
@@ -287,7 +304,8 @@ export class SyncManager {
       }
 
       return { hasConflict: false };
-    } catch {
+    } catch (error) {
+      if (accessFailure(error) || authErrorData(error)?.code === "FORBIDDEN") throw error;
       // If we can't check, allow the mutation to proceed
       // The actual mutation will fail if there's an issue
       return { hasConflict: false };
@@ -304,73 +322,73 @@ export class SyncManager {
     switch (mutation.type) {
       case "addItem": {
         const payload = mutation.payload as AddItemPayload;
-        await convex.mutation(api.items.addItem, payload);
+        await convex.mutation(api.items.addItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "checkItem": {
         const payload = mutation.payload as CheckItemPayload;
-        await convex.mutation(api.items.checkItem, payload);
+        await convex.mutation(api.items.checkItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "uncheckItem": {
         const payload = mutation.payload as UncheckItemPayload;
-        await convex.mutation(api.items.uncheckItem, payload);
+        await convex.mutation(api.items.uncheckItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "reorderItem": {
         const payload = mutation.payload as ReorderItemPayload;
-        await convex.mutation(api.items.reorderItems, payload);
+        await convex.mutation(api.items.reorderItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "updateItem": {
         const payload = mutation.payload as UpdateItemPayload;
-        await convex.mutation(api.items.updateItem, payload);
+        await convex.mutation(api.items.updateItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "removeItem": {
         const payload = mutation.payload as RemoveItemPayload;
-        await convex.mutation(api.items.removeItem, payload);
+        await convex.mutation(api.items.removeItem, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "batchCheckItems": {
         const payload = mutation.payload as BatchCheckItemsPayload;
-        await convex.mutation(api.items.batchCheckItems, payload);
+        await convex.mutation(api.items.batchCheckItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "batchUncheckItems": {
         const payload = mutation.payload as BatchUncheckItemsPayload;
-        await convex.mutation(api.items.batchUncheckItems, payload);
+        await convex.mutation(api.items.batchUncheckItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "batchDeleteItems": {
         const payload = mutation.payload as BatchDeleteItemsPayload;
-        await convex.mutation(api.items.batchDeleteItems, payload);
+        await convex.mutation(api.items.batchDeleteItems, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "createList": {
         const payload = mutation.payload as CreateListPayload;
-        await convex.mutation(api.lists.createList, payload);
+        await convex.mutation(api.lists.createList, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "renameList": {
         const payload = mutation.payload as RenameListPayload;
-        await convex.mutation(api.lists.renameList, payload);
+        await convex.mutation(api.lists.renameList, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 
       case "deleteList": {
         const payload = mutation.payload as DeleteListPayload;
-        await convex.mutation(api.lists.deleteList, payload);
+        await convex.mutation(api.lists.deleteList, { ...payload, authToken: await storageAdapter.get("lisa-jwt-token") ?? undefined });
         break;
       }
 

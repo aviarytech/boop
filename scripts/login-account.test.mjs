@@ -149,7 +149,7 @@ test("verification rejects an old session pointing at a different account", asyn
 
 test("competing signup sessions cannot insert a second user for an existing email", async () => {
   const ctx = context();
-  const upsert = handler(auth.upsertUser);
+  const upsert = handler(auth.upsertUserInternal);
   await upsert(ctx, { email: EMAIL, turnkeySubOrgId: "first-signup" });
   await assert.rejects(upsert(ctx, { email: EMAIL, turnkeySubOrgId: "second-signup" }), /request a new code/i);
   assert.equal(ctx.users.length, 1);
@@ -158,23 +158,23 @@ test("competing signup sessions cannot insert a second user for an existing emai
 
 test("unfinished signup for another email cannot be linked through an undefined DID", async () => {
   const ctx = context([{ ...original, did: undefined }]);
-  await handler(auth.upsertUser)(ctx, { email: "new@example.com", turnkeySubOrgId: "new-identity" });
+  await handler(auth.upsertUserInternal)(ctx, { email: "new@example.com", turnkeySubOrgId: "new-identity" });
   assert.equal(ctx.users.length, 2);
   assert.equal(ctx.users[0].turnkeySubOrgId, original.turnkeySubOrgId);
 });
 
 test("upsert rechecks operator selection after OTP verification", async () => {
   const ctx = context([{ ...original, isCanonicalLogin: true }, { ...duplicate, isCanonicalLogin: false }]);
-  await assert.rejects(handler(auth.upsertUser)(ctx, { email: EMAIL, turnkeySubOrgId: duplicate.turnkeySubOrgId }), /request a new code/i);
+  await assert.rejects(handler(auth.upsertUserInternal)(ctx, { email: EMAIL, turnkeySubOrgId: duplicate.turnkeySubOrgId }), /request a new code/i);
   assert.equal(ctx.users.length, 2);
   assert.equal(ctx.users[1].lastLoginAt, undefined);
-  await handler(auth.upsertUser)(ctx, { email: EMAIL, turnkeySubOrgId: original.turnkeySubOrgId });
+  await handler(auth.upsertUserInternal)(ctx, { email: EMAIL, turnkeySubOrgId: original.turnkeySubOrgId });
   assert.equal(ctx.users.length, 2);
   assert.ok(ctx.users[0].lastLoginAt);
 });
 
 test("an existing identity cannot be reused under a different email", async () => {
   const ctx = context([original]);
-  await assert.rejects(handler(auth.upsertUser)(ctx, { email: "stranger@example.com", turnkeySubOrgId: original.turnkeySubOrgId }), /different email/i);
+  await assert.rejects(handler(auth.upsertUserInternal)(ctx, { email: "stranger@example.com", turnkeySubOrgId: original.turnkeySubOrgId }), /different email/i);
   assert.equal(ctx.users[0].lastLoginAt, undefined);
 });

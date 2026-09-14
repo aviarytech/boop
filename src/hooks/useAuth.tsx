@@ -1,3 +1,7 @@
+import { onSessionExpiry } from "../lib/sessionExpiry";
+import { withAuthTimeout } from "../lib/authTimeout";
+import { useConvex } from "convex/react";
+import { api } from "../../convex/_generated/api";
 /**
  * Auth context and hook for server-side authentication.
  *
@@ -67,8 +71,8 @@ interface AuthContextValue {
   user: AuthUser | null;
   /** JWT token for API authentication, or null if not authenticated */
   token: string | null;
-  /** Start OTP flow by sending code to email. Pass legacyDid for migration. */
-  startOtp: (email: string, legacyDid?: string) => Promise<void>;
+  /** Start OTP flow by sending code to email. */
+  startOtp: (email: string) => Promise<void>;
   /** Verify OTP code and complete authentication */
   verifyOtp: (code: string) => Promise<void>;
   /** Log out and clear session */
@@ -88,8 +92,6 @@ interface OtpFlowState {
   /** Session ID from /auth/initiate (used for /auth/verify) */
   sessionId: string | null;
   email: string | null;
-  /** Legacy DID being migrated (from localStorage identity) */
-  legacyDid: string | null;
 }
 
 /**
@@ -109,6 +111,7 @@ const AUTH_STORAGE_KEY = "lisa-auth-state";
  * Wraps the app to provide authentication state via useAuth hook.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
+  const convex = useConvex();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   // JWT token for API authentication
@@ -118,11 +121,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [otpFlowState, setOtpFlowState] = useState<OtpFlowState>({
     sessionId: null,
     email: null,
-    legacyDid: null,
   });
 
   // Track mounted state to prevent setState after unmount
   const isMountedRef = useRef(true);
+  // Serialize restore/login/logout, including the cookie response from logout.
+  const authTransitionRef = useRef(true);
 
   /**
    * Restore session from localStorage.
@@ -158,6 +162,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         // Restore auth state
+        await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: parsed.token }));
         setUser(parsed.user);
         setToken(parsed.token);
         await storageAdapter.set(JWT_STORAGE_KEY, parsed.token);
@@ -208,8 +213,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
       } catch (err) {
         console.error("[useAuth] Error restoring session:", err);
+        setUser(null);
+        setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);
+        await storageAdapter.remove(JWT_STORAGE_KEY);
       } finally {
+        authTransitionRef.current = false;
         if (isMountedRef.current) setIsLoading(false);
       }
     };
@@ -219,23 +228,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+  }, [convex]);
 
   /**
    * Start OTP flow by sending verification code to email.
    * Calls /auth/initiate HTTP endpoint.
    *
    * @param email - User's email address
-   * @param legacyDid - Optional: User's old localStorage DID if migrating
    */
   const startOtp = useCallback(
-    async (email: string, legacyDid?: string) => {
+    async (email: string) => {
+      if (authTransitionRef.current) throw new Error("Authentication is already in progress");
+      authTransitionRef.current = true;
       setIsLoading(true);
       try {
         console.log("[useAuth] Sending OTP to:", email);
-        if (legacyDid) {
-          console.log("[useAuth] Migration mode, legacy DID:", legacyDid);
-        }
 
         const httpUrl = getConvexHttpUrl();
         const response = await fetch(`${httpUrl}/auth/initiate`, {
@@ -254,11 +261,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const { sessionId } = await response.json();
         console.log("[useAuth] OTP initiated, sessionId:", sessionId);
 
-        setOtpFlowState({ sessionId, email, legacyDid: legacyDid ?? null });
+        setOtpFlowState({ sessionId, email });
       } catch (err) {
         console.error("[useAuth] Failed to start OTP:", err);
         throw err;
       } finally {
+        authTransitionRef.current = false;
         setIsLoading(false);
       }
     },
@@ -276,6 +284,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error("OTP flow not started. Call startOtp first.");
       }
 
+      if (authTransitionRef.current) throw new Error("Authentication is already in progress");
+      authTransitionRef.current = true;
       setIsLoading(true);
       try {
         console.log("[useAuth] Verifying OTP via server...");
@@ -301,9 +311,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         const { token: jwtToken, user: serverUser } = await response.json();
         console.log("[useAuth] OTP verified, got JWT for:", serverUser.email);
 
-        // Store JWT
-        await storageAdapter.set(JWT_STORAGE_KEY, jwtToken);
-        setToken(jwtToken);
+        await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
         // Start with server-provided DID. If it is not already did:webvh,
         // create did:webvh client-side and persist it.
@@ -346,10 +354,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           token: jwtToken,
         };
         await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(persistedState));
+        await storageAdapter.set(JWT_STORAGE_KEY, jwtToken);
+        setToken(jwtToken);
 
         // Update state
         setUser(authUser);
-        setOtpFlowState({ sessionId: null, email: null, legacyDid: null });
+        setOtpFlowState({ sessionId: null, email: null });
 
         // Identify user in analytics
         identifyUser(authUser.turnkeySubOrgId, { email_domain: authUser.email.split('@')[1] });
@@ -357,12 +367,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[useAuth] Authentication complete, DID:", userDid);
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
+        setUser(null);
+        setToken(null);
+        await storageAdapter.remove(AUTH_STORAGE_KEY);
+        await storageAdapter.remove(JWT_STORAGE_KEY);
         throw err;
       } finally {
+        authTransitionRef.current = false;
         setIsLoading(false);
       }
     },
-    [otpFlowState]
+    [otpFlowState, convex]
   );
 
   /**
@@ -370,28 +385,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
    * Calls /auth/logout HTTP endpoint to clear the auth cookie.
    */
   const logout = useCallback(async () => {
-    console.log("[useAuth] Logging out");
+    if (authTransitionRef.current) throw new Error("Authentication is already in progress");
+    authTransitionRef.current = true;
+    setIsLoading(true);
+    setToken(null);
+    setUser(null);
+    setOtpFlowState({ sessionId: null, email: null });
+    resetAnalytics();
 
-    // Call logout endpoint to clear httpOnly cookie
     try {
+      await storageAdapter.remove(AUTH_STORAGE_KEY);
+      await storageAdapter.remove(JWT_STORAGE_KEY);
       const httpUrl = getConvexHttpUrl();
       await fetch(`${httpUrl}/auth/logout`, {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",
       });
     } catch (err) {
       console.error("[useAuth] Logout endpoint failed:", err);
-      // Continue with local cleanup even if server call fails
+    } finally {
+      authTransitionRef.current = false;
+      setIsLoading(false);
     }
+  }, [token]);
 
-    // Clear local state and analytics identity
-    resetAnalytics();
-    setUser(null);
-    setToken(null);
-    setOtpFlowState({ sessionId: null, email: null, legacyDid: null });
-    await storageAdapter.remove(AUTH_STORAGE_KEY);
-    await storageAdapter.remove(JWT_STORAGE_KEY);
-  }, []);
+  // Drop subscriptions promptly at expiry; the server independently expires the
+  // database session so cached private queries are invalidated on every device.
+  useEffect(() => {
+    if (!token) return;
+    let expiresAt: number;
+    try { expiresAt = JSON.parse(atob(token.split(".")[1])).exp * 1000; }
+    catch { return; }
+    return onSessionExpiry(expiresAt, () => {
+      setToken(null);
+      setUser(null);
+      void storageAdapter.remove(AUTH_STORAGE_KEY);
+      void storageAdapter.remove(JWT_STORAGE_KEY);
+    });
+  }, [token]);
 
   // Repairs identities minted on a domain we no longer serve. Temporary.
   useDidDomainRemint(user, token);

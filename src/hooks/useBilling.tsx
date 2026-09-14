@@ -2,7 +2,7 @@
  * Hook for accessing and managing the current user's billing subscription.
  */
 
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "./useCurrentUser";
 

@@ -4,7 +4,7 @@
  */
 
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
@@ -43,8 +43,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
 
   const comments = useQuery(api.comments.getItemComments, {
     itemId,
-    userDid,
-    legacyDid,
+
   });
 
   const addComment = useMutation(api.comments.addComment);
@@ -60,8 +59,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
     try {
       await addComment({
         itemId,
-        userDid,
-        legacyDid,
+
         text: newComment.trim(),
       });
       setNewComment("");
@@ -83,8 +81,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
     try {
       await deleteComment({
         commentId,
-        userDid,
-        legacyDid,
+
       });
       haptic("success");
     } catch (err) {

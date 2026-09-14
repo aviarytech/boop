@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useConvex } from "convex/react";
+
 import { syncManager, type SyncStatus } from "../lib/sync";
 import { getQueuedMutations } from "../lib/offline";
 import { getNetworkStatus, onNetworkChange } from "../lib/network";

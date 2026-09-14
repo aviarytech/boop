@@ -1,4 +1,5 @@
 "use node";
+import { actorAction } from "./lib/authenticated";
 
 /**
  * Server-side DID creation using Turnkey and OriginalsSDK.
@@ -8,7 +9,7 @@
  * - Public action for list publication (list DID)
  */
 
-import { action, internalAction } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { TurnkeyWebVHSigner } from "./lib/turnkeySigner";
 import { getEd25519Account } from "./turnkeyHelpers";
@@ -111,17 +112,20 @@ export const createDIDKey = internalAction({
  * Create a did:webvh DID for list publication.
  * Public action - called from client when publishing a list.
  */
-export const createListDID = action({
+export const { public: createListDID, internal: createListDIDInternal } = actorAction({
+  resources: () => ({}),
+  scope: "*",
   args: {
     subOrgId: v.string(),
     domain: v.string(),
     slug: v.string(),
   },
-  handler: async (_ctx, args): Promise<{
+  handler: async (ctx, args): Promise<{
     did: string;
     didDocument: unknown;
     didLog: unknown;
   }> => {
+    if (args.subOrgId !== ctx.actor.turnkeySubOrgId) throw new Error("Not authorized to use this signing identity");
     console.log(
       `[didCreation] Creating list did:webvh for slug: ${args.slug} (subOrg: ${args.subOrgId})`
     );

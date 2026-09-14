@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { createAuthFixture } from "./helpers/auth-fixture.mjs";
 
 const outdir = "tmp/originals-query-test";
 
@@ -25,9 +26,11 @@ async function loadModule() {
 
 const mod = await loadModule();
 const handler = mod.listOwnedOriginals._handler ?? mod.listOwnedOriginals.handler;
+const ownerSession = await createAuthFixture("me");
 
 // In-memory ctx.db mock matching Convex's surface.
 function makeDb(tables) {
+  tables = { users: [ownerSession.user], accessSessions: [ownerSession.accessSession], ...tables };
   const all = new Map();
   for (const [name, rows] of Object.entries(tables)) {
     for (const row of rows) all.set(row._id, row);
@@ -69,7 +72,7 @@ function makeQuery(rows) {
   };
 }
 
-test("ownerDid filter applied", async () => {
+test("authenticated owner filter applied", async () => {
   const ctx = {
     db: makeDb({
       lists: [
@@ -84,7 +87,7 @@ test("ownerDid filter applied", async () => {
       itemAssignees: [],
     }),
   };
-  const rows = await handler(ctx, { ownerDid: "me" });
+  const rows = await handler(ctx, { authToken: ownerSession.authToken });
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, "Mine");
 });
@@ -105,7 +108,7 @@ test("joins all source tables and produces rows in updatedAt desc order", async 
       ],
     }),
   };
-  const rows = await handler(ctx, { ownerDid: "me" });
+  const rows = await handler(ctx, { authToken: ownerSession.authToken });
   assert.equal(rows.length, 2);
   assert.equal(rows[0].source, "site");
   assert.equal(rows[1].source, "list");
@@ -128,7 +131,7 @@ test("missing optional joins do not crash", async () => {
       itemAssignees: [],
     }),
   };
-  const rows = await handler(ctx, { ownerDid: "me" });
+  const rows = await handler(ctx, { authToken: ownerSession.authToken });
   assert.equal(rows[0].layer, "did:cel");
   assert.equal(rows[0].verification, "none");
   assert.equal(rows[0].collaborators, undefined);
@@ -146,7 +149,7 @@ test("a site never reports anchored", async () => {
       itemAssignees: [],
     }),
   };
-  const rows = await handler(ctx, { ownerDid: "me" });
+  const rows = await handler(ctx, { authToken: ownerSession.authToken });
   assert.notEqual(rows[0].verification, "anchored");
 });
 
@@ -165,7 +168,7 @@ test("multiple confirmed anchors → most recent confirmedAt wins", async () => 
       itemAssignees: [],
     }),
   };
-  const rows = await handler(ctx, { ownerDid: "me" });
+  const rows = await handler(ctx, { authToken: ownerSession.authToken });
   assert.equal(rows[0].anchorTxId, "newer");
 });
 

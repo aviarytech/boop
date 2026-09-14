@@ -1,0 +1,12 @@
+{
+  "owner": "brianorwhatever",
+  "approvedBy": null,
+  "approvedAt": null,
+  "stagingEvidence": null,
+  "clients": {
+    "browser": { "supportedVersions": null, "evidence": null },
+    "ios": { "supportedVersions": null, "evidence": null },
+    "android": { "supportedVersions": null, "evidence": null },
+    "integrations": { "supportedVersions": null, "evidence": null }
+  }
+}

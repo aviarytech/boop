@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "../../lib/authenticatedConvex";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useToast } from "../../hooks/useToast";
@@ -54,8 +54,8 @@ function assetIcon(contentType: string): string {
   return "📁";
 }
 
-export function SiteAssets({ siteId, ownerDid, hostname }: Props) {
-  const assets = useQuery(api.siteAssets.listSiteAssets, { ownerDid, siteId });
+export function SiteAssets({ siteId, hostname }: Props) {
+  const assets = useQuery(api.siteAssets.listSiteAssets, {  siteId });
   const generateUploadUrl = useAction(api.siteAssets.generateSiteAssetUploadUrl);
   const addAsset = useMutation(api.siteAssets.addSiteAsset);
   const removeAsset = useAction(api.siteAssets.removeSiteAsset);
@@ -81,7 +81,6 @@ export function SiteAssets({ siteId, ownerDid, hostname }: Props) {
       const sha256 = await sha256Hex(buffer);
       const contentType = file.type || "application/octet-stream";
       const { uploadUrl, bucketKey, fileName } = await generateUploadUrl({
-        ownerDid,
         siteId,
         fileName: file.name,
         contentType,
@@ -96,7 +95,6 @@ export function SiteAssets({ siteId, ownerDid, hostname }: Props) {
         throw new Error(`Upload failed (${putRes.status})`);
       }
       await addAsset({
-        ownerDid,
         siteId,
         fileName,
         bucketKey,
@@ -119,7 +117,7 @@ export function SiteAssets({ siteId, ownerDid, hostname }: Props) {
   const handleRemove = async (asset: Doc<"siteAssets">) => {
     if (!confirm(`Delete ${asset.fileName}?`)) return;
     try {
-      await removeAsset({ ownerDid, assetId: asset._id });
+      await removeAsset({  assetId: asset._id });
       addToast(`Deleted ${asset.fileName}`);
     } catch (err) {
       addToast(

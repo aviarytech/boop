@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -26,7 +26,7 @@ export function Templates() {
   // Fetch templates from API
   const userTemplates = useQuery(
     api.templates.getUserTemplates,
-    did ? { userDid: did } : "skip"
+    did ? {} : "skip"
   ) ?? [];
   
   const publicTemplates = useQuery(api.templates.getPublicTemplates) ?? [];
@@ -49,7 +49,6 @@ export function Templates() {
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
         name: template.name,
-        ownerDid: did,
         createdAt: Date.now(),
       });
 
@@ -58,7 +57,6 @@ export function Templates() {
         await addItem({
           listId,
           name: item.name,
-          createdByDid: did,
           createdAt: now,
           priority: item.priority,
           description: item.description,
@@ -87,7 +85,6 @@ export function Templates() {
       const listId = await createListFromTemplate({
         templateId: template._id,
         listName: template.name,
-        userDid: did,
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
       });
@@ -107,7 +104,7 @@ export function Templates() {
     
     haptic('medium');
     try {
-      await deleteTemplate({ templateId, userDid: did });
+      await deleteTemplate({ templateId });
       haptic('success');
     } catch (err) {
       console.error("Failed to delete template:", err);

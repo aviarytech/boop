@@ -14,6 +14,7 @@ const KEY_BODY_LENGTH = 40;
 
 /** Scopes granted to agent API keys by default. */
 export const AGENT_SCOPES = ["lists:read", "items:read", "items:write"] as const;
+export type Scope = (typeof AGENT_SCOPES)[number] | "*";
 
 /**
  * Generate a fresh raw API key: "pa_live_" + 40 chars of [A-Za-z0-9].

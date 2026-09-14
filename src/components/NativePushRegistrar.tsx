@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { Capacitor } from "@capacitor/core";
@@ -33,7 +33,7 @@ export function NativePushRegistrar() {
         clearInterval(interval);
         registered.current = true;
         try {
-          await registerPushToken({ userDid: did, token, platform: "ios" });
+          await registerPushToken({  token, platform: "ios" });
         } catch (err) {
           console.error("[NativePushRegistrar] Failed to register token:", err);
         }

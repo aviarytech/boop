@@ -1,3 +1,5 @@
+import { authorizeResources } from "./lib/permissions";
+import { actorMutation, actorQuery, actorAction } from "./lib/authenticated";
 /**
  * Bitcoin Anchoring for List State
  *
@@ -14,8 +16,8 @@
  */
 
 import { v } from "convex/values";
-import { query, mutation, action } from "./_generated/server";
-import { api } from "./_generated/api";
+
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 
 /**
@@ -81,12 +83,13 @@ function buildCanonicalState(
  * Internal mutation to create an anchor record.
  * Called by the action after computing the hash.
  */
-export const createAnchorRecord = mutation({
+export const { public: createAnchorRecord, internal: createAnchorRecordInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
     stateHash: v.string(),
     stateSnapshot: v.string(),
-    anchoredByDid: v.string(),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("bitcoinAnchors", {
@@ -94,7 +97,7 @@ export const createAnchorRecord = mutation({
       contentHash: args.stateHash,
       network: BITCOIN_NETWORK,
       status: "pending",
-      requestedByDid: args.anchoredByDid,
+      requestedByDid: ctx.actor.did,
       createdAt: Date.now(),
       stateSnapshot: args.stateSnapshot,
     });
@@ -104,7 +107,9 @@ export const createAnchorRecord = mutation({
 /**
  * Update anchor status after Bitcoin inscription.
  */
-export const updateAnchorStatus = mutation({
+export const { public: updateAnchorStatus, internal: updateAnchorStatusInternal } = actorMutation({
+  resources: args => ({ anchors: [args.anchorId] }),
+  scope: "items:write",
   args: {
     anchorId: v.id("bitcoinAnchors"),
     status: v.union(
@@ -135,7 +140,9 @@ export const updateAnchorStatus = mutation({
 /**
  * Get list data for anchoring (internal helper query).
  */
-export const getListDataForAnchor = query({
+export const { public: getListDataForAnchor, internal: getListDataForAnchorInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
@@ -164,14 +171,16 @@ export const getListDataForAnchor = query({
  * @param userDid - DID of user requesting the anchor
  * @returns The anchor record ID
  */
-export const anchorListState = action({
+export const { public: anchorListState, internal: anchorListStateInternal } = actorAction({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
   },
   handler: async (ctx, args): Promise<{ anchorId: Id<"bitcoinAnchors">; stateHash: string; status: string }> => {
     // 1. Fetch list data
-    const data = await ctx.runQuery(api.bitcoinAnchors.getListDataForAnchor, {
+    const data = await ctx.runQuery(internal.bitcoinAnchors.getListDataForAnchorInternal, {
+      ...ctx.credentials,
       listId: args.listId,
     });
 
@@ -182,7 +191,7 @@ export const anchorListState = action({
     const { list, items } = data;
 
     // 2. Verify user has access (owner)
-    if (list.ownerDid !== args.userDid) {
+    if (![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
       throw new Error("Only the owner can anchor list state");
     }
 
@@ -191,11 +200,11 @@ export const anchorListState = action({
     const stateHash = await computeSha256(canonicalState);
 
     // 4. Create anchor record
-    const anchorId = await ctx.runMutation(api.bitcoinAnchors.createAnchorRecord, {
+    const anchorId = await ctx.runMutation(internal.bitcoinAnchors.createAnchorRecordInternal, {
+      ...ctx.credentials,
       listId: args.listId,
       stateHash,
       stateSnapshot: canonicalState,
-      anchoredByDid: args.userDid,
     });
 
     // 5. Attempt Bitcoin inscription
@@ -219,7 +228,8 @@ export const anchorListState = action({
     //   'application/json',
     //   feeRate
     // );
-    // await ctx.runMutation(api.bitcoinAnchors.updateAnchorStatus, {
+    // await ctx.runMutation(internal.bitcoinAnchors.updateAnchorStatusInternal, {
+    //   ...ctx.credentials,
     //   anchorId,
     //   status: 'inscribed',
     //   txid: inscription.txid,
@@ -233,7 +243,8 @@ export const anchorListState = action({
       const simulatedTxid = `signet:${stateHash.substring(0, 16)}:${Date.now()}`;
       const simulatedInscriptionId = `${simulatedTxid}i0`;
 
-      await ctx.runMutation(api.bitcoinAnchors.updateAnchorStatus, {
+      await ctx.runMutation(internal.bitcoinAnchors.updateAnchorStatusInternal, {
+        ...ctx.credentials,
         anchorId,
         status: "inscribed",
         txid: simulatedTxid,
@@ -250,7 +261,9 @@ export const anchorListState = action({
 /**
  * Get all anchors for a list.
  */
-export const getListAnchors = query({
+export const { public: getListAnchors, internal: getListAnchorsInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -264,7 +277,9 @@ export const getListAnchors = query({
 /**
  * Get all Bitcoin anchors for a specific item
  */
-export const getItemAnchors = query({
+export const { public: getItemAnchors, internal: getItemAnchorsInternal } = actorQuery({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:read",
   args: { itemId: v.id("items") },
   handler: async (ctx, { itemId }) => {
     const anchors = await ctx.db
@@ -272,14 +287,21 @@ export const getItemAnchors = query({
       .withIndex("by_item", (q) => q.eq("itemId", itemId))
       .collect();
     
-    return anchors;
+    const accessible = [];
+    for (const anchor of anchors) {
+      try { await authorizeResources(ctx, ctx.actor, { anchors: [anchor._id] }); accessible.push(anchor); }
+      catch { /* Private anchors are omitted from collections. */ }
+    }
+    return accessible;
   },
 });
 
 /**
  * Get anchor by transaction ID
  */
-export const getAnchorByTxid = query({
+export const { public: getAnchorByTxid, internal: getAnchorByTxidInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "items:read",
   args: { txid: v.string() },
   handler: async (ctx, { txid }) => {
     const anchor = await ctx.db
@@ -287,6 +309,7 @@ export const getAnchorByTxid = query({
       .withIndex("by_txid", (q) => q.eq("txid", txid))
       .first();
     
+    if (anchor) await authorizeResources(ctx, ctx.actor, { anchors: [anchor._id] });
     return anchor;
   },
 });
@@ -294,7 +317,9 @@ export const getAnchorByTxid = query({
 /**
  * Get the latest anchor for a list.
  */
-export const getLatestAnchor = query({
+export const { public: getLatestAnchor, internal: getLatestAnchorInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -308,7 +333,9 @@ export const getLatestAnchor = query({
 /**
  * Get all pending anchors (for background processing)
  */
-export const getPendingAnchors = query({
+export const { public: getPendingAnchors, internal: getPendingAnchorsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "items:read",
   args: {},
   handler: async (ctx) => {
     const anchors = await ctx.db
@@ -316,14 +343,21 @@ export const getPendingAnchors = query({
       .withIndex("by_status", (q) => q.eq("status", "pending"))
       .collect();
     
-    return anchors;
+    const accessible = [];
+    for (const anchor of anchors) {
+      try { await authorizeResources(ctx, ctx.actor, { anchors: [anchor._id] }); accessible.push(anchor); }
+      catch { /* Private anchors are omitted from collections. */ }
+    }
+    return accessible;
   },
 });
 
 /**
  * Get anchor by ID.
  */
-export const getAnchor = query({
+export const { public: getAnchor, internal: getAnchorInternal } = actorQuery({
+  resources: args => ({ anchors: [args.anchorId] }),
+  scope: "items:read",
   args: { anchorId: v.id("bitcoinAnchors") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.anchorId);
@@ -333,13 +367,16 @@ export const getAnchor = query({
 /**
  * Verify anchor against current list state.
  */
-export const verifyAnchorState = action({
+export const { public: verifyAnchorState, internal: verifyAnchorStateInternal } = actorAction({
+  resources: args => ({ anchors: [args.anchorId] }),
+  scope: "items:write",
   args: {
     anchorId: v.id("bitcoinAnchors"),
   },
   handler: async (ctx, args): Promise<{ valid: boolean; currentHash: string; anchoredHash: string; stateChanged: boolean }> => {
     // Get the anchor
-    const anchor = await ctx.runQuery(api.bitcoinAnchors.getAnchor, {
+    const anchor = await ctx.runQuery(internal.bitcoinAnchors.getAnchorInternal, {
+      ...ctx.credentials,
       anchorId: args.anchorId,
     });
 
@@ -352,7 +389,8 @@ export const verifyAnchorState = action({
     }
 
     // Get current list state
-    const data = await ctx.runQuery(api.bitcoinAnchors.getListDataForAnchor, {
+    const data = await ctx.runQuery(internal.bitcoinAnchors.getListDataForAnchorInternal, {
+      ...ctx.credentials,
       listId: anchor.listId,
     });
 

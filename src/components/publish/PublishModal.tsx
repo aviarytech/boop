@@ -7,7 +7,7 @@
  */
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "../../lib/authenticatedConvex";
 import { api } from "../../../convex/_generated/api";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
@@ -90,7 +90,6 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
       await publishListMutation({
         listId: list._id,
         webvhDid: listResourceDid,
-        publisherDid: did,
         celEnvelope,
       });
 
@@ -119,7 +118,6 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
     try {
       await unpublishListMutation({
         listId: list._id,
-        userDid: did,
       });
       haptic('success');
     } catch (err) {

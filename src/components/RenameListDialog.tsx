@@ -3,7 +3,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -15,7 +15,7 @@ interface RenameListDialogProps {
 }
 
 export function RenameListDialog({ list, onClose }: RenameListDialogProps) {
-  const { did, legacyDid } = useCurrentUser();
+  const { did } = useCurrentUser();
   const renameList = useMutation(api.lists.renameList);
   const [name, setName] = useState(list.name);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -35,8 +35,6 @@ export function RenameListDialog({ list, onClose }: RenameListDialogProps) {
       await renameList({
         listId: list._id,
         name: name.trim(),
-        userDid: did,
-        legacyDid: legacyDid ?? undefined,
       });
       onClose();
     } catch (err) {

@@ -2,7 +2,7 @@
  * Component showing who added/checked an item and when.
  */
 
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { formatRelativeTime } from "../lib/time";

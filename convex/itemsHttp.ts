@@ -1,16 +1,9 @@
-/**
- * HTTP action handlers for protected item mutations.
- *
- * These endpoints authenticate via resolveActor(), which accepts either a JWT
- * session or an agent API key (X-API-Key). Writes require the "items:write" scope.
- * The acting DID is resolved server-side and passed to the mutations.
- */
+/** HTTP adapter; authentication and authorization run in the shared operation. */
 
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { AuthError, unauthorizedResponseWithCors } from "./lib/auth";
-import { resolveActor, requireScope } from "./lib/actor";
+import { authenticatedRequest } from "./lib/actor";
 import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpResponses";
 
 /**
@@ -24,8 +17,6 @@ import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpRes
 export const addItem = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -36,19 +27,15 @@ export const addItem = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified acting DID
-    const itemId = await ctx.runMutation(api.items.addItem, {
+    const itemId = await ctx.runMutation(internal.items.addItemInternal, {
+      ...await authenticatedRequest(ctx, request),
       listId: listId as Id<"lists">,
       name,
-      createdByDid: actor.did,
-      legacyDid: actor.legacyDid,
       createdAt: Date.now(),
     });
 
     return jsonResponse(request, { itemId });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[itemsHttp] addItem error:", error);
     return handlerErrorResponse(
       request,
@@ -69,8 +56,6 @@ export const addItem = httpAction(async (ctx, request) => {
 export const checkItem = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -81,18 +66,14 @@ export const checkItem = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified acting DID
-    await ctx.runMutation(api.items.checkItem, {
+    await ctx.runMutation(internal.items.checkItemInternal, {
+      ...await authenticatedRequest(ctx, request),
       itemId: itemId as Id<"items">,
-      checkedByDid: actor.did,
-      legacyDid: actor.legacyDid,
       checkedAt: Date.now(),
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[itemsHttp] checkItem error:", error);
     return handlerErrorResponse(
       request,
@@ -113,8 +94,6 @@ export const checkItem = httpAction(async (ctx, request) => {
 export const uncheckItem = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -125,17 +104,13 @@ export const uncheckItem = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified acting DID
-    await ctx.runMutation(api.items.uncheckItem, {
+    await ctx.runMutation(internal.items.uncheckItemInternal, {
+      ...await authenticatedRequest(ctx, request),
       itemId: itemId as Id<"items">,
-      userDid: actor.did,
-      legacyDid: actor.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[itemsHttp] uncheckItem error:", error);
     return handlerErrorResponse(
       request,
@@ -156,8 +131,6 @@ export const uncheckItem = httpAction(async (ctx, request) => {
 export const removeItem = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -168,17 +141,13 @@ export const removeItem = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified acting DID
-    await ctx.runMutation(api.items.removeItem, {
+    await ctx.runMutation(internal.items.removeItemInternal, {
+      ...await authenticatedRequest(ctx, request),
       itemId: itemId as Id<"items">,
-      userDid: actor.did,
-      legacyDid: actor.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[itemsHttp] removeItem error:", error);
     return handlerErrorResponse(
       request,
@@ -199,8 +168,6 @@ export const removeItem = httpAction(async (ctx, request) => {
 export const reorderItems = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -211,18 +178,14 @@ export const reorderItems = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified acting DID
-    await ctx.runMutation(api.items.reorderItems, {
+    await ctx.runMutation(internal.items.reorderItemsInternal, {
+      ...await authenticatedRequest(ctx, request),
       listId: listId as Id<"lists">,
       itemIds: itemIds as Id<"items">[],
-      userDid: actor.did,
-      legacyDid: actor.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[itemsHttp] reorderItems error:", error);
     return handlerErrorResponse(
       request,

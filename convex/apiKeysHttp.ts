@@ -9,7 +9,7 @@
 
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   requireAuth,
@@ -35,8 +35,8 @@ async function requireUserDid(
   ctx: ActionCtx,
   request: Request
 ): Promise<string | null> {
-  const auth = await requireAuth(request);
-  const user = (await ctx.runQuery(api.auth.getUserByTurnkeyId, {
+  const auth = await requireAuth(ctx, request);
+  const user = (await ctx.runQuery(internal.auth.getUserByTurnkeyIdInternal, {
     turnkeySubOrgId: auth.turnkeySubOrgId,
   })) as UserInfo;
   return user?.did ?? null;

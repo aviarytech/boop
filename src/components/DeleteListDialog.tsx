@@ -3,7 +3,7 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -16,7 +16,7 @@ interface DeleteListDialogProps {
 }
 
 export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogProps) {
-  const { did, legacyDid } = useCurrentUser();
+  const { did } = useCurrentUser();
   const deleteList = useMutation(api.lists.deleteList);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +32,6 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
       // Pass both current and legacy DID for migrated users
       await deleteList({
         listId: list._id,
-        userDid: did,
-        legacyDid: legacyDid ?? undefined,
       });
       onDeleted();
     } catch (err) {

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from '../../convex/_generated/api';
 import {
   supportsPushNotifications,
@@ -62,7 +62,7 @@ export function useNotifications({ userDid }: UseNotificationsOptions) {
   // Check if user has server-side subscription
   const hasServerSubscription = useQuery(
     api.notifications.hasSubscription,
-    userDid ? { userDid } : 'skip'
+    userDid ? {} : 'skip'
   );
 
   // Check current subscription status on mount
@@ -100,7 +100,6 @@ export function useNotifications({ userDid }: UseNotificationsOptions) {
         // Save to Convex (both legacy and new pushTokens table)
         const json = subscription.toJSON();
         await saveSubscription({
-          userDid,
           endpoint: json.endpoint!,
           keys: {
             p256dh: json.keys!.p256dh,
@@ -108,7 +107,6 @@ export function useNotifications({ userDid }: UseNotificationsOptions) {
           },
         });
         await registerPushToken({
-          userDid,
           token: json.endpoint!,
           platform: 'web',
           webPushKeys: {
@@ -148,11 +146,11 @@ export function useNotifications({ userDid }: UseNotificationsOptions) {
         await unsubscribeFromPush();
         await removeSubscription({
           endpoint: subscription.endpoint,
-          userDid,
+
         });
         await unregisterPushToken({
           token: subscription.endpoint,
-          userDid,
+
         });
       }
 

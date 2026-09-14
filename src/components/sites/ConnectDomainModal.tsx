@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery } from "../../lib/authenticatedConvex";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
@@ -33,7 +33,7 @@ export function ConnectDomainModal({
     "boop.ad";
 
   const requestCustomHostname = useAction(api.siteActions.requestCustomHostname);
-  const site = useQuery(api.sites.getSite, { siteId, ownerDid });
+  const site = useQuery(api.sites.getSite, { siteId });
   const customRow = site?.hostnames.find((h) => h.kind === "custom");
 
   const phase = derivePhase(customRow, submitting);

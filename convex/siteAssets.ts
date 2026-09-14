@@ -1,11 +1,7 @@
+import { isResourceOwner } from "./lib/permissions";
+import { actorAction, actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
-import {
-  action,
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-} from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -59,9 +55,10 @@ function sanitizeFileName(fileName: string): string {
   return cleaned;
 }
 
-export const generateSiteAssetUploadUrl = action({
+export const { public: generateSiteAssetUploadUrl, internal: generateSiteAssetUploadUrlInternal } = actorAction({
+  resources: () => ({}),
+  scope: "*",
   args: {
-    ownerDid: v.string(),
     siteId: v.id("sites"),
     fileName: v.string(),
     contentType: v.string(),
@@ -80,7 +77,7 @@ export const generateSiteAssetUploadUrl = action({
 
     const owned = await ctx.runQuery(internal.siteAssets.assertOwnsSite, {
       siteId: args.siteId,
-      ownerDid: args.ownerDid,
+      ownerDid: ctx.actor.did,
     });
     if (!owned) throw new Error("Site not found");
 
@@ -94,9 +91,10 @@ export const generateSiteAssetUploadUrl = action({
   },
 });
 
-export const addSiteAsset = mutation({
+export const { public: addSiteAsset, internal: addSiteAssetInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "*",
   args: {
-    ownerDid: v.string(),
     siteId: v.id("sites"),
     fileName: v.string(),
     bucketKey: v.string(),
@@ -106,11 +104,12 @@ export const addSiteAsset = mutation({
   },
   handler: async (ctx, args): Promise<{ assetId: Id<"siteAssets"> }> => {
     const site = await ctx.db.get(args.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) {
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, ctx.actor.did)) {
       throw new Error("Site not found");
     }
 
     const fileName = sanitizeFileName(args.fileName);
+    if (args.bucketKey !== makeBucketKey("site-assets", args.siteId, fileName)) throw new Error("Invalid site asset key");
     const now = Date.now();
     const existing = await ctx.db
       .query("siteAssets")
@@ -143,11 +142,13 @@ export const addSiteAsset = mutation({
   },
 });
 
-export const listSiteAssets = query({
-  args: { ownerDid: v.string(), siteId: v.id("sites") },
+export const { public: listSiteAssets, internal: listSiteAssetsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "*",
+  args: {  siteId: v.id("sites") },
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) return [];
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, ctx.actor.did)) return [];
 
     return await ctx.db
       .query("siteAssets")
@@ -157,15 +158,16 @@ export const listSiteAssets = query({
   },
 });
 
-export const removeSiteAsset = action({
+export const { public: removeSiteAsset, internal: removeSiteAssetInternal } = actorAction({
+  resources: () => ({}),
+  scope: "*",
   args: {
-    ownerDid: v.string(),
     assetId: v.id("siteAssets"),
   },
   handler: async (ctx, args): Promise<void> => {
     const asset = await ctx.runQuery(internal.siteAssets.getOwnedAsset, {
       assetId: args.assetId,
-      ownerDid: args.ownerDid,
+      ownerDid: ctx.actor.did,
     });
     if (!asset) throw new Error("Asset not found");
 
@@ -180,7 +182,7 @@ export const assertOwnsSite = internalQuery({
   args: { siteId: v.id("sites"), ownerDid: v.string() },
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) return null;
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, args.ownerDid)) return null;
     return { siteId: site._id };
   },
 });
@@ -191,7 +193,7 @@ export const getOwnedAsset = internalQuery({
     const asset = await ctx.db.get(args.assetId);
     if (!asset) return null;
     const site = await ctx.db.get(asset.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) return null;
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, args.ownerDid)) return null;
     return asset;
   },
 });

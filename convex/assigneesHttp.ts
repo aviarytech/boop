@@ -1,71 +1,63 @@
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { AuthError, unauthorizedResponseWithCors } from "./lib/auth";
-import { requireAuthenticatedUser } from "./lib/authUser";
-import { jsonResponse, errorResponse } from "./lib/httpResponses";
+import { authenticatedRequest } from "./lib/actor";
+import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpResponses";
 
 export const assignItem = httpAction(async (ctx, request) => {
   try {
-    const user = await requireAuthenticatedUser(ctx, request);
     const body = await request.json();
     const { itemId, assigneeDid } = body as { itemId: string; assigneeDid: string };
 
     if (!itemId || !assigneeDid) return errorResponse(request, "itemId and assigneeDid are required");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await ctx.runMutation((api as any).assignees.assignItem, {
+    await ctx.runMutation(internal.assignees.assignItemInternal, {
+      ...await authenticatedRequest(ctx, request),
       itemId: itemId as Id<"items">,
       assigneeDid,
-      actorDid: user.did,
-      legacyDid: user.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) return unauthorizedResponseWithCors(request, error.message);
-    return errorResponse(request, error instanceof Error ? error.message : "Failed to assign item", 500);
+    return handlerErrorResponse(request, error, "Failed to assign item");
   }
 });
 
 export const unassignItem = httpAction(async (ctx, request) => {
   try {
-    const user = await requireAuthenticatedUser(ctx, request);
     const body = await request.json();
     const { itemId, assigneeDid } = body as { itemId: string; assigneeDid: string };
 
     if (!itemId || !assigneeDid) return errorResponse(request, "itemId and assigneeDid are required");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await ctx.runMutation((api as any).assignees.unassignItem, {
+    await ctx.runMutation(internal.assignees.unassignItemInternal, {
+      ...await authenticatedRequest(ctx, request),
       itemId: itemId as Id<"items">,
       assigneeDid,
-      actorDid: user.did,
-      legacyDid: user.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) return unauthorizedResponseWithCors(request, error.message);
-    return errorResponse(request, error instanceof Error ? error.message : "Failed to unassign item", 500);
+    return handlerErrorResponse(request, error, "Failed to unassign item");
   }
 });
 
 export const getItemAssignees = httpAction(async (ctx, request) => {
   try {
-    await requireAuthenticatedUser(ctx, request);
     const body = await request.json();
     const { itemId } = body as { itemId: string };
     if (!itemId) return errorResponse(request, "itemId is required");
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const assignees = await ctx.runQuery((api as any).assignees.getItemAssignees, {
+    const assignees = await ctx.runQuery(internal.assignees.getItemAssigneesInternal, {
+      ...await authenticatedRequest(ctx, request),
       itemId: itemId as Id<"items">,
     });
 
     return jsonResponse(request, { assignees });
   } catch (error) {
-    if (error instanceof AuthError) return unauthorizedResponseWithCors(request, error.message);
-    return errorResponse(request, error instanceof Error ? error.message : "Failed to get assignees", 500);
+    return handlerErrorResponse(request, error, "Failed to get assignees");
   }
 });

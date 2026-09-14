@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
@@ -13,7 +13,7 @@ export function Sites() {
   const { addToast } = useToast();
   const generateUploadUrl = useAction(api.sites.generateSiteUploadUrl);
   const createSiteFromUpload = useAction(api.siteActions.createSiteFromUpload);
-  const sites = useQuery(api.sites.listSites, did ? { ownerDid: did } : "skip");
+  const sites = useQuery(api.sites.listSites, did ? {} : "skip");
 
   const [html, setHtml] = useState("");
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export function Sites() {
     haptic("medium");
 
     try {
-      const { uploadUrl, bucketKey } = await generateUploadUrl({ ownerDid: did });
+      const { uploadUrl, bucketKey } = await generateUploadUrl({});
       const uploadResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: { "Content-Type": "text/html; charset=utf-8" },

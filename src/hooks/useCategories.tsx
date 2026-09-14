@@ -4,7 +4,7 @@
  * Provides access to the user's categories and mutations for CRUD operations.
  */
 
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "./useCurrentUser";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -14,7 +14,7 @@ export function useCategories() {
 
   const categories = useQuery(
     api.categories.getUserCategories,
-    did ? { userDid: did } : "skip"
+    did ? {} : "skip"
   );
 
   const createCategoryMutation = useMutation(api.categories.createCategory);
@@ -25,7 +25,6 @@ export function useCategories() {
   const createCategory = async (name: string) => {
     if (!did) throw new Error("Not authenticated");
     return createCategoryMutation({
-      userDid: did,
       name,
       createdAt: Date.now(),
     });
@@ -35,7 +34,6 @@ export function useCategories() {
     if (!did) throw new Error("Not authenticated");
     return renameCategoryMutation({
       categoryId,
-      userDid: did,
       name,
     });
   };
@@ -44,21 +42,17 @@ export function useCategories() {
     if (!did) throw new Error("Not authenticated");
     return deleteCategoryMutation({
       categoryId,
-      userDid: did,
     });
   };
 
   const setListCategory = async (
     listId: Id<"lists">,
-    categoryId: Id<"categories"> | undefined,
-    legacyDid?: string
-  ) => {
+    categoryId: Id<"categories"> | undefined  ) => {
     if (!did) throw new Error("Not authenticated");
     return setListCategoryMutation({
       listId,
       categoryId,
-      userDid: did,
-      legacyDid,
+
     });
   };
 

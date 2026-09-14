@@ -33,7 +33,13 @@ API keys are long-lived credentials scoped to specific actions. Mint one with a
 JWT session (see [Agent API v1](#agent-api-v1)). When an `X-API-Key` header is
 present it takes precedence over the `Authorization` header. Keys carry scopes
 (`lists:read`, `items:read`, `items:write`); a request missing the required
-scope returns `401`. JWT sessions have full access.
+scope returns `403`. JWT sessions have full access.
+
+The authenticated-boundary cutover distinguishes `401` (missing, invalid, expired,
+or revoked credentials) from `403` (valid credentials without the required scope
+or resource access). API-key consumers that previously treated every denial as
+`401` must handle both. Missing and inaccessible resources behind the HTTP write boundary return the
+same `403` response to avoid disclosing private resource existence.
 
 ## Endpoints
 
@@ -334,3 +340,11 @@ await fetch(`${BASE_URL}/api/agent/items/${itemId}`, {
   body: JSON.stringify({ checked: true })
 });
 ```
+
+### Direct Convex clients
+
+Authenticated direct operations require `authToken` (the JWT from login) or an appropriately scoped `apiKey`. Browser/native clients first call `actorSession.establish({ authToken })` so logout and expiry invalidate reactive subscriptions. HTTP clients continue sending Bearer/cookie JWT or `X-API-Key`; the HTTP adapter establishes existing valid sessions automatically.
+
+Do not supply acting DIDs. Ownership, attribution and legacy-account access are resolved from authenticated server records. Old optional identity fields are compatibility checks only and never grant access. Anonymous access is limited to explicitly public resources with active publications; shared writes require authentication.
+
+See [authentication rollout](docs/authentication-rollout.md) for the required deployed-version confirmation and coordinated client/backend cutover.

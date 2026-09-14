@@ -14,7 +14,7 @@ import { supportsPushNotifications } from '../lib/notifications';
 import { biometrics } from '../lib/biometrics';
 import { checkForUpdateAndApply, clearAllCachesAndReload } from '../lib/sw-registration';
 import { Panel } from './ui/Panel';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from '../../convex/_generated/api';
 import { useToast } from '../hooks/useToast';
 

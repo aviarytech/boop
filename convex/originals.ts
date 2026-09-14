@@ -1,13 +1,5 @@
-/**
- * Originals Explorer — unified read-only query.
- *
- * Joins lists, sites, siteHostnames, publications, bitcoinAnchors, activities,
- * itemAssignees into a single ExplorerRow[] sorted by updatedAt desc with
- * id-ascending tiebreaker. Pure derivation logic lives in src/lib/explorer.ts.
- */
+import { actorQuery } from "./lib/authenticated";
 
-import { v } from "convex/values";
-import { query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import {
   deriveExplorerRows,
@@ -15,18 +7,17 @@ import {
   type ExplorerRow,
 } from "../src/lib/explorer";
 
-export const listOwnedOriginals = query({
-  args: { ownerDid: v.string() },
-  handler: async (ctx, args): Promise<ExplorerRow[]> => {
+export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "lists:read",
+  args: {},
+  handler: async (ctx): Promise<ExplorerRow[]> => {
+    const dids = [ctx.actor.did, ctx.actor.legacyDid].filter((did): did is string => !!did);
     const [lists, sites] = await Promise.all([
-      ctx.db
-        .query("lists")
-        .withIndex("by_owner", (q) => q.eq("ownerDid", args.ownerDid))
-        .collect(),
-      ctx.db
-        .query("sites")
-        .withIndex("by_owner", (q) => q.eq("ownerDid", args.ownerDid))
-        .collect(),
+      Promise.all(dids.map(did => ctx.db.query("lists")
+        .withIndex("by_owner", q => q.eq("ownerDid", did)).collect())).then(rows => rows.flat()),
+      Promise.all(dids.map(did => ctx.db.query("sites")
+        .withIndex("by_owner", q => q.eq("ownerDid", did)).collect())).then(rows => rows.flat()),
     ]);
 
     // Per-site joins: hostnames.

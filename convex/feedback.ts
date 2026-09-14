@@ -1,3 +1,4 @@
+import { actorMutation } from "./lib/authenticated";
 /**
  * Feedback module — in-app user feedback collection.
  *
@@ -7,17 +8,19 @@
  */
 
 import { v } from "convex/values";
-import { internalAction, internalMutation, mutation } from "./_generated/server";
+import { internalAction, internalMutation } from "./_generated/server";
 
 // ---------------------------------------------------------------------------
 // Public mutations
 // ---------------------------------------------------------------------------
 
 /**
- * Submit in-app feedback. Authenticated via userId passed from frontend.
+ * Submit in-app feedback. Authenticated through the shared session boundary.
  * Takes body and category; source is always "in_app", status starts as "new".
  */
-export const submit = mutation({
+export const { public: submit, internal: submitAuthenticatedInternal } = actorMutation({
+  resources: args => ({ accounts: [args.userId] }),
+  scope: "*",
   args: {
     userId: v.id("users"),
     body: v.string(),

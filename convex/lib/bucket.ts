@@ -33,6 +33,7 @@ function client(cfg: BucketConfig = readConfig()) {
 }
 
 function objectUrl(cfg: BucketConfig, key: string): string {
+  if (key.split("/").some(segment => segment === "." || segment === "..")) throw new Error("Invalid bucket key");
   const host = new URL(cfg.endpoint).host;
   const encoded = key.split("/").map(encodeURIComponent).join("/");
   return `https://${cfg.name}.${host}/${encoded}`;

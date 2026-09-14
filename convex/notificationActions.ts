@@ -1,25 +1,27 @@
 "use node";
+import { actorAction } from "./lib/authenticated";
 /**
  * Push notification actions (Node.js) — APNs + Web Push.
  * Queries/mutations are in notifications.ts.
  */
 
 import { v } from "convex/values";
-import { action, internalAction } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 // ─── Send push notification (action) ────────────────────────────────
 
-export const sendPushNotification = action({
+export const { public: sendPushNotification, internal: sendPushNotificationAuthenticatedInternal } = actorAction({
+  resources: () => ({}),
+  scope: "*",
   args: {
-    userDid: v.string(),
     title: v.string(),
     body: v.string(),
     data: v.optional(v.any()),
   },
   handler: async (ctx, args): Promise<Array<{ token: string; platform: string; status: string; reason?: string }>> => {
     const tokens: Array<{ token: string; platform: string; webPushKeys?: { p256dh: string; auth: string } }> = await ctx.runQuery(internal.notifications.getTokensForUser, {
-      userDid: args.userDid,
+      userDid: ctx.actor.did,
     });
 
     const results: PromiseSettledResult<void>[] = await Promise.allSettled(
@@ -41,7 +43,9 @@ export const sendPushNotification = action({
   },
 });
 
-export const sendListNotification = action({
+export const { public: sendListNotification, internal: sendListNotificationAuthenticatedInternal } = actorAction({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "*",
   args: {
     listId: v.id("lists"),
     excludeDid: v.optional(v.string()),

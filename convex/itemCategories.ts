@@ -1,3 +1,4 @@
+import { actorMutation } from "./lib/authenticated";
 /**
  * Mutations for a list's item categories.
  *
@@ -8,7 +9,7 @@
  */
 
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { canUserEditList } from "./lib/permissions";
@@ -25,7 +26,6 @@ import {
 
 const editorArgs = {
   listId: v.id("lists"),
-  userDid: v.string(),
 };
 
 /**
@@ -36,11 +36,12 @@ const editorArgs = {
 async function loadEditableSet(
   ctx: MutationCtx,
   listId: Id<"lists">,
-  userDid: string
+  userDid: string,
+  legacyDid?: string
 ): Promise<Category[]> {
   const list = await ctx.db.get(listId);
   if (!list) throw new Error("List not found");
-  if (!(await canUserEditList(ctx, listId, userDid))) {
+  if (!(await canUserEditList(ctx, listId, userDid, legacyDid))) {
     throw new Error("You do not have permission to edit this list");
   }
   return materialiseCategories(list.itemCategories, list.customAisles);
@@ -54,46 +55,56 @@ async function persist(
   await ctx.db.patch(listId, { itemCategories: categories });
 }
 
-export const addListCategory = mutation({
+export const { public: addListCategory, internal: addListCategoryInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: { ...editorArgs, name: v.string(), emoji: v.string() },
   handler: async (ctx, args) => {
-    const set = await loadEditableSet(ctx, args.listId, args.userDid);
+    const set = await loadEditableSet(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     await persist(ctx, args.listId, addCategory(set, args.name, args.emoji));
   },
 });
 
-export const renameListCategory = mutation({
+export const { public: renameListCategory, internal: renameListCategoryInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: { ...editorArgs, categoryId: v.string(), name: v.string() },
   handler: async (ctx, args) => {
-    const set = await loadEditableSet(ctx, args.listId, args.userDid);
+    const set = await loadEditableSet(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     await persist(ctx, args.listId, renameCategory(set, args.categoryId, args.name));
   },
 });
 
-export const setListCategoryEmoji = mutation({
+export const { public: setListCategoryEmoji, internal: setListCategoryEmojiInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: { ...editorArgs, categoryId: v.string(), emoji: v.string() },
   handler: async (ctx, args) => {
-    const set = await loadEditableSet(ctx, args.listId, args.userDid);
+    const set = await loadEditableSet(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     await persist(ctx, args.listId, setCategoryEmoji(set, args.categoryId, args.emoji));
   },
 });
 
-export const moveListCategory = mutation({
+export const { public: moveListCategory, internal: moveListCategoryInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     ...editorArgs,
     categoryId: v.string(),
     direction: v.union(v.literal("up"), v.literal("down")),
   },
   handler: async (ctx, args) => {
-    const set = await loadEditableSet(ctx, args.listId, args.userDid);
+    const set = await loadEditableSet(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     await persist(ctx, args.listId, moveCategory(set, args.categoryId, args.direction));
   },
 });
 
-export const deleteListCategory = mutation({
+export const { public: deleteListCategory, internal: deleteListCategoryInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: { ...editorArgs, categoryId: v.string() },
   handler: async (ctx, args) => {
-    const set = await loadEditableSet(ctx, args.listId, args.userDid);
+    const set = await loadEditableSet(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     const next = deleteCategory(set, args.categoryId);
 
     // Items explicitly filed here would otherwise point at a category that no

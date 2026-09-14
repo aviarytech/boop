@@ -5,7 +5,7 @@
  */
 
 import { useState, type FormEvent } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -28,7 +28,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
   const navigate = useNavigate();
   const { haptic } = useSettings();
   const createList = useMutation(api.lists.createList);
-  const existingLists = useQuery(api.lists.getUserLists, did ? { userDid: did } : "skip");
+  const existingLists = useQuery(api.lists.getUserLists, did ? {} : "skip");
 
   const [name, setName] = useState("");
   const [categoryId, setCategoryId] = useState<Id<"categories"> | undefined>(undefined);
@@ -64,7 +64,6 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
         name: trimmedName,
-        ownerDid: did,
         categoryId,
         createdAt: Date.now(),
       });

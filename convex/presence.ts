@@ -1,18 +1,19 @@
+import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+
 import { canUserEditList } from "./lib/permissions";
 
 const ACTIVE_WINDOW_MS = 60_000;
 
-export const heartbeat = mutation({
+export const { public: heartbeat, internal: heartbeatInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
     status: v.optional(v.union(v.literal("active"), v.literal("idle"), v.literal("offline"))),
   },
   handler: async (ctx, args) => {
-    const canAccess = await canUserEditList(ctx, args.listId, args.userDid, args.legacyDid);
+    const canAccess = await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canAccess) throw new Error("Not authorized to update presence");
 
     const now = Date.now();
@@ -20,7 +21,7 @@ export const heartbeat = mutation({
 
     const existing = await ctx.db
       .query("presence")
-      .withIndex("by_list_user", (q) => q.eq("listId", args.listId).eq("userDid", args.userDid))
+      .withIndex("by_list_user", (q) => q.eq("listId", args.listId).eq("userDid", ctx.actor.did))
       .first();
 
     if (existing) {
@@ -28,7 +29,7 @@ export const heartbeat = mutation({
     } else {
       await ctx.db.insert("presence", {
         listId: args.listId,
-        userDid: args.userDid,
+        userDid: ctx.actor.did,
         status,
         lastSeenAt: now,
         updatedAt: now,
@@ -37,7 +38,7 @@ export const heartbeat = mutation({
 
     await ctx.db.insert("activities", {
       listId: args.listId,
-      actorDid: args.userDid,
+      actorDid: ctx.actor.did,
       type: "presence_heartbeat",
       metadata: { status },
       createdAt: now,
@@ -47,19 +48,19 @@ export const heartbeat = mutation({
   },
 });
 
-export const markOffline = mutation({
+export const { public: markOffline, internal: markOfflineInternal } = actorMutation({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:write",
   args: {
     listId: v.id("lists"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const canAccess = await canUserEditList(ctx, args.listId, args.userDid, args.legacyDid);
+    const canAccess = await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canAccess) throw new Error("Not authorized to update presence");
 
     const existing = await ctx.db
       .query("presence")
-      .withIndex("by_list_user", (q) => q.eq("listId", args.listId).eq("userDid", args.userDid))
+      .withIndex("by_list_user", (q) => q.eq("listId", args.listId).eq("userDid", ctx.actor.did))
       .first();
 
     const now = Date.now();
@@ -69,7 +70,7 @@ export const markOffline = mutation({
 
     await ctx.db.insert("activities", {
       listId: args.listId,
-      actorDid: args.userDid,
+      actorDid: ctx.actor.did,
       type: "presence_offline",
       metadata: { status: "offline" },
       createdAt: now,
@@ -79,7 +80,9 @@ export const markOffline = mutation({
   },
 });
 
-export const getListPresence = query({
+export const { public: getListPresence, internal: getListPresenceInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const now = Date.now();

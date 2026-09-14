@@ -11,7 +11,7 @@
  */
 
 import { httpAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
 import type { Id } from "./_generated/dataModel";
@@ -49,8 +49,8 @@ export const stripeWebhook = httpAction(async (ctx, request) => {
  */
 export const createCheckout = httpAction(async (ctx, request) => {
   try {
-    const auth = await requireAuth(request);
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
+    const auth = await requireAuth(ctx, request);
+    const user = await ctx.runQuery(internal.auth.getUserByTurnkeyIdInternal, {
       turnkeySubOrgId: auth.turnkeySubOrgId,
     }) as { _id: Id<"users">; email?: string } | null;
     if (!user) return errorResponse(request, "User not found", 404);
@@ -83,8 +83,8 @@ export const createCheckout = httpAction(async (ctx, request) => {
  */
 export const createPortal = httpAction(async (ctx, request) => {
   try {
-    const auth = await requireAuth(request);
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
+    const auth = await requireAuth(ctx, request);
+    const user = await ctx.runQuery(internal.auth.getUserByTurnkeyIdInternal, {
       turnkeySubOrgId: auth.turnkeySubOrgId,
     }) as { _id: Id<"users"> } | null;
     if (!user) return errorResponse(request, "User not found", 404);
@@ -109,8 +109,8 @@ export const createPortal = httpAction(async (ctx, request) => {
  */
 export const getSubscription = httpAction(async (ctx, request) => {
   try {
-    const auth = await requireAuth(request);
-    const user = await ctx.runQuery(api.auth.getUserByTurnkeyId, {
+    const auth = await requireAuth(ctx, request);
+    const user = await ctx.runQuery(internal.auth.getUserByTurnkeyIdInternal, {
       turnkeySubOrgId: auth.turnkeySubOrgId,
     }) as { _id: Id<"users"> } | null;
     if (!user) return errorResponse(request, "User not found", 404);

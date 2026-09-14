@@ -1,16 +1,9 @@
-/**
- * HTTP action handlers for protected list mutations.
- *
- * These endpoints authenticate via resolveActor(), which accepts either a JWT
- * session or an agent API key (X-API-Key). Writes require the "items:write" scope
- * (there is no lists:write scope yet).
- */
+/** HTTP adapter; authentication and authorization run in the shared operation. */
 
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { AuthError, unauthorizedResponseWithCors } from "./lib/auth";
-import { resolveActor, requireScope } from "./lib/actor";
+import { authenticatedRequest } from "./lib/actor";
 import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpResponses";
 
 /**
@@ -24,8 +17,6 @@ import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpRes
 export const createList = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -40,19 +31,16 @@ export const createList = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified DID
-    const listId = await ctx.runMutation(api.lists.createList, {
+    const listId = await ctx.runMutation(internal.lists.createListInternal, {
+      ...await authenticatedRequest(ctx, request),
       assetDid,
       name,
-      ownerDid: actor.did,
       categoryId: categoryId as unknown as undefined, // Optional category ID
       createdAt: Date.now(),
     });
 
     return jsonResponse(request, { listId });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[listsHttp] createList error:", error);
     return handlerErrorResponse(
       request,
@@ -73,8 +61,6 @@ export const createList = httpAction(async (ctx, request) => {
 export const deleteList = httpAction(async (ctx, request) => {
   try {
     // Accept a JWT session or an agent API key with items:write scope.
-    const actor = await resolveActor(ctx, request);
-    requireScope(actor, "items:write");
 
     // Parse request body
     const body = await request.json();
@@ -85,17 +71,13 @@ export const deleteList = httpAction(async (ctx, request) => {
     }
 
     // Call the mutation with server-verified DID
-    await ctx.runMutation(api.lists.deleteList, {
+    await ctx.runMutation(internal.lists.deleteListInternal, {
+      ...await authenticatedRequest(ctx, request),
       listId: listId as Id<"lists">,
-      userDid: actor.did,
-      legacyDid: actor.legacyDid,
     });
 
     return jsonResponse(request, { success: true });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return unauthorizedResponseWithCors(request, error.message);
-    }
     console.error("[listsHttp] deleteList error:", error);
     return handlerErrorResponse(
       request,

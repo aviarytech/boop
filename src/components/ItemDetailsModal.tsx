@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -93,8 +93,7 @@ export function ItemDetailsModal({
 
   const comments = useQuery(api.comments.getItemComments, {
     itemId: item._id,
-    userDid,
-    legacyDid,
+
   });
 
   const participantDids = useMemo(() => {

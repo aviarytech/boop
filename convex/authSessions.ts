@@ -8,7 +8,7 @@
  */
 
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 
 // Session timeout (15 minutes in milliseconds)
 const SESSION_TIMEOUT = 15 * 60 * 1000;
@@ -16,7 +16,7 @@ const SESSION_TIMEOUT = 15 * 60 * 1000;
 /**
  * Create a new auth session.
  */
-export const createSession = mutation({
+export const createSessionInternal = internalMutation({
   args: {
     sessionId: v.string(),
     email: v.string(),
@@ -41,7 +41,7 @@ export const createSession = mutation({
  * Get an auth session by session ID.
  * Returns null if session doesn't exist or has expired.
  */
-export const getSession = query({
+export const getSessionInternal = internalQuery({
   args: { sessionId: v.string() },
   handler: async (ctx, args) => {
     const session = await ctx.db
@@ -63,7 +63,7 @@ export const getSession = query({
 /**
  * Update a session after successful OTP verification.
  */
-export const markSessionVerified = mutation({
+export const markSessionVerifiedInternal = internalMutation({
   args: {
     sessionId: v.string(),
     subOrgId: v.string(),
@@ -94,7 +94,7 @@ export const markSessionVerified = mutation({
 /**
  * Delete a session (cleanup after login or logout).
  */
-export const deleteSession = mutation({
+export const deleteSessionInternal = internalMutation({
   args: { sessionId: v.string() },
   handler: async (ctx, args) => {
     const session = await ctx.db
@@ -134,3 +134,23 @@ export const cleanupExpiredSessions = internalMutation({
     return deletedCount;
   },
 });
+
+// Compatibility name: OTP state is managed exclusively by verified HTTP login.
+export const createSession = mutation({ args: {
+    sessionId: v.string(),
+    email: v.string(),
+    subOrgId: v.optional(v.string()),
+    otpId: v.optional(v.string()),
+  }, handler: async () => { throw new Error("Authentication required: use the HTTP login endpoints"); } });
+
+// Compatibility name: OTP state is managed exclusively by verified HTTP login.
+export const getSession = query({ args: { sessionId: v.string() }, handler: async () => { throw new Error("Authentication required: use the HTTP login endpoints"); } });
+
+// Compatibility name: OTP state is managed exclusively by verified HTTP login.
+export const markSessionVerified = mutation({ args: {
+    sessionId: v.string(),
+    subOrgId: v.string(),
+  }, handler: async () => { throw new Error("Authentication required: use the HTTP login endpoints"); } });
+
+// Compatibility name: OTP state is managed exclusively by verified HTTP login.
+export const deleteSession = mutation({ args: { sessionId: v.string() }, handler: async () => { throw new Error("Authentication required: use the HTTP login endpoints"); } });

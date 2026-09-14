@@ -1,10 +1,12 @@
+import { canUserViewList } from "./lib/permissions";
+import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * User-related queries and mutations.
  * Provides user statistics and profile information.
  */
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -13,13 +15,16 @@ import type { Id } from "./_generated/dataModel";
  * categories, bookmarks, push tokens, referrals, feedback, subscriptions,
  * and the user record itself.
  */
-export const deleteUserData = mutation({
+export const { public: deleteUserData, internal: deleteUserDataInternal } = actorMutation({
+  resources: () => ({}),
+  scope: "*",
   args: {
     userId: v.id("users"),
   },
   handler: async (ctx, { userId }) => {
     const user = await ctx.db.get(userId);
     if (!user) return;
+    if (user.turnkeySubOrgId !== ctx.actor.turnkeySubOrgId || ctx.actor.viaApiKey) throw new Error("Not authorized to delete this account");
 
     const dids = [user.did, user.legacyDid].filter(Boolean) as string[];
 
@@ -194,13 +199,12 @@ export const getUsersByDids = query({
 /**
  * Get aggregate statistics for a user across all their lists.
  */
-export const getUserStats = query({
-  args: {
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { userDid, legacyDid } = args;
+export const { public: getUserStats, internal: getUserStatsInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "items:read",
+  args: {},
+  handler: async (ctx) => {
+    const { did: userDid, legacyDid } = ctx.actor;
 
     // Get all lists where user is owner
     const ownedLists = await ctx.db
@@ -227,7 +231,10 @@ export const getUserStats = query({
     }
 
     const ownedListIds = new Set(ownedLists.map((l) => l._id));
-    const sharedListIds = bookmarkedListIds.filter((id) => !ownedListIds.has(id));
+    const sharedListIds: Id<"lists">[] = [];
+    for (const id of new Set(bookmarkedListIds)) {
+      if (!ownedListIds.has(id) && await canUserViewList(ctx, id, userDid, legacyDid)) sharedListIds.push(id);
+    }
     
     const allListIds = [...ownedListIds, ...sharedListIds];
 

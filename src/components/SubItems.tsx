@@ -4,7 +4,7 @@
  */
 
 import { useState, useRef } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
@@ -28,8 +28,6 @@ interface SubItemsProps {
 export function SubItems({
   parentId,
   listId,
-  userDid,
-  legacyDid,
   canEdit,
 }: SubItemsProps) {
   const { haptic } = useSettings();
@@ -67,8 +65,7 @@ export function SubItems({
       await addItem({
         listId,
         name: newItemName.trim(),
-        createdByDid: userDid,
-        legacyDid,
+
         createdAt: Date.now(),
         parentId: parentId as Id<"items">,
       });
@@ -96,14 +93,12 @@ export function SubItems({
       if (item.checked) {
         await uncheckItem({
           itemId: item._id,
-          userDid,
-          legacyDid,
+
         });
       } else {
         await checkItem({
           itemId: item._id,
-          checkedByDid: userDid,
-          legacyDid,
+
           checkedAt: Date.now(),
         });
       }
@@ -119,8 +114,7 @@ export function SubItems({
     try {
       await removeItem({
         itemId,
-        userDid,
-        legacyDid,
+
       });
     } catch (err) {
       console.error("Failed to remove sub-item:", err);

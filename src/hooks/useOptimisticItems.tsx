@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { useOffline } from "./useOffline";
@@ -233,7 +233,7 @@ export function useOptimisticItems(listId: Id<"lists">) {
 
       if (isOnline) {
         try {
-          await checkItemMutation({ itemId, checkedByDid, legacyDid, checkedAt });
+          await checkItemMutation({ itemId,   checkedAt });
         } catch (err) {
           // Rollback: remove the optimistic state
           setOptimisticItems((prev) => prev.filter((i) => i._id !== itemId));
@@ -295,7 +295,7 @@ export function useOptimisticItems(listId: Id<"lists">) {
 
       if (isOnline) {
         try {
-          await uncheckItemMutation({ itemId, userDid, legacyDid });
+          await uncheckItemMutation({ itemId,   });
         } catch (err) {
           // Rollback: remove the optimistic state
           setOptimisticItems((prev) => prev.filter((i) => i._id !== itemId));
@@ -321,7 +321,7 @@ export function useOptimisticItems(listId: Id<"lists">) {
   const reorderItems = useCallback(
     async (itemIds: Id<"items">[], userDid: string, legacyDid?: string) => {
       if (isOnline) {
-        await reorderItemsMutation({ listId, itemIds, userDid, legacyDid });
+        await reorderItemsMutation({ listId, itemIds,   });
       } else {
         await queueMutation({
           type: "reorderItem",
@@ -499,7 +499,7 @@ export function useOptimisticItems(listId: Id<"lists">) {
 
       if (isOnline) {
         try {
-          await removeItemMutation({ itemId, userDid, legacyDid });
+          await removeItemMutation({ itemId,   });
         } catch (err) {
           // Rollback: remove the marker
           setOptimisticItems((prev) => prev.filter((i) => i._id !== itemId));

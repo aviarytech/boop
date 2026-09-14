@@ -1,3 +1,4 @@
+import { isResourceOwner } from "./lib/permissions";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
@@ -100,7 +101,7 @@ export const getSiteIdentityForUpdate = internalQuery({
   },
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
-    if (!site || site.ownerDid !== args.ownerDid) return null;
+    if (!site || !await isResourceOwner(ctx, site.ownerDid, args.ownerDid)) return null;
 
     const [key, hostnames, didLogEntries] = await Promise.all([
       ctx.db
@@ -354,5 +355,13 @@ export const replaceSiteFileRecord = internalMutation({
     });
 
     return { fileId: newFileId };
+  },
+});
+
+export const isVerifiedCustomHostname = internalQuery({
+  args: { siteId: v.id("sites"), hostname: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.query("siteHostnames").withIndex("by_hostname", q => q.eq("hostname", args.hostname)).first();
+    return !!row && row.siteId === args.siteId && row.kind === "custom" && row.cfStatus === "active" && row.cfSslStatus === "active";
   },
 });

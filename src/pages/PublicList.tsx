@@ -7,7 +7,7 @@
 
 import { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "convex/react";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { VerificationBadge } from "../components/publish/VerificationBadge";
 import { formatRelativeTime } from "../lib/time";
