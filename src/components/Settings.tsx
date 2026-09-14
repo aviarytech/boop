@@ -47,6 +47,7 @@ export function Settings({ onClose }: SettingsProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [logoutSubmitting, setLogoutSubmitting] = useState(false);
 
   const convexUser = useQuery(
     api.auth.getUserByTurnkeyId,
@@ -70,6 +71,18 @@ export function Settings({ onClose }: SettingsProps) {
       setFeedbackOpen(false);
     } finally {
       setFeedbackSubmitting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    haptic('medium');
+    setLogoutSubmitting(true);
+    try {
+      await logout();
+    } catch (error) {
+      console.error('[Settings] Logout cleanup failed:', error);
+    } finally {
+      onClose();
     }
   };
 
@@ -486,6 +499,19 @@ export function Settings({ onClose }: SettingsProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </Link>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={logoutSubmitting}
+            className="flex items-center gap-3 w-full mt-2 py-3 px-4 text-left bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-6 h-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {logoutSubmitting ? 'Logging out…' : 'Log out'}
+            </span>
+          </button>
         </section>
 
         {/* Feedback Section */}
