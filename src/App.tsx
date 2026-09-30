@@ -38,6 +38,8 @@ const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms }
 const Compare = lazy(() => import('./pages/Compare').then(m => ({ default: m.Compare })))
 const ApiQuickstart = lazy(() => import('./pages/ApiQuickstart').then(m => ({ default: m.ApiQuickstart })))
 const NoteEditor = lazy(() => import('./pages/NoteEditor').then(m => ({ default: m.NoteEditor })))
+// PROTOTYPE (#231) — throwaway, DEV only. Delete with src/pages/prototype/.
+const NotesIndexPrototype = lazy(() => import('./pages/prototype/NotesIndexPrototype').then(m => ({ default: m.NotesIndexPrototype })))
 
 /**
  * Authenticated layout wrapper with header and navigation.
@@ -252,6 +254,10 @@ function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/compare/:competitor" element={<Compare />} />
           <Route path="/docs/quickstart" element={<ApiQuickstart />} />
+          {/* PROTOTYPE (#231) — real app chrome, mock data, no auth. DEV only. */}
+          {import.meta.env.DEV && (
+            <Route path="/prototype/notes-index" element={<AuthenticatedLayout><NotesIndexPrototype /></AuthenticatedLayout>} />
+          )}
 
           {/* Everything below stays behind the (opt-in) biometric app lock,
               including content-bearing public routes like invites and shared lists.
