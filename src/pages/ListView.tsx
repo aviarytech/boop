@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useCallback, useRef, lazy, Suspense, useEffect, useMemo } from "react";
-import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link, Navigate } from "react-router-dom";
 import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
@@ -36,6 +36,7 @@ import { CalendarView } from "../components/CalendarView";
 import { BatchOperations } from "../components/BatchOperations";
 import { HeaderActionsMenu } from "../components/HeaderActionsMenu";
 import { ListVerificationBadge, type VerificationState } from "../components/VerificationBadge";
+import { isNote } from "../../convex/lib/noteBody";
 
 // Lazy-loaded modals for better bundle splitting
 const DeleteListDialog = lazy(() => import("../components/DeleteListDialog").then(m => ({ default: m.DeleteListDialog })));
@@ -654,6 +655,8 @@ export function ListView() {
       </div>
     );
   }
+
+  if (isNote(list)) return <Navigate to={`/n/${list._id}`} replace />;
 
   // Check authorization: owner always has access, published lists are open
   const userDids = [did, legacyDid].filter(Boolean) as string[];

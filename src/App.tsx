@@ -38,6 +38,7 @@ const Terms = lazy(() => import('./pages/Terms').then(m => ({ default: m.Terms }
 const Compare = lazy(() => import('./pages/Compare').then(m => ({ default: m.Compare })))
 const ApiQuickstart = lazy(() => import('./pages/ApiQuickstart').then(m => ({ default: m.ApiQuickstart })))
 const NoteEditor = lazy(() => import('./pages/NoteEditor').then(m => ({ default: m.NoteEditor })))
+const NoteView = lazy(() => import('./pages/NoteView').then(m => ({ default: m.NoteView })))
 
 /**
  * Authenticated layout wrapper with header and navigation.
@@ -282,6 +283,7 @@ function App() {
             <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
             <Route path="/priority" element={<ProtectedRoute><PriorityFocus /></ProtectedRoute>} />
             <Route path="/list/:id" element={<ProtectedRoute><ListView /></ProtectedRoute>} />
+            <Route path="/n/:id" element={<ProtectedRoute><NoteView /></ProtectedRoute>} />
             <Route path="/note/:itemId" element={<ProtectedRoute><NoteEditor /></ProtectedRoute>} />
 
             {/* Fallback - redirect to app (AuthGuard will handle login redirect if needed) */}

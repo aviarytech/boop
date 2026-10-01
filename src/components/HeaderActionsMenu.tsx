@@ -22,8 +22,11 @@ interface HeaderActionsMenuProps {
   onDelete: () => void;
   onRename: () => void;
   onChangeCategory?: () => void;
-  onKeyboardShortcuts: () => void;
+  /** Omitted where the page has no shortcuts, which hides the item. */
+  onKeyboardShortcuts?: () => void;
   haptic: (type: 'light' | 'medium' | 'heavy') => void;
+  /** The noun in "Rename …" / "Delete …". */
+  subject?: "list" | "note";
 }
 
 export function HeaderActionsMenu({
@@ -44,6 +47,7 @@ export function HeaderActionsMenu({
   onChangeCategory,
   onKeyboardShortcuts,
   haptic,
+  subject = "list",
 }: HeaderActionsMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -112,14 +116,16 @@ export function HeaderActionsMenu({
           className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50 animate-slide-up"
         >
           {/* Keyboard shortcuts - hidden on mobile via CSS, visible in dropdown on desktop */}
-          <button
-            onClick={() => handleAction(onKeyboardShortcuts)}
-            className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
-          >
-            <span className="text-base leading-none">⌨️</span>
-            <span>Keyboard shortcuts</span>
-            <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">?</span>
-          </button>
+          {onKeyboardShortcuts && (
+            <button
+              onClick={() => handleAction(onKeyboardShortcuts)}
+              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
+            >
+              <span className="text-base leading-none">⌨️</span>
+              <span>Keyboard shortcuts</span>
+              <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">?</span>
+            </button>
+          )}
 
           {/* Rename */}
           {canRename && (
@@ -128,7 +134,7 @@ export function HeaderActionsMenu({
               className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
             >
               <span className="text-base leading-none">✏️</span>
-              <span>Rename list</span>
+              <span>Rename {subject}</span>
             </button>
           )}
 
@@ -149,7 +155,9 @@ export function HeaderActionsMenu({
             </button>
           )}
 
-          <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
+          {(canShare || onNativeShare || canPublish || canSaveTemplate) && (
+            <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
+          )}
 
           {/* Share */}
           {canShare && (
@@ -227,7 +235,7 @@ export function HeaderActionsMenu({
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
-                <span>Delete list</span>
+                <span>Delete {subject}</span>
                 {!isOnline && <span className="ml-auto text-xs text-gray-400">Offline</span>}
               </button>
             </>
