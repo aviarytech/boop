@@ -49,7 +49,8 @@ export const cleanupExpiredSessions = internalMutation({
   handler: async (ctx) => {
     const expired = await ctx.db
       .query("accessSessions")
-      .withIndex("by_expires_at", q => q.lte("expiresAt", Date.now()))
+      // Lower bound skips persistent sessions; Convex sorts a missing expiresAt first.
+      .withIndex("by_expires_at", q => q.gte("expiresAt", 0).lte("expiresAt", Date.now()))
       .take(100);
     for (const session of expired) await ctx.db.delete(session._id);
     return expired.length;
