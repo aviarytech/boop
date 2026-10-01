@@ -13,6 +13,7 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { createListAsset } from "../lib/originals";
 import { isPlanLimitError } from "../lib/planLimit";
+import { isNote } from "../../convex/lib/noteBody";
 import { CategorySelector } from "./lists/CategorySelector";
 import { Panel } from "./ui/Panel";
 import { trackListCreated, trackFirstListCreated, trackFeatureGateHit, trackInviteSent } from "../lib/analytics";
@@ -69,7 +70,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
       });
 
       haptic('success');
-      const newCount = (existingLists?.length ?? 0) + 1;
+      const newCount = (existingLists?.filter((l) => !isNote(l)).length ?? 0) + 1;
       trackListCreated(newCount);
       if (newCount === 1) trackFirstListCreated();
       setCreatedListId(listId);

@@ -13,6 +13,7 @@ import { useCategories } from "../../hooks/useCategories";
 import { useCurrentUser } from "../../hooks/useCurrentUser";
 import { useFocusTrap } from "../../hooks/useFocusTrap";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { isNote } from "../../../convex/lib/noteBody";
 
 interface CategoryManagerProps {
   onClose: () => void;
@@ -39,13 +40,13 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
 
   const getListCountForCategory = (categoryId: Id<"categories">) => {
     if (!lists) return 0;
-    return lists.filter((list: Doc<"lists">) => list.categoryId === categoryId)
+    return lists.filter((list: Doc<"lists">) => !isNote(list) && list.categoryId === categoryId)
       .length;
   };
 
   const getUncategorizedCount = () => {
     if (!lists) return 0;
-    return lists.filter((list: Doc<"lists">) => !list.categoryId).length;
+    return lists.filter((list: Doc<"lists">) => !isNote(list) && !list.categoryId).length;
   };
 
   const handleCreateCategory = async () => {
