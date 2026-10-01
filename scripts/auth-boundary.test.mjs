@@ -408,3 +408,26 @@ test('identity assertion RPC errors retain their authentication status over HTTP
   assert.equal(response.status,401);assert.deepEqual(await response.json(),{error:'Authentication required'});
   assert.equal(ctx.rows.items[0].checked,false);
 });
+
+test('persistent mobile sessions survive time and expiry callbacks but remain revoked after logout', async () => {
+  const authToken = await new SignJWT({email:'owner@example.test',sessionType:'mobile_persistent'})
+    .setProtectedHeader({alg:'HS256'}).setSubject('owner').setIssuedAt().setJti('mobile-device')
+    .setIssuer('originals-auth').setAudience('originals-api')
+    .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+  const ctx = fixture();
+  ctx.scheduler.runAt = async () => { assert.fail('Persistent sessions must not schedule expiry'); };
+  await call('actorSession','establish',ctx,{authToken});
+  const record = ctx.rows.accessSessions.find(s => s.tokenHash === createHash('sha256').update(authToken).digest('hex'));
+  assert.equal(record.expiresAt, undefined);
+  const originalNow = Date.now;
+  Date.now = () => originalNow() + 10 * 365 * 86400000;
+  try {
+    await call('actorSession','expire',ctx,{id:record._id});
+    assert.equal((await call('lists','getUserLists',ctx,{authToken})).length, 1);
+    await call('actorSession','revoke',ctx,{authToken});
+    await call('actorSession','expire',ctx,{id:record._id});
+    await assert.rejects(() => call('lists','getUserLists',ctx,{authToken}), /Authentication/);
+    await assert.rejects(() => call('actorSession','establish',ctx,{authToken}), /token/);
+    assert.ok(ctx.rows.accessSessions.includes(record), 'Revocation must be retained permanently');
+  } finally { Date.now = originalNow; }
+});

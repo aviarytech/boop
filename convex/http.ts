@@ -263,6 +263,7 @@ const verify = httpAction(async (ctx, request) => {
     const authResult = await ctx.runAction(internal.authInternal.createAuthToken, {
       subOrgId: result.subOrgId,
       email: result.email,
+      persistentMobile: body.platform === "ios" || body.platform === "android",
     });
 
     await ctx.runMutation(internal.actorSession.establishInternal, { authToken: authResult.token });

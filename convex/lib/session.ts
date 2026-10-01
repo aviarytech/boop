@@ -11,7 +11,7 @@ export async function requireSession(ctx: QueryCtx | MutationCtx, token?: string
   catch { throw new AuthError("Invalid or expired token", "INVALID_TOKEN"); }
   const tokenHash = await hashApiKey(token);
   const record = await ctx.db.query("accessSessions").withIndex("by_hash", q => q.eq("tokenHash", tokenHash)).first();
-  if (!record || record.revokedAt !== undefined || record.expiresAt <= Date.now() || record.subject !== session.turnkeySubOrgId) {
+  if (!record || record.revokedAt !== undefined || (record.expiresAt !== undefined && record.expiresAt <= Date.now()) || record.subject !== session.turnkeySubOrgId) {
     throw new AuthError("Authentication required: restore your session", "UNAUTHORIZED");
   }
   return session;

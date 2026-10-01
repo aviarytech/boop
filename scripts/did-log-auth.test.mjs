@@ -97,7 +97,7 @@ async function rejects(promise, description) {
   await rejects(jwt.verifyAuthToken(await mintToken({ audience: null })), /"aud"/);
 }
 
-// An unexpiring session token is not a session.
+// Tokens without explicit persistent mobile claims must still expire.
 {
   await rejects(jwt.verifyAuthToken(await mintToken({ expiry: null })), /"exp"/);
 }
@@ -248,5 +248,35 @@ async function rejects(promise, description) {
 }
 
 await rm(outdir, { recursive: true, force: true });
+
+
+const {signSessionToken, WEB_SESSION_SECONDS} = await bundle('convex/lib/sessionTokens.ts', 'sessionTokens');
+{
+  const webToken = await signSessionToken(SUB_ORG, 'user@example.com');
+  const web = jose.decodeJwt(webToken);
+  assert.equal(web.exp - web.iat, WEB_SESSION_SECONDS);
+  assert.equal((await jwt.verifyAuthToken(webToken)).expiresAt, web.exp * 1000);
+  const mobileToken = await signSessionToken(SUB_ORG, 'user@example.com', true);
+  const mobile = jose.decodeJwt(mobileToken);
+  assert.equal(mobile.exp, undefined);
+  assert.equal(mobile.sessionType, 'mobile_persistent');
+  assert.equal((await jwt.verifyAuthToken(mobileToken)).expiresAt, undefined);
+  assert.notEqual(mobileToken, await signSessionToken(SUB_ORG, 'user@example.com', true));
+  // Removing or altering the signed lifetime policy invalidates the signature.
+  const parts = webToken.split('.');
+  const forged = {...web, sessionType:'mobile_persistent'};
+  delete forged.exp;
+  parts[1] = Buffer.from(JSON.stringify(forged)).toString('base64url');
+  await assert.rejects(() => jwt.verifyAuthToken(parts.join('.')));
+  for (const claims of [
+    {sessionType:'web',jti:'test',iat:1},
+    {sessionType:'mobile_persistent',iat:1},
+    {sessionType:'mobile_persistent',jti:'test'},
+  ]) {
+    const invalid = await new jose.SignJWT({sub:SUB_ORG,email:'user@example.com',...claims})
+      .setProtectedHeader({alg:'HS256'}).setIssuer('originals-auth').setAudience('originals-api').sign(secret);
+    await assert.rejects(() => jwt.verifyAuthToken(invalid), /exp/);
+  }
+}
 
 console.log("did-log-auth: all assertions passed");
