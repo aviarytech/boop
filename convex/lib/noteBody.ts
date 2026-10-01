@@ -31,7 +31,9 @@ export function excerpt(body: string, max = 160): string {
     .replace(/^\s*>\s?/gm, "")
     .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, "")
     .replace(/`+/g, "")
-    .replace(/(?<![\w*_~])(\*{1,3}|_{1,3}|~~)(\S(?:.*?\S)?)\1(?![\w*_~])/g, "$2")
+    // No lookbehind: the iOS 15 WebView would fail to parse the whole bundle.
+    .replace(/\*{1,3}|~~/g, "")
+    .replace(/\b_{1,3}|_{1,3}\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return plain.length > max ? `${plain.slice(0, max - 1).trimEnd()}…` : plain;
