@@ -57,6 +57,7 @@ import type * as lib_itemCategories from "../lib/itemCategories.js";
 import type * as lib_jwt from "../lib/jwt.js";
 import type * as lib_legacyList from "../lib/legacyList.js";
 import type * as lib_listEnvelope from "../lib/listEnvelope.js";
+import type * as lib_noteBody from "../lib/noteBody.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
 import type * as lib_session from "../lib/session.js";
@@ -147,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   "lib/jwt": typeof lib_jwt;
   "lib/legacyList": typeof lib_legacyList;
   "lib/listEnvelope": typeof lib_listEnvelope;
+  "lib/noteBody": typeof lib_noteBody;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;
   "lib/session": typeof lib_session;

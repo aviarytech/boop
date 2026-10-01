@@ -6,7 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList } from "./lib/permissions";
-import { MAX_NOTE_LENGTH } from "./lib/noteBody";
+import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
 
 /**
  * Creates a Verifiable Credential for item authorship (creation).
@@ -153,6 +153,8 @@ export const { public: addItem, internal: addItemInternal } = actorMutation({
     if (!list) {
       throw new Error("List not found");
     }
+    // Notes are uncapped, so items on one would be an unmetered list.
+    if (isNote(list)) throw new Error("Cannot add items to a note");
 
     // Verify user is authorized (owner or editor)
     const canEdit = await canUserEditList(

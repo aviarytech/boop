@@ -88,6 +88,9 @@ export const { public: deleteUserData, internal: deleteUserDataInternal } = acto
         await deleteAll(
           await ctx.db.query("bitcoinAnchors").withIndex("by_list", (q) => q.eq("listId", listId)).collect()
         );
+        await deleteAll(
+          await ctx.db.query("noteBodies").withIndex("by_list", (q) => q.eq("listId", listId)).collect()
+        );
 
         await ctx.db.delete(listId);
       }

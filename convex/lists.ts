@@ -205,6 +205,7 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
 
     const source = await ctx.db.get(args.sourceListId);
     if (!source) throw new Error("List not found");
+    if (isNote(source)) throw new Error("Notes cannot be copied");
     // Copying mints a new identity naming this owner, so viewers who can merely
     // read a shared list must not be able to do it.
     if (![ctx.actor.did, ctx.actor.legacyDid].includes(source.ownerDid)) {
