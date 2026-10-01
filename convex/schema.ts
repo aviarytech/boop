@@ -151,10 +151,20 @@ export default defineSchema({
     }))),
     // Item view mode preference: "alphabetical" (flat A-Z) or "categorized" (grouped by category)
     itemViewMode: v.optional(v.union(v.literal("alphabetical"), v.literal("categorized"))),
+    // Absent = list. Set once at creation; a note is never converted to or from a list.
+    kind: v.optional(v.literal("note")),
   })
     .index("by_owner", ["ownerDid"])
     .index("by_asset_did", ["assetDid"])
     .index("by_category", ["categoryId"]),
+
+  // A note's live markdown body. Off the lists row so the index subscriptions
+  // never carry note text; the index reads summaries via notes.getNoteCards.
+  noteBodies: defineTable({
+    listId: v.id("lists"),
+    body: v.string(),
+    updatedAt: v.number(),
+  }).index("by_list", ["listId"]),
 
   // Serialized Originals AssetEnvelope per list — the signed CEL event log that
   // makes a list's did:cel verifiable. Kept off the lists row (~1.8KB at genesis,

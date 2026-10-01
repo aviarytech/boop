@@ -8,6 +8,7 @@ import { withMutationObservability } from "./lib/observability";
 import { canUserViewList } from "./lib/permissions";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 import { isLegacyGenesis } from "./lib/legacyList";
+import { isNote } from "./lib/noteBody";
 
 /**
  * Creates a placeholder Verifiable Credential for list ownership.
@@ -87,10 +88,11 @@ async function assertListQuota(
   const hasReferralPro = !hasPaidSub && owner.referralProUntil != null && owner.referralProUntil > Date.now();
   const plan = hasPaidSub ? sub.plan : (hasReferralPro ? "pro" : "free");
 
-  const existingLists = await ctx.db
+  // Notes never consume the free-plan cap.
+  const existingLists = (await ctx.db
     .query("lists")
     .withIndex("by_owner", (q) => q.eq("ownerDid", ownerDid))
-    .collect();
+    .collect()).filter((list) => !isNote(list));
 
   if (plan === "free") {
     const bonusLists = owner.bonusLists ?? 0;
@@ -115,13 +117,17 @@ export const { public: createList, internal: createListInternal } = actorMutatio
     // (and the HTTP agent API) can still create lists; those get an identifier
     // with no verifiable log until re-genesis.
     celEnvelope: v.optional(v.string()),
+    kind: v.optional(v.literal("note")),
   },
   handler: async (ctx, args) => withMutationObservability("lists.createList", async () => {
     // Input validation
     if (args.name.trim().length === 0) throw new Error("List name cannot be empty");
     if (args.name.length > 200) throw new Error("List name cannot exceed 200 characters");
 
-    const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
+    // Notes are uncapped and are not a "first list" for the referral grant.
+    const { owner, isFirstList } = args.kind === "note"
+      ? { owner: null, isFirstList: false }
+      : await assertListQuota(ctx, ctx.actor.did);
 
     const listId = await ctx.db.insert("lists", {
       assetDid: args.assetDid,
@@ -129,7 +135,12 @@ export const { public: createList, internal: createListInternal } = actorMutatio
       ownerDid: ctx.actor.did,
       categoryId: args.categoryId,
       createdAt: args.createdAt,
+      kind: args.kind,
     });
+
+    if (args.kind === "note") {
+      await ctx.db.insert("noteBodies", { listId, body: "", updatedAt: args.createdAt });
+    }
 
     const vcProof = createListOwnershipVC(
       listId,
@@ -534,6 +545,12 @@ export const { public: deleteList, internal: deleteListInternal } = actorMutatio
     for (const pub of pubs) {
       await ctx.db.delete(pub._id);
     }
+
+    const noteBody = await ctx.db
+      .query("noteBodies")
+      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .first();
+    if (noteBody) await ctx.db.delete(noteBody._id);
 
     // Delete bookmarks referencing this list
     const bookmarks = await ctx.db.query("bookmarks").collect();

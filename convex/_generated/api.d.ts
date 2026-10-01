@@ -70,6 +70,7 @@ import type * as migrations_celAssetDids from "../migrations/celAssetDids.js";
 import type * as migrations_celAssetDidsDb from "../migrations/celAssetDidsDb.js";
 import type * as migrations_envelopeCoverage from "../migrations/envelopeCoverage.js";
 import type * as migrations_remintUserDidDb from "../migrations/remintUserDidDb.js";
+import type * as notes from "../notes.js";
 import type * as notificationActions from "../notificationActions.js";
 import type * as notifications from "../notifications.js";
 import type * as originals from "../originals.js";
@@ -159,6 +160,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/celAssetDidsDb": typeof migrations_celAssetDidsDb;
   "migrations/envelopeCoverage": typeof migrations_envelopeCoverage;
   "migrations/remintUserDidDb": typeof migrations_remintUserDidDb;
+  notes: typeof notes;
   notificationActions: typeof notificationActions;
   notifications: typeof notifications;
   originals: typeof originals;

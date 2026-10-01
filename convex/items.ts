@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList } from "./lib/permissions";
+import { MAX_NOTE_LENGTH } from "./lib/noteBody";
 
 /**
  * Creates a Verifiable Credential for item authorship (creation).
@@ -260,8 +261,8 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
     clearAssigneeDid: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => withMutationObservability("items.updateItem", async () => {
-    if (args.description !== undefined && args.description.length > 50000) {
-      throw new Error("Description cannot exceed 50000 characters");
+    if (args.description !== undefined && args.description.length > MAX_NOTE_LENGTH) {
+      throw new Error(`Description cannot exceed ${MAX_NOTE_LENGTH} characters`);
     }
     const item = await ctx.db.get(args.itemId);
     if (!item) {
