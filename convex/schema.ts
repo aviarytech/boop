@@ -49,6 +49,7 @@ export default defineSchema({
     expiresAt: v.number(), // Session expiration timestamp
   })
     .index("by_session_id", ["sessionId"])
+    .index("by_email", ["email"])
     .index("by_expires_at", ["expiresAt"]),
 
   // Users table - for display name lookup by DID
@@ -535,6 +536,7 @@ export default defineSchema({
     proGrantedAt: v.optional(v.number()),
   })
     .index("by_referrer", ["referrerId"])
+    .index("by_code", ["referralCodeId"])
     .index("by_referee", ["refereeId"]),
 
   // Bitcoin anchors table - list/item state anchored to Bitcoin signet (Phase 5 + 6)

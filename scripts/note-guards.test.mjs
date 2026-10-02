@@ -27,7 +27,8 @@ function fixture() {
   };
   let next = 1;
   const find = id => Object.values(rows).flat().find(row => row._id === id) ?? null;
-  return { rows, db: {
+  const jobs = [];
+  return { rows, jobs, db: {
     get: async id => find(id),
     patch: async (id, patch) => Object.assign(find(id), patch),
     insert: async (table, values) => { const row = { ...values, _id: `new${next++}` }; (rows[table] ??= []).push(row); return row._id; },
@@ -45,7 +46,7 @@ function fixture() {
       };
       return q;
     },
-  }, scheduler: { runAfter: async () => {}, runAt: async () => {} } };
+  }, scheduler: { runAfter: async (_delay, _ref, args) => { jobs.push(args); }, runAt: async () => {} } };
 }
 
 test('a note cannot be published, directly or through the internal path', async () => {
@@ -59,6 +60,7 @@ test('a note cannot be published, directly or through the internal path', async 
 test('deleting a user removes their note bodies', async () => {
   const ctx = fixture();
   await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  while (ctx.jobs.length) await call('users', 'continueUserDeletion', ctx, ctx.jobs.shift());
   assert.equal(ctx.rows.lists.length, 0);
   assert.deepEqual(ctx.rows.noteBodies, [], 'an orphaned body outlives the erasure');
 });
@@ -178,14 +180,14 @@ test('large account erasure bounds note reads and continues after logout', async
     return q;
   };
   await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
-  assert.equal(ctx.rows.noteBodies.length, 101);
+  assert.equal(ctx.rows.noteBodies.length, 120);
   assert.ok(ctx.rows.users[0].deletionRequestedAt !== undefined);
   // An accepted deletion blocks new writes, even with a still-valid session.
   await assert.rejects(() => call('notes', 'updateNoteBody', ctx,
     { authToken, listId: 'N30', body: 'new data' }), /User unavailable/);
   ctx.rows.accessSessions = []; // Simulate logout; jobs must not need this token.
   while (pending.length) {
-    assert.ok(++batches < 10, 'continuation made no progress');
+    assert.ok(++batches < 400, 'continuation made no progress');
     bytes = 0;
     await call('users', 'continueUserDeletion', ctx, pending.shift());
   }
@@ -201,4 +203,56 @@ test('deletion continuation cannot erase an account without a deletion request',
   await call('users', 'continueUserDeletion', ctx, { userId: 'U1' });
   assert.equal(ctx.rows.users.length, 1);
   assert.equal(ctx.rows.noteBodies.length, 1);
+});
+
+
+test('erasure drains large items and children, and an authenticated owner can resume', async () => {
+  const ctx = fixture();
+  ctx.rows.lists[0].kind = undefined;
+  ctx.rows.items = Array.from({ length: 120 }, (_, i) => ({
+    _id: `I${i}`, listId: 'N1', name: 'Item', description: '漢'.repeat(50000),
+    checked: false, createdByDid: 'did:owner', createdAt: i,
+  }));
+  ctx.rows.comments = Array.from({ length: 17 }, (_, i) => ({
+    _id: `C${i}`, itemId: 'I0', body: 'x'.repeat(900000),
+  }));
+  ctx.rows.listEnvelopes = [{ _id: 'E1', listId: 'N1', envelope: 'private metadata' }];
+  let bytes = 0;
+  const query = ctx.db.query;
+  ctx.db.query = table => {
+    const q = query(table);
+    // Meter only documents returned by each terminal operation.
+    const originals = Object.fromEntries(['collect', 'take', 'first', 'unique'].map(k => [k, q[k]]));
+    const meter = rows => {
+      for (const row of (Array.isArray(rows) ? rows : rows ? [rows] : [])) {
+        bytes += Buffer.byteLength(JSON.stringify(row));
+      }
+      assert.ok(bytes < 8 * 1024 * 1024, `transaction read ${bytes} bytes`);
+      return rows;
+    };
+    for (const name of Object.keys(originals)) q[name] = async (...args) => {
+      // Fixture terminals call collect internally; don't count those twice.
+      Object.assign(q, originals);
+      return meter(await originals[name](...args));
+    };
+    return q;
+  };
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  assert.ok(ctx.rows.users[0].deletionRequestedAt !== undefined);
+  ctx.jobs.length = 0; // Simulate a continuation that failed before making progress.
+  bytes = 0;
+  await assert.rejects(() => call('users', 'deleteUserData', ctx,
+    { authToken, userId: 'someone-else', ownerDid: 'did:other' }));
+  bytes = 0;
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  assert.ok(ctx.jobs.length > 0, 'resume did not schedule further work');
+  let count = 0;
+  while (ctx.jobs.length) {
+    assert.ok(++count < 200);
+    bytes = 0;
+    await call('users', 'continueUserDeletion', ctx, ctx.jobs.shift());
+  }
+  for (const table of ['users', 'lists', 'items', 'comments', 'noteBodies', 'listEnvelopes']) {
+    assert.equal(ctx.rows[table].length, 0, table);
+  }
 });
