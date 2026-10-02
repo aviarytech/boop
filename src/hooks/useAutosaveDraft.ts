@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { clampNote, shouldPersist } from "../lib/noteEditor";
+import { clearDraft, draftText, readDraft, writeDraft } from "../lib/noteDrafts";
+import { clampNote } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -11,24 +12,30 @@ const AUTOSAVE_DELAY_MS = 600;
  */
 export function useAutosaveDraft({
   saved,
+  draftKey,
   canEdit,
   persist,
 }: {
   saved: string | undefined;
+  /** Callers must remount the hook when this account/resource key changes. */
+  draftKey?: string;
   canEdit: boolean;
   persist: (text: string) => Promise<void>;
 }) {
   // null = no local edit yet, so the view keeps tracking the server value.
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(() => draftKey ? draftText(draftKey) : null);
   const [status, setStatus] = useState<SaveStatus>("idle");
 
   const value = draft ?? saved ?? "";
-  const dirty = saved !== undefined && shouldPersist({ draft: value, saved, canEdit });
+  // Flush even a draft equal to the current server snapshot: an older write
+  // may still be in flight, and must not undo a user's revert on navigation.
+  const dirty = saved !== undefined && canEdit && draft !== null;
 
   // Refs feed the unmount flush; they are written in an effect, never during render.
   const valueRef = useRef(value);
   const dirtyRef = useRef(dirty);
   const persistRef = useRef(persist);
+  const draftRecordRef = useRef(draftKey ? readDraft(draftKey) : null);
 
   useEffect(() => {
     valueRef.current = value;
@@ -37,9 +44,11 @@ export function useAutosaveDraft({
   });
 
   const save = useCallback(async (text: string) => {
+    const record = draftRecordRef.current;
     setStatus("saving");
     try {
       await persistRef.current(text);
+      if (draftKey) clearDraft(draftKey, record);
       // Resume tracking the server value, unless the user typed something newer.
       if (valueRef.current === text) {
         setDraft(null);
@@ -48,7 +57,7 @@ export function useAutosaveDraft({
     } catch {
       setStatus("error");
     }
-  }, []);
+  }, [draftKey]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -63,7 +72,12 @@ export function useAutosaveDraft({
   }, [save]);
 
   const onChange = (next: string) => {
-    setDraft(clampNote(next));
+    const text = clampNote(next);
+    // Synchronous: navigation can happen before effects or the debounce run.
+    if (draftKey) draftRecordRef.current = writeDraft(draftKey, text);
+    valueRef.current = text;
+    dirtyRef.current = canEdit && saved !== undefined;
+    setDraft(text);
     setStatus("idle");
   };
 

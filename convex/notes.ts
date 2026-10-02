@@ -23,11 +23,18 @@ export const { public: getNoteCards, internal: getNoteCardsInternal } = actorQue
   scope: "lists:read",
   args: { listIds: v.array(v.id("lists")) },
   handler: async (ctx, args): Promise<NoteCardSummary[]> => {
+    // Legacy fallback callers must batch: even 50 maximum-size UTF-8 bodies
+    // stay below the transaction read limit. New clients use stored summaries.
+    if (args.listIds.length > 50) throw new Error("Request at most 50 note summaries");
     const summaries: NoteCardSummary[] = [];
     for (const listId of args.listIds) {
       const list = await ctx.db.get(listId);
       if (!list || !isNote(list)) continue;
       if (!await canUserViewList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid)) continue;
+      if (list.noteSummary) {
+        summaries.push({ listId, ...list.noteSummary });
+        continue;
+      }
       const row = await getBodyRow(ctx, listId);
       const body = row?.body ?? "";
       summaries.push({
@@ -73,6 +80,9 @@ export const { public: updateNoteBody, internal: updateNoteBodyInternal } = acto
     }
     const row = await getBodyRow(ctx, args.listId);
     const updatedAt = Date.now();
+    await ctx.db.patch(args.listId, {
+      noteSummary: { excerpt: excerpt(args.body), wordCount: wordCount(args.body), updatedAt },
+    });
     if (row) await ctx.db.patch(row._id, { body: args.body, updatedAt });
     else await ctx.db.insert("noteBodies", { listId: args.listId, body: args.body, updatedAt });
   },

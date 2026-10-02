@@ -153,6 +153,9 @@ export default defineSchema({
     itemViewMode: v.optional(v.union(v.literal("alphabetical"), v.literal("categorized"))),
     // Absent = list. Set once at creation; a note is never converted to or from a list.
     kind: v.optional(v.literal("note")),
+    noteSummary: v.optional(v.object({
+      excerpt: v.string(), wordCount: v.number(), updatedAt: v.number(),
+    })),
   })
     .index("by_owner", ["ownerDid"])
     .index("by_asset_did", ["assetDid"])

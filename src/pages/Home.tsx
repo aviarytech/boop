@@ -181,13 +181,10 @@ export function Home() {
   const legacySet = useMemo(() => new Set(legacyIds ?? []), [legacyIds]);
 
   const noteIds = useMemo(() => (lists ?? []).filter(isNote).map((l) => l._id), [lists]);
-  const noteCards = useQuery(
-    api.notes.getNoteCards,
-    noteIds.length > 0 && !usingCache ? { listIds: noteIds } : "skip"
-  );
   const noteSummaries = useMemo(
-    () => new Map((noteCards ?? []).map((summary) => [summary.listId, summary])),
-    [noteCards]
+    () => new Map((lists ?? []).flatMap(list => list.noteSummary
+      ? [[list._id, { listId: list._id, ...list.noteSummary }] as const] : [])),
+    [lists]
   );
 
   // Filter and sort lists

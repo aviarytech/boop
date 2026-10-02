@@ -57,7 +57,7 @@ export function NoteView() {
     );
   }
 
-  return <LoadedNote list={list} note={note} />;
+  return <LoadedNote key={`${list.ownerDid}:${list._id}`} list={list} note={note} />;
 }
 
 // Split out so the initial mode can be derived once from the first loaded body.
@@ -74,6 +74,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
 
   const { value, onChange, status, retry } = useAutosaveDraft({
     saved: note.body,
+    draftKey: `${list.ownerDid}:note:${list._id}`,
     canEdit: note.canEdit,
     persist: async (text) => {
       await updateNoteBody({ listId: list._id, body: text });
@@ -141,7 +142,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
               <span className="text-stone-400" aria-live="polite">
                 {status === "error" ? (
                   <span role="alert" className="text-red-600 dark:text-red-400">
-                    Not saved. Keep this page open.{' '}
+                    Not saved to server. Draft kept on this device.{' '}
                     <button type="button" onClick={retry} className="underline">Retry</button>
                   </span>
                 ) : statusLabel}

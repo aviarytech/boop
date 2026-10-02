@@ -3,6 +3,9 @@
  * where the list's progress bar sits.
  */
 
+import { useQuery } from "../lib/authenticatedConvex";
+import { api } from "../../convex/_generated/api";
+import { useOffline } from "../hooks/useOffline";
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -20,8 +23,13 @@ interface NoteCardProps {
   showOwner?: boolean;
 }
 
-export const NoteCard = memo(function NoteCard({ list, summary, currentUserDid, showOwner }: NoteCardProps) {
+export const NoteCard = memo(function NoteCard({ list, summary: storedSummary, currentUserDid, showOwner }: NoteCardProps) {
   const { haptic } = useSettings();
+  const { isOnline } = useOffline();
+  // Pre-summary notes are read individually, never in one unbounded transaction.
+  const legacy = useQuery(api.notes.getNoteCards,
+    !storedSummary && isOnline ? { listIds: [list._id] } : "skip");
+  const summary = storedSummary ?? legacy?.[0];
   const tag = ["note", ownerTag(list.ownerDid, currentUserDid, showOwner), shortRelativeTime(list.createdAt)].join(" · ");
 
   return (

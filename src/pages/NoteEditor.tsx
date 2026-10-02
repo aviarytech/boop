@@ -12,6 +12,12 @@ import { MAX_NOTE_LENGTH } from "../lib/noteEditor";
 
 export function NoteEditor() {
   const { itemId } = useParams<{ itemId: string }>();
+  const { did } = useCurrentUser();
+  return <ItemNoteEditor key={`${did}:${itemId}`} />;
+}
+
+function ItemNoteEditor() {
+  const { itemId } = useParams<{ itemId: string }>();
   const navigate = useNavigate();
   const { haptic } = useSettings();
   const goBack = () => {
@@ -32,6 +38,7 @@ export function NoteEditor() {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const { value, onChange, status, retry } = useAutosaveDraft({
     saved: data?.description,
+    draftKey: did && itemId ? `${did}:item:${itemId}` : undefined,
     canEdit: !!data?.canEdit,
     persist: async (text) => {
       await updateItem({ itemId: itemId as Id<"items">, description: text });
@@ -84,7 +91,7 @@ export function NoteEditor() {
           <span className="text-xs text-stone-400 text-right" aria-live="polite">
             {status === "error" ? (
               <span role="alert" className="text-red-600 dark:text-red-400">
-                Not saved. Keep this page open.{' '}
+                Not saved to server. Draft kept on this device.{' '}
                 <button type="button" onClick={retry} className="underline">Retry</button>
               </span>
             ) : statusLabel}

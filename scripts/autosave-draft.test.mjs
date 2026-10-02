@@ -59,3 +59,33 @@ test('retry cannot write after edit permission is removed', async () => {
     assert.deepEqual(writes, []);
   } finally { unmount(); }
 });
+
+test('failed unmount save preserves a draft across remount, scoped to its account', async () => {
+  const key = 'owner:note:navigation';
+  const persist = async () => { throw new Error('Rejected'); };
+  const first = renderHook(() => useAutosaveDraft({ saved: 'old', canEdit: true, persist, draftKey: key }));
+  await act(async () => first.result.current.onChange('do not lose me'));
+  await act(async () => first.unmount());
+  const reopened = renderHook(() => useAutosaveDraft({ saved: 'old', canEdit: true, persist, draftKey: key }));
+  const other = renderHook(() => useAutosaveDraft({ saved: 'other', canEdit: true, persist, draftKey: 'other:note:navigation' }));
+  assert.equal(reopened.result.current.value, 'do not lose me');
+  assert.equal(other.result.current.value, 'other');
+  await act(async () => { reopened.unmount(); other.unmount(); });
+});
+
+test('late acknowledgement from a previous editor cannot erase newer durable edits', async () => {
+  const pending = [];
+  const persist = () => new Promise(resolve => pending.push(resolve));
+  const props = { saved: 'old', canEdit: true, persist, draftKey: 'owner:note:late' };
+  const first = renderHook(() => useAutosaveDraft(props));
+  await act(async () => first.result.current.onChange('first'));
+  await act(async () => first.unmount());
+  const second = renderHook(() => useAutosaveDraft(props));
+  await act(async () => second.result.current.onChange('second'));
+  await act(async () => pending.shift()());
+  await act(async () => second.unmount());
+  const third = renderHook(() => useAutosaveDraft(props));
+  assert.equal(third.result.current.value, 'second');
+  await act(async () => third.unmount());
+  await act(async () => pending.forEach(resolve => resolve()));
+});

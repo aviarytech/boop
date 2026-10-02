@@ -136,6 +136,9 @@ export const { public: createList, internal: createListInternal } = actorMutatio
       categoryId: args.categoryId,
       createdAt: args.createdAt,
       kind: args.kind,
+      noteSummary: args.kind === "note"
+        ? { excerpt: "", wordCount: 0, updatedAt: args.createdAt }
+        : undefined,
     });
 
     if (args.kind === "note") {

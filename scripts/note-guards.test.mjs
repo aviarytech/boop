@@ -7,7 +7,7 @@ import { SignJWT } from 'jose';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'note-guards-test-secret-not-a-deployed-credential';
-const names = ['items', 'lists', 'publication', 'users'];
+const names = ['items', 'lists', 'publication', 'users', 'notes'];
 await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/note-guards-test', bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*', '@originals/*', '@turnkey/*', 'didwebvh-ts', '@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/note-guards-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
@@ -87,4 +87,39 @@ test('generated api.d.ts registers every Convex module', async () => {
     assert.ok(api.includes(`import type * as ${alias} from "../${m}.js";`), `missing import for ${m}`);
     assert.match(api, new RegExp(`\\s"?${m}"?: typeof ${alias};`), `missing entry for ${m}`);
   }
+});
+
+
+test('body writes maintain summaries and summary reads never load full bodies', async () => {
+  const ctx = fixture();
+  await call('notes', 'updateNoteBody', ctx, { authToken, listId: 'N1', body: '# Hello world' });
+  assert.equal(ctx.rows.noteBodies[0].body, '# Hello world');
+  assert.equal(ctx.rows.lists[0].noteSummary.excerpt, 'Hello world');
+  assert.equal(ctx.rows.lists[0].noteSummary.wordCount, 3);
+  const query = ctx.db.query;
+  ctx.db.query = table => {
+    assert.notEqual(table, 'noteBodies', 'summary query read a full body');
+    return query(table);
+  };
+  const cards = await call('notes', 'getNoteCards', ctx, { authToken, listIds: ['N1'] });
+  assert.equal(cards[0].excerpt, 'Hello world');
+  assert.equal(cards[0].updatedAt, ctx.rows.noteBodies[0].updatedAt);
+});
+
+test('summary fallback is bounded and legacy notes remain readable', async () => {
+  const ctx = fixture();
+  const cards = await call('notes', 'getNoteCards', ctx, { authToken, listIds: ['N1'] });
+  assert.equal(cards[0].excerpt, 'secret thoughts');
+  await assert.rejects(() => call('notes', 'getNoteCards', ctx, {
+    authToken, listIds: Array(51).fill('N1'),
+  }), /at most 50/);
+});
+
+test('stored summaries retain note access checks', async () => {
+  const ctx = fixture();
+  ctx.rows.lists[0].ownerDid = 'did:someone-else';
+  ctx.rows.lists[0].noteSummary = { excerpt: 'private', wordCount: 1, updatedAt: 1 };
+  assert.deepEqual(await call('notes', 'getNoteCards', ctx, { authToken, listIds: ['N1'] }), []);
+  await assert.rejects(() => call('notes', 'updateNoteBody', ctx, { authToken, listId: 'N1', body: 'attack' }));
+  assert.equal(ctx.rows.noteBodies[0].body, 'secret thoughts');
 });
