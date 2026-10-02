@@ -72,7 +72,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
   const mode: Mode = note.canEdit ? chosenMode : "preview";
   const [dialog, setDialog] = useState<"rename" | "category" | "delete" | null>(null);
 
-  const { value, onChange, status } = useAutosaveDraft({
+  const { value, onChange, status, retry } = useAutosaveDraft({
     saved: note.body,
     canEdit: note.canEdit,
     persist: async (text) => {
@@ -138,7 +138,14 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
                   <span>{part}</span>
                 </span>
               ))}
-              <span className="text-stone-400" aria-live="polite">{statusLabel}</span>
+              <span className="text-stone-400" aria-live="polite">
+                {status === "error" ? (
+                  <span role="alert" className="text-red-600 dark:text-red-400">
+                    Not saved. Keep this page open.{' '}
+                    <button type="button" onClick={retry} className="underline">Retry</button>
+                  </span>
+                ) : statusLabel}
+              </span>
             </div>
           </div>
 

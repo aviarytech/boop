@@ -30,7 +30,7 @@ export function NoteEditor() {
   const updateItem = useMutation(api.items.updateItem);
 
   const [mode, setMode] = useState<"edit" | "preview">("edit");
-  const { value, onChange, status } = useAutosaveDraft({
+  const { value, onChange, status, retry } = useAutosaveDraft({
     saved: data?.description,
     canEdit: !!data?.canEdit,
     persist: async (text) => {
@@ -81,8 +81,13 @@ export function NoteEditor() {
           <h1 className="flex-1 truncate text-sm font-semibold text-stone-900 dark:text-stone-100">
             {data.name}
           </h1>
-          <span className="text-xs text-stone-400 w-14 text-right" aria-live="polite">
-            {statusLabel}
+          <span className="text-xs text-stone-400 text-right" aria-live="polite">
+            {status === "error" ? (
+              <span role="alert" className="text-red-600 dark:text-red-400">
+                Not saved. Keep this page open.{' '}
+                <button type="button" onClick={retry} className="underline">Retry</button>
+              </span>
+            ) : statusLabel}
           </span>
           <button
             onClick={() => { haptic("light"); setMode((mode) => (mode === "edit" ? "preview" : "edit")); }}

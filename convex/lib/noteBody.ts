@@ -25,11 +25,13 @@ export function wordCount(body: string): number {
 
 /** Plain-text preview of a markdown body, cut at `max` characters. */
 export function excerpt(body: string, max = 160): string {
+  // Keep indentation on one line and link labels free of nested opening
+  // brackets, so malformed markdown cannot trigger quadratic backtracking.
   const plain = body
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/^\s*>\s?/gm, "")
-    .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?/gm, "")
+    .replace(/!?\[([^\]\r\n[]*)\]\([^()\r\n]*\)/g, "$1")
+    .replace(/^[ \t]{0,3}#{1,6}[ \t]+/gm, "")
+    .replace(/^[ \t]*>[ \t]?/gm, "")
+    .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?/gm, "")
     .replace(/`+/g, "")
     // No lookbehind: the iOS 15 WebView would fail to parse the whole bundle.
     .replace(/\*{1,3}|~~/g, "")

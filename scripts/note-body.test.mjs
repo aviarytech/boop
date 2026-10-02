@@ -72,3 +72,17 @@ test("excerpt truncates long bodies with an ellipsis", () => {
   assert.ok(out.endsWith("…"));
   assert.equal(m.excerpt("short", 20), "short");
 });
+
+// A generous budget catches multi-second backtracking while allowing slow CI.
+test("maximum-size malformed markdown has bounded excerpt cost", () => {
+  for (const body of ["\n".repeat(50000), "[".repeat(50000), " ".repeat(50000)]) {
+    const start = performance.now();
+    const result = m.excerpt(body);
+    assert.ok(performance.now() - start < 1000, "excerpt took over a second");
+    assert.ok(result.length <= 160);
+  }
+});
+
+test("markers do not consume adjacent blank lines", () => {
+  assert.equal(m.excerpt("first\n\n  > second\n\n  - [x] third"), "first second third");
+});

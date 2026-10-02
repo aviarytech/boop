@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { clampNote, shouldPersist } from "../lib/noteEditor";
 
-export type SaveStatus = "idle" | "saving" | "saved";
+export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 const AUTOSAVE_DELAY_MS = 600;
 
@@ -46,7 +46,7 @@ export function useAutosaveDraft({
         setStatus("saved");
       }
     } catch {
-      setStatus("idle");
+      setStatus("error");
     }
   }, []);
 
@@ -67,5 +67,20 @@ export function useAutosaveDraft({
     setStatus("idle");
   };
 
-  return { value, onChange, status, dirty };
+  // Warn before a reload/close destroys a draft that has not reached the server.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const retry = () => {
+    if (dirtyRef.current) void save(valueRef.current);
+  };
+
+  return { value, onChange, status, dirty, retry };
 }
