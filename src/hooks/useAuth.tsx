@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+import { authErrorData } from "../../convex/lib/authError";
 import { onSessionExpiry } from "../lib/sessionExpiry";
 import { withAuthTimeout } from "../lib/authTimeout";
 import { useConvex } from "convex/react";
@@ -134,8 +136,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     // Mark as mounted at start, unmount flag in cleanup
     isMountedRef.current = true;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     const restoreSession = async () => {
+      let retrying = false;
       try {
         const storedState = await storageAdapter.get(AUTH_STORAGE_KEY);
         if (!storedState) {
@@ -162,7 +167,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         // Restore auth state
-        await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: parsed.token }));
+        try {
+          await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: parsed.token }));
+        } catch (err) {
+          const code = authErrorData(err)?.code;
+          const rejected = code === "INVALID_TOKEN" || code === "UNAUTHORIZED";
+          if (Capacitor.isNativePlatform() && !rejected) {
+            // Keep stored credentials and wait for server acceptance before exposing them.
+            retrying = true;
+            if (!cancelled) retryTimer = setTimeout(() => void restoreSession(), 5000);
+            return;
+          }
+          throw err;
+        }
+        if (cancelled) return;
         setUser(parsed.user);
         setToken(parsed.token);
         await storageAdapter.set(JWT_STORAGE_KEY, parsed.token);
@@ -218,14 +236,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await storageAdapter.remove(AUTH_STORAGE_KEY);
         await storageAdapter.remove(JWT_STORAGE_KEY);
       } finally {
-        authTransitionRef.current = false;
-        if (isMountedRef.current) setIsLoading(false);
+        if (!cancelled && !retrying) {
+          authTransitionRef.current = false;
+          setIsLoading(false);
+        }
       }
     };
 
     restoreSession();
 
     return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
       isMountedRef.current = false;
     };
   }, [convex]);
@@ -300,6 +322,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           body: JSON.stringify({
             sessionId: otpFlowState.sessionId,
             code,
+            platform: Capacitor.getPlatform(),
           }),
         });
 
@@ -415,7 +438,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     if (!token) return;
     let expiresAt: number;
-    try { expiresAt = JSON.parse(atob(token.split(".")[1])).exp * 1000; }
+    try {
+      const { exp } = JSON.parse(atob(token.split(".")[1]));
+      if (exp === undefined) return; // Persistent mobile session, validated by the server.
+      expiresAt = exp * 1000;
+    }
     catch { return; }
     return onSessionExpiry(expiresAt, () => {
       setToken(null);

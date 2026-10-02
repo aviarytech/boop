@@ -12,7 +12,7 @@ export default defineSchema({
   accessSessions: defineTable({
     tokenHash: v.string(),
     subject: v.string(),
-    expiresAt: v.number(),
+    expiresAt: v.optional(v.number()), // Absent for persistent mobile sessions
     revokedAt: v.optional(v.number()),
   })
     .index("by_hash", ["tokenHash"])

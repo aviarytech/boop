@@ -38,7 +38,8 @@ function fixture({ published = false, migrated = false, keyScopes = ['lists:read
     query: table => {
       let predicates = [];
       const q = {
-        withIndex: (_index, fn) => { const b = { eq: (key,value) => { predicates.push(row => row[key] === value); return b; }, lte: (key,value) => { predicates.push(row => row[key] <= value); return b; } }; fn?.(b); return q; },
+        // Convex index order puts a missing field before every number.
+        withIndex: (_index, fn) => { const b = { eq: (key,value) => { predicates.push(row => row[key] === value); return b; }, gte: (key,value) => { predicates.push(row => row[key] !== undefined && row[key] >= value); return b; }, lte: (key,value) => { predicates.push(row => row[key] === undefined || row[key] <= value); return b; } }; fn?.(b); return q; },
         order: () => q,
         filter: fn => { const b = { field: key => row => row[key], eq: (left,right) => row => (typeof left === 'function' ? left(row) : left) === right, or: (...ps) => row => ps.some(p => p(row)), and: (...ps) => row => ps.every(p => p(row)) }; predicates.push(fn(b)); return q; },
         collect: async () => (rows[table] ?? []).filter(row => predicates.every(p => p(row))),
@@ -407,4 +408,45 @@ test('identity assertion RPC errors retain their authentication status over HTTP
   const response=modules['lib/httpResponses'].handlerErrorResponse(new Request('https://test/api/items/check'),received,'Failed');
   assert.equal(response.status,401);assert.deepEqual(await response.json(),{error:'Authentication required'});
   assert.equal(ctx.rows.items[0].checked,false);
+});
+
+test('persistent mobile sessions survive time and expiry callbacks but remain revoked after logout', async () => {
+  const authToken = await new SignJWT({email:'owner@example.test',sessionType:'mobile_persistent'})
+    .setProtectedHeader({alg:'HS256'}).setSubject('owner').setIssuedAt().setJti('mobile-device')
+    .setIssuer('originals-auth').setAudience('originals-api')
+    .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+  const ctx = fixture();
+  ctx.scheduler.runAt = async () => { assert.fail('Persistent sessions must not schedule expiry'); };
+  await call('actorSession','establish',ctx,{authToken});
+  const record = ctx.rows.accessSessions.find(s => s.tokenHash === createHash('sha256').update(authToken).digest('hex'));
+  assert.equal(record.expiresAt, undefined);
+  const originalNow = Date.now;
+  Date.now = () => originalNow() + 10 * 365 * 86400000;
+  try {
+    await call('actorSession','expire',ctx,{id:record._id});
+    assert.equal((await call('lists','getUserLists',ctx,{authToken})).length, 1);
+    await call('actorSession','revoke',ctx,{authToken});
+    await call('actorSession','expire',ctx,{id:record._id});
+    await assert.rejects(() => call('lists','getUserLists',ctx,{authToken}), /Authentication/);
+    await assert.rejects(() => call('actorSession','establish',ctx,{authToken}), /token/);
+    assert.ok(ctx.rows.accessSessions.includes(record), 'Revocation must be retained permanently');
+  } finally { Date.now = originalNow; }
+});
+
+test('session cleanup keeps persistent mobile sessions and their revocations', async () => {
+  const sign = jti => new SignJWT({email:'owner@example.test',sessionType:'mobile_persistent'})
+    .setProtectedHeader({alg:'HS256'}).setSubject('owner').setIssuedAt().setJti(jti)
+    .setIssuer('originals-auth').setAudience('originals-api')
+    .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+  const [liveToken, revokedToken] = await Promise.all([sign('live-device'), sign('revoked-device')]);
+  const ctx = fixture();
+  ctx.scheduler.runAt = async () => {};
+  await call('actorSession','establish',ctx,{authToken:liveToken});
+  await call('actorSession','establish',ctx,{authToken:revokedToken});
+  await call('actorSession','revoke',ctx,{authToken:revokedToken});
+  ctx.rows.accessSessions.push({_id:'expired-web',tokenHash:'expired-web-hash',subject:'owner',expiresAt:Date.now()-1000});
+  assert.equal(await call('actorSession','cleanupExpiredSessions',ctx,{}),1);
+  assert.equal(ctx.rows.accessSessions.some(s=>s._id==='expired-web'),false);
+  assert.equal((await call('lists','getUserLists',ctx,{authToken:liveToken})).length,1);
+  await assert.rejects(()=>call('actorSession','establish',ctx,{authToken:revokedToken}),/token/);
 });

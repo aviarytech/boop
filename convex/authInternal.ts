@@ -8,7 +8,7 @@
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import * as jose from "jose";
+import { signSessionToken, WEB_SESSION_SECONDS } from "./lib/sessionTokens";
 
 // ============================================================================
 // Turnkey API Configuration
@@ -442,27 +442,9 @@ async function verifyOtp(
 // JWT Functions
 // ============================================================================
 
-async function signJwtToken(subOrgId: string, email: string): Promise<string> {
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    throw new Error("JWT_SECRET environment variable not set");
-  }
-
-  const secret = new TextEncoder().encode(jwtSecret);
-  const token = await new jose.SignJWT({ sub: subOrgId, email })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("30d")
-    .setIssuer("originals-auth")
-    .setAudience("originals-api")
-    .sign(secret);
-
-  return token;
-}
-
 function buildCookieValue(token: string): string {
   const isProduction = process.env.NODE_ENV === "production";
-  const maxAgeSeconds = 30 * 24 * 60 * 60; // 30 days
+  const maxAgeSeconds = WEB_SESSION_SECONDS;
 
   return (
     `auth_token=${token}; ` +
@@ -594,13 +576,15 @@ export const createAuthToken = internalAction({
   args: {
     subOrgId: v.string(),
     email: v.string(),
+    persistentMobile: v.optional(v.boolean()),
   },
   handler: async (_ctx, args): Promise<{
     token: string;
     cookieValue: string;
   }> => {
-    const token = await signJwtToken(args.subOrgId, args.email);
-    const cookieValue = buildCookieValue(token);
+    const token = await signSessionToken(args.subOrgId, args.email, args.persistentMobile);
+    // Native clients persist the bearer token; do not leave a persistent web cookie.
+    const cookieValue = args.persistentMobile ? buildLogoutCookieValue() : buildCookieValue(token);
 
     return { token, cookieValue };
   },

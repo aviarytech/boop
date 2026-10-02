@@ -29,7 +29,7 @@ const establishOperation = {
     const user = await ctx.db.query("users").withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", session.turnkeySubOrgId)).first();
     if (!user) throw new AuthError("User not found", "UNAUTHORIZED");
     const id = await ctx.db.insert("accessSessions", { tokenHash, subject: session.turnkeySubOrgId, expiresAt: session.expiresAt });
-    await ctx.scheduler.runAt(session.expiresAt, internal.actorSession.expire, { id });
+    if (session.expiresAt !== undefined) await ctx.scheduler.runAt(session.expiresAt, internal.actorSession.expire, { id });
   },
 };
 export const establish = mutation(establishOperation);
@@ -38,7 +38,7 @@ export const expire = internalMutation({
   args: { id: v.id("accessSessions") },
   handler: async (ctx, { id }) => {
     const record = await ctx.db.get(id);
-    if (record && record.expiresAt <= Date.now()) await ctx.db.delete(id);
+    if (record && record.expiresAt !== undefined && record.expiresAt <= Date.now()) await ctx.db.delete(id);
   },
 });
 
@@ -49,7 +49,8 @@ export const cleanupExpiredSessions = internalMutation({
   handler: async (ctx) => {
     const expired = await ctx.db
       .query("accessSessions")
-      .withIndex("by_expires_at", q => q.lte("expiresAt", Date.now()))
+      // Lower bound skips persistent sessions; Convex sorts a missing expiresAt first.
+      .withIndex("by_expires_at", q => q.gte("expiresAt", 0).lte("expiresAt", Date.now()))
       .take(100);
     for (const session of expired) await ctx.db.delete(session._id);
     return expired.length;
@@ -67,7 +68,7 @@ const revokeOperation = {
       // A pre-rollout JWT can be logged out before its first authenticated call.
       const session = await verifyAuthToken(args.authToken);
       const id = await ctx.db.insert("accessSessions", { tokenHash, subject: session.turnkeySubOrgId, expiresAt: session.expiresAt, revokedAt: Date.now() });
-      await ctx.scheduler.runAt(session.expiresAt, internal.actorSession.expire, { id });
+      if (session.expiresAt !== undefined) await ctx.scheduler.runAt(session.expiresAt, internal.actorSession.expire, { id });
     }
   },
 };

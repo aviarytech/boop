@@ -10,7 +10,7 @@ import * as jose from "jose";
  * Result of a successful token verification.
  */
 export interface AuthTokenPayload {
-  expiresAt: number;
+  expiresAt?: number;
   /** Turnkey sub-organization ID (stable user identifier) */
   turnkeySubOrgId: string;
   /** User's email address */
@@ -28,6 +28,8 @@ interface JWTPayload {
   sessionToken?: string;
   iat?: number;
   exp?: number;
+  sessionType?: string;
+  jti?: string;
 }
 
 /**
@@ -51,17 +53,22 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload> 
     // Encode secret as Uint8Array for jose
     const secret = new TextEncoder().encode(jwtSecret);
 
-    // Pin issuer/audience/exp to what signJwtToken mints (authInternal.ts).
-    // Without them any other HS256 token sharing JWT_SECRET — different
-    // service, different audience, or no expiry at all — passes as a session.
+    // Pin issuer/audience. Only explicitly signed mobile sessions may omit exp.
     const { payload } = await jose.jwtVerify(token, secret, {
       algorithms: ["HS256"],
       issuer: "originals-auth",
       audience: "originals-api",
-      requiredClaims: ["exp"],
     });
 
     const jwtPayload = payload as unknown as JWTPayload;
+
+    if (jwtPayload.exp === undefined && (
+      jwtPayload.sessionType !== "mobile_persistent" ||
+      typeof jwtPayload.jti !== "string" || !jwtPayload.jti ||
+      typeof jwtPayload.iat !== "number"
+    )) {
+      throw new Error('Token missing "exp" claim');
+    }
 
     // Validate required fields
     if (!jwtPayload.sub) {
@@ -72,7 +79,7 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload> 
     }
 
     return {
-      expiresAt: jwtPayload.exp! * 1000,
+      expiresAt: jwtPayload.exp === undefined ? undefined : jwtPayload.exp * 1000,
       turnkeySubOrgId: jwtPayload.sub,
       email: jwtPayload.email,
       sessionToken: jwtPayload.sessionToken,
