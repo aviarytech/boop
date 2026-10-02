@@ -256,3 +256,40 @@ test('erasure drains large items and children, and an authenticated owner can re
     assert.equal(ctx.rows[table].length, 0, table);
   }
 });
+
+
+for (const legacyOwner of [false, true]) {
+  test(`published-list writers cannot prolong erasure (legacy owner: ${legacyOwner})`, async () => {
+    const guestToken = await new SignJWT({ email: 'guest@example.test' })
+      .setProtectedHeader({ alg: 'HS256' }).setSubject('guest')
+      .setIssuer('originals-auth').setAudience('originals-api').setExpirationTime('1h')
+      .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+    const ctx = fixture();
+    delete ctx.rows.lists[0].kind;
+    if (legacyOwner) {
+      ctx.rows.users[0].legacyDid = 'did:legacy';
+      ctx.rows.lists[0].ownerDid = 'did:legacy';
+    }
+    ctx.rows.users.push({ _id: 'U2', did: 'did:guest', turnkeySubOrgId: 'guest', email: 'guest@example.test' });
+    ctx.rows.accessSessions.push({ _id: 'S2', tokenHash: createHash('sha256').update(guestToken).digest('hex'),
+      subject: 'guest', expiresAt: Date.now() + 3600000 });
+    ctx.rows.publications.push({ _id: 'P1', listId: 'N1', status: 'active' });
+    // Confirm this collaborator had write access before erasure began.
+    await call('items', 'addItem', ctx, { authToken: guestToken, listId: 'N1', name: 'Allowed', createdAt: 1 });
+    ctx.jobs.length = 0; // Notification jobs are unrelated to the deletion worker.
+    await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+    assert.equal(ctx.rows.publications[0].status, 'active');
+    for (let i = 0; i < 10; i++) {
+      await assert.rejects(() => call('items', 'addItem', ctx,
+        { authToken: guestToken, listId: 'N1', name: 'Replacement', createdAt: i }), /unavailable/i);
+    }
+    // getList uses the permission helper rather than the resource wrapper.
+    assert.equal(await call('lists', 'getList', ctx, { authToken: guestToken, listId: 'N1' }), null);
+    while (ctx.jobs.length) await call('users', 'continueUserDeletion', ctx, ctx.jobs.shift());
+    assert.equal(ctx.rows.lists.length, 0);
+    assert.equal(ctx.rows.items.length, 0);
+    assert.equal(ctx.rows.publications.length, 0);
+    assert.ok(!ctx.rows.users.some(u => u._id === 'U1'));
+    assert.ok(ctx.rows.users.some(u => u._id === 'U2'));
+  });
+}
