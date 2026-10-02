@@ -35,13 +35,13 @@ export async function authenticate(
     // Resolve the account on every operation, including keys minted before a DID migration.
     const user = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", key.ownerDid)).first()
       ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", key.ownerDid)).first();
-    if (!user?.did) throw new AuthError("User not found", "UNAUTHORIZED");
+    if (!user?.did || user.deletionRequestedAt !== undefined) throw new AuthError("User unavailable", "UNAUTHORIZED");
     return { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes: key.scopes, viaApiKey: true };
   }
   const session = await requireSession(ctx, credentials.authToken);
   const user = await ctx.db.query("users")
     .withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", session.turnkeySubOrgId)).first();
-  if (!user?.did) throw new AuthError("User not found", "UNAUTHORIZED");
+  if (!user?.did || user.deletionRequestedAt !== undefined) throw new AuthError("User unavailable", "UNAUTHORIZED");
   return { userId: user._id, did: user.did, legacyDid: user.legacyDid, turnkeySubOrgId: session.turnkeySubOrgId, scopes: ["*"], viaApiKey: false };
 }
 

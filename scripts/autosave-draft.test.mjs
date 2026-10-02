@@ -238,3 +238,27 @@ test('discarding an older recovered snapshot preserves later source edits',async
   assert.ok(durableDrafts(key).some(d=>d.text==='newer source version'));
   b.unmount();
 });
+
+test('draft sessions and edits work without crypto.randomUUID (iOS 15)', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+  Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true });
+  const key = 'owner:note:older-webkit';
+  const persist = async () => { throw Error('offline'); };
+  let a, b;
+  try {
+    a = renderHook(() => useAutosaveDraft({ saved: '', canEdit: true, draftKey: key, persist }));
+    b = renderHook(() => useAutosaveDraft({ saved: '', canEdit: true, draftKey: key, persist }));
+    await act(async () => a.result.current.onChange('first'));
+    await act(async () => b.result.current.onChange('second'));
+    const drafts = durableDrafts(key);
+    assert.equal(drafts.length, 2);
+    assert.deepEqual(new Set(drafts.map(d => d.text)), new Set(['first', 'second']));
+    assert.equal(new Set(drafts.map(d => d.revision)).size, 2);
+    await act(async () => a.result.current.onChange('updated'));
+    assert.ok(durableDrafts(key).some(d => d.text === 'updated'));
+  } finally {
+    await act(async () => { a?.unmount(); b?.unmount(); });
+    if (descriptor) Object.defineProperty(crypto, 'randomUUID', descriptor);
+    else delete crypto.randomUUID;
+  }
+});

@@ -149,3 +149,56 @@ test('conflict errors expose structured data for production RPC clients', async 
     return true;
   });
 });
+
+test('large account erasure bounds note reads and continues after logout', async () => {
+  const ctx = fixture();
+  ctx.rows.users[0].legacyDid = 'did:legacy';
+  ctx.rows.lists = Array.from({ length: 121 }, (_, i) => ({
+    _id: `N${i}`, ownerDid: i < 61 ? 'did:owner' : 'did:legacy',
+    name: 'Journal', kind: 'note', createdAt: 1, assetDid: `did:note:${i}`,
+  }));
+  ctx.rows.noteBodies = ctx.rows.lists.map((l, i) => ({
+    _id: `NB${i}`, listId: l._id, body: '漢'.repeat(50000), updatedAt: 1,
+  }));
+  const pending = [];
+  ctx.scheduler.runAfter = async (_delay, _ref, args) => { pending.push(args); };
+  let bytes = 0, batches = 0;
+  const query = ctx.db.query;
+  ctx.db.query = table => {
+    const q = query(table);
+    if (table === 'noteBodies') {
+      const collect = q.collect;
+      q.collect = async () => {
+        const rows = await collect();
+        for (const row of rows) bytes += Buffer.byteLength(row.body);
+        assert.ok(bytes <= 3_000_000, `body read budget exceeded: ${bytes}`);
+        return rows;
+      };
+    }
+    return q;
+  };
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  assert.equal(ctx.rows.noteBodies.length, 101);
+  assert.ok(ctx.rows.users[0].deletionRequestedAt !== undefined);
+  // An accepted deletion blocks new writes, even with a still-valid session.
+  await assert.rejects(() => call('notes', 'updateNoteBody', ctx,
+    { authToken, listId: 'N30', body: 'new data' }), /User unavailable/);
+  ctx.rows.accessSessions = []; // Simulate logout; jobs must not need this token.
+  while (pending.length) {
+    assert.ok(++batches < 10, 'continuation made no progress');
+    bytes = 0;
+    await call('users', 'continueUserDeletion', ctx, pending.shift());
+  }
+  assert.equal(ctx.rows.noteBodies.length, 0);
+  assert.equal(ctx.rows.lists.length, 0);
+  assert.equal(ctx.rows.users.length, 0);
+  // A duplicate scheduled delivery is harmless.
+  await call('users', 'continueUserDeletion', ctx, { userId: 'U1' });
+});
+
+test('deletion continuation cannot erase an account without a deletion request', async () => {
+  const ctx = fixture();
+  await call('users', 'continueUserDeletion', ctx, { userId: 'U1' });
+  assert.equal(ctx.rows.users.length, 1);
+  assert.equal(ctx.rows.noteBodies.length, 1);
+});

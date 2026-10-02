@@ -1,6 +1,6 @@
 import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
+import { draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
@@ -13,7 +13,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
   persist: (text: string, expectedBody: string) => Promise<void>;
 }) {
   const [session] = useState(() => ({
-    key: documentKey ? `${documentKey}:session:${crypto.randomUUID()}` : undefined,
+    key: documentKey ? `${documentKey}:session:${draftRevision()}` : undefined,
     source: documentKey ? listDrafts(documentKey)[0] : undefined,
   }));
   const draftKey = session.key;

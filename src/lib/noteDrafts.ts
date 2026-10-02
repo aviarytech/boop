@@ -1,3 +1,12 @@
+/** Web Crypto UUIDs with an iOS 15.0–15.3 fallback. */
+export function draftRevision(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** Account/resource-scoped drafts. Memory also preserves SPA navigation if
  * browser storage is unavailable. A save may only clear its own revision. */
 const memory = new Map<string, string>();
@@ -9,7 +18,7 @@ export function readDraft(key: string): string | null {
   catch { return memory.get(key) ?? null; }
 }
 export function writeDraft(key: string, text: string, base?: string): string {
-  const record = JSON.stringify({ text, base, updatedAt: Date.now(), revision: crypto.randomUUID() });
+  const record = JSON.stringify({ text, base, updatedAt: Date.now(), revision: draftRevision() });
   try { localStorage.setItem(prefix + key, record); memory.delete(key); }
   catch { memory.set(key, record); }
   return record;
