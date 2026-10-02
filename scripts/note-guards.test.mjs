@@ -138,3 +138,14 @@ test('item descriptions also reject stale editor writes', async () => {
   await assert.rejects(() => call('items','updateItem',ctx,{authToken,itemId:'I1',description:'stale',expectedDescription:'old'}), /NOTE_CONFLICT/);
   assert.equal(ctx.rows.items[0].description, 'remote work');
 });
+
+test('conflict errors expose structured data for production RPC clients', async () => {
+  const ctx = fixture();
+  await assert.rejects(() => call('notes','updateNoteBody',ctx,{
+    authToken,listId:'N1',body:'stale',expectedBody:'wrong base',
+  }), error => {
+    assert.equal(error.data?.code,'NOTE_CONFLICT');
+    assert.equal(typeof error.data?.message,'string');
+    return true;
+  });
+});

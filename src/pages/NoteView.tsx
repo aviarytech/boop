@@ -1,3 +1,4 @@
+import { RecoveredNoteDrafts } from "../components/RecoveredNoteDrafts";
 import { NoteConflict } from "../components/NoteConflict";
 /**
  * A note's page: the list header's layout with an Edit/Preview toggle where
@@ -73,7 +74,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
   const mode: Mode = note.canEdit ? chosenMode : "preview";
   const [dialog, setDialog] = useState<"rename" | "category" | "delete" | null>(null);
 
-  const { value, onChange, status, retry, useServer, saveDraft } = useAutosaveDraft({
+  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
     saved: note.body,
     draftKey: `${list.ownerDid}:note:${list._id}`,
     canEdit: note.canEdit,
@@ -186,6 +187,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
         </div>
       </div>
 
+      <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />
       {status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
       {mode === "edit" ? (
         <textarea

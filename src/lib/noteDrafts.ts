@@ -7,7 +7,7 @@ export function readDraft(key: string): string | null {
   catch { return memory.get(key) ?? null; }
 }
 export function writeDraft(key: string, text: string, base?: string): string {
-  const record = JSON.stringify({ text, base, revision: crypto.randomUUID() });
+  const record = JSON.stringify({ text, base, updatedAt: Date.now(), revision: crypto.randomUUID() });
   try { localStorage.setItem(prefix + key, record); memory.delete(key); }
   catch { memory.set(key, record); }
   return record;
@@ -29,4 +29,27 @@ export function draftBase(key: string): string | undefined {
     const value = JSON.parse(readDraft(key) ?? "null");
     return typeof value?.base === "string" ? value.base : undefined;
   } catch { return undefined; }
+}
+
+
+export type StoredDraft = { key: string; record: string; text: string; base?: string; updatedAt: number };
+/** Include legacy single-slot drafts, but keep every editing session separate. */
+export function listDrafts(documentKey: string): StoredDraft[] {
+  const keys = new Set(memory.keys());
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(prefix)) keys.add(key.slice(prefix.length));
+    }
+  } catch { /* memory-only browser */ }
+  return [...keys].filter(key => key === documentKey || key.startsWith(documentKey + ":session:"))
+    .flatMap(key => {
+      const record = readDraft(key);
+      try {
+        const value = JSON.parse(record ?? "null");
+        return record && typeof value?.text === "string"
+          ? [{key, record, text: value.text, base: typeof value.base === "string" ? value.base : undefined,
+            updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : 0}] : [];
+      } catch { return []; }
+    }).sort((a, b) => b.updatedAt - a.updatedAt);
 }

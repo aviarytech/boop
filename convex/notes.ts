@@ -1,3 +1,4 @@
+import { noteConflict } from "./lib/noteConflict";
 import { v } from "convex/values";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { resourceUnavailable } from "./lib/authError";
@@ -80,7 +81,7 @@ export const { public: updateNoteBody, internal: updateNoteBodyInternal } = acto
     }
     const row = await getBodyRow(ctx, args.listId);
     if (args.expectedBody !== undefined && (row?.body ?? "") !== args.expectedBody) {
-      throw new Error("NOTE_CONFLICT: The note changed. Review both versions before saving.");
+      throw noteConflict();
     }
     const updatedAt = Date.now();
     await ctx.db.patch(args.listId, {

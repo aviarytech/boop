@@ -135,14 +135,63 @@ test('a server conflict keeps the durable draft, and using server discards witho
   let writes = 0;
   const key = 'owner:note:atomic-conflict';
   const editor = renderHook(() => useAutosaveDraft({saved:'base',canEdit:true,draftKey:key,
-    persist:async () => { writes++; throw Error('NOTE_CONFLICT'); }}));
+    persist:async () => { writes++; throw Object.assign(Error('Server Error'), {data:{code:'NOTE_CONFLICT'}}); }}));
   await act(async () => editor.result.current.onChange('local'));
   await act(async () => await editor.result.current.retry());
   assert.equal(editor.result.current.status, 'conflict');
-  assert.equal(JSON.parse(localStorage.getItem(`boop-note-draft:${key}`)).text, 'local');
+  assert.equal(durableDrafts(key)[0].text, 'local');
   await act(async () => editor.result.current.useServer());
   assert.equal(editor.result.current.value, 'base');
   assert.equal(localStorage.getItem(`boop-note-draft:${key}`), null);
   editor.unmount();
   assert.equal(writes, 1);
+});
+
+
+function durableDrafts(key) {
+  const prefix = `boop-note-draft:${key}`;
+  return Array.from({length:localStorage.length},(_,i)=>localStorage.key(i))
+    .filter(k=>k===prefix || k.startsWith(prefix+':session:'))
+    .map(k=>JSON.parse(localStorage.getItem(k)));
+}
+
+test('two editors preserve the losing draft after the other editor saves', async () => {
+  let server='old';
+  const persist=async(text,base)=>{
+    if(base!==server) throw Object.assign(Error('Server Error'),{data:{code:'NOTE_CONFLICT'}});
+    server=text;
+  };
+  const key='owner:note:two-editors';
+  const create=()=>renderHook(({saved})=>useAutosaveDraft({saved,canEdit:true,persist,draftKey:key}),{initialProps:{saved:'old'}});
+  const a=create(),b=create();
+  await act(async()=>a.result.current.onChange('work A'));
+  await act(async()=>b.result.current.onChange('work B'));
+  assert.equal(durableDrafts(key).length,2);
+  await act(async()=>await b.result.current.retry());
+  await act(async()=>await a.result.current.retry());
+  assert.equal(a.result.current.status,'conflict');
+  assert.equal(durableDrafts(key)[0].text,'work A');
+  a.unmount();b.unmount();
+  const reopened=renderHook(()=>useAutosaveDraft({saved:server,canEdit:true,persist,draftKey:key}));
+  assert.equal(reopened.result.current.value,'work A');
+  assert.equal(reopened.result.current.status,'conflict');
+  reopened.unmount();
+});
+
+test('multiple unresolved drafts stay individually recoverable',async()=>{
+  const key='owner:note:multiple';
+  const persist=async()=>{throw Error('offline');};
+  const a=renderHook(()=>useAutosaveDraft({saved:'old',canEdit:true,persist,draftKey:key}));
+  const b=renderHook(()=>useAutosaveDraft({saved:'old',canEdit:true,persist,draftKey:key}));
+  await act(async()=>a.result.current.onChange('draft A'));
+  await act(async()=>b.result.current.onChange('draft B'));
+  await act(async()=>{a.unmount();b.unmount();});
+  const reopened=renderHook(()=>useAutosaveDraft({saved:'new',canEdit:true,persist,draftKey:key}));
+  assert.equal(reopened.result.current.otherDrafts.length,1);
+  const other=reopened.result.current.otherDrafts[0];
+  await act(async()=>reopened.result.current.useServer());
+  await act(async()=>reopened.result.current.recoverDraft(other));
+  assert.equal(reopened.result.current.value,other.text);
+  assert.equal(reopened.result.current.status,'conflict');
+  reopened.unmount();
 });

@@ -1,3 +1,4 @@
+import { RecoveredNoteDrafts } from "../components/RecoveredNoteDrafts";
 import { NoteConflict } from "../components/NoteConflict";
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -37,7 +38,7 @@ function ItemNoteEditor() {
   const updateItem = useMutation(api.items.updateItem);
 
   const [mode, setMode] = useState<"edit" | "preview">("edit");
-  const { value, onChange, status, retry, useServer, saveDraft } = useAutosaveDraft({
+  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
     saved: data?.description,
     draftKey: did && itemId ? `${did}:item:${itemId}` : undefined,
     canEdit: !!data?.canEdit,
@@ -106,6 +107,7 @@ function ItemNoteEditor() {
           </button>
         </div>
       </header>
+      <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />
       {status === "conflict" && <NoteConflict serverBody={data.description} onUseServer={useServer} onSaveDraft={saveDraft} />}
 
       <main className="flex-1 flex flex-col px-4 py-3 safe-area-inset-bottom">

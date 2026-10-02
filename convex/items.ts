@@ -1,3 +1,4 @@
+import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
@@ -279,7 +280,7 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
 
     if (args.description !== undefined && args.expectedDescription !== undefined &&
         (item.description ?? "") !== args.expectedDescription) {
-      throw new Error("NOTE_CONFLICT: The note changed. Review both versions before saving.");
+      throw noteConflict();
     }
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),

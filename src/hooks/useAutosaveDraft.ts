@@ -1,17 +1,24 @@
+import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { clearDraft, draftBase, draftText, readDraft, writeDraft } from "../lib/noteDrafts";
+import { clearDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
 
 /** Callers remount this hook when the account/resource key changes. */
-export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
+export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persist }: {
   saved: string | undefined;
   draftKey?: string;
   canEdit: boolean;
   persist: (text: string, expectedBody: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<string | null>(() => draftKey ? draftText(draftKey) : null);
+  const [session] = useState(() => ({
+    key: documentKey ? `${documentKey}:session:${crypto.randomUUID()}` : undefined,
+    source: documentKey ? listDrafts(documentKey)[0] : undefined,
+  }));
+  const draftKey = session.key;
+  const sourceRef = useRef(session.source);
+  const [draft, setDraft] = useState<string | null>(session.source?.text ?? null);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const value = draft ?? saved ?? "";
   const dirty = saved !== undefined && canEdit && draft !== null;
@@ -20,8 +27,8 @@ export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
   const savedRef = useRef(saved);
   const editRef = useRef(canEdit);
   const persistRef = useRef(persist);
-  const recordRef = useRef(draftKey ? readDraft(draftKey) : null);
-  const baseRef = useRef(draftKey && draft !== null ? draftBase(draftKey) : saved);
+  const recordRef = useRef<string | null>(session.source?.record ?? null);
+  const baseRef = useRef(session.source ? session.source.base : saved);
   const recoveredRef = useRef(draft !== null);
   const revisionRef = useRef(0);
   const inFlightRef = useRef(false);
@@ -61,6 +68,9 @@ export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
       // Equal text does not imply equal edits (A -> B -> A).
       if (revisionRef.current === revision) {
         if (draftKey) clearDraft(draftKey, record);
+        const source = sourceRef.current;
+        if (source) clearDraft(source.key, source.record);
+        sourceRef.current = undefined;
         dirtyRef.current = false;
         if (mountedRef.current) { setDraft(null); setStatus("saved"); }
       } else {
@@ -71,7 +81,7 @@ export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
         queuedRef.current = true;
       }
     } catch (error) {
-      const conflicted = String(error).includes("NOTE_CONFLICT");
+      const conflicted = isNoteConflict(error);
       conflictRef.current = conflicted;
       if (mountedRef.current) setStatus(conflicted ? "conflict" : "error");
     } finally {
@@ -106,6 +116,9 @@ export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
   const useServer = () => {
     if (inFlightRef.current) return;
     if (draftKey) clearDraft(draftKey, recordRef.current);
+    const source = sourceRef.current;
+    if (source) clearDraft(source.key, source.record);
+    sourceRef.current = undefined;
     revisionRef.current++;
     recoveredRef.current = false;
     conflictRef.current = false;
@@ -123,6 +136,22 @@ export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
     void save();
   };
 
+  const recoverDraft = (stored: StoredDraft) => {
+    if (dirtyRef.current || inFlightRef.current || !editRef.current) return;
+    if (readDraft(stored.key) !== stored.record) return;
+    sourceRef.current = stored;
+    baseRef.current = stored.base;
+    recoveredRef.current = true;
+    revisionRef.current++;
+    recordRef.current = stored.record;
+    valueRef.current = stored.text;
+    dirtyRef.current = true;
+    setDraft(stored.text);
+    setStatus("idle");
+  };
+  const otherDrafts = documentKey ? listDrafts(documentKey).filter(candidate =>
+    candidate.key !== draftKey && candidate.key !== sourceRef.current?.key) : [];
+
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
@@ -131,5 +160,5 @@ export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
   }, [dirty]);
 
   return { value, onChange, status: conflict ? "conflict" as const : status,
-    dirty, retry: save, useServer, saveDraft };
+    dirty, retry: save, useServer, saveDraft, otherDrafts, recoverDraft };
 }
