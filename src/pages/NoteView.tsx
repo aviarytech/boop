@@ -1,3 +1,4 @@
+import { NoteConflict } from "../components/NoteConflict";
 /**
  * A note's page: the list header's layout with an Edit/Preview toggle where
  * the list's view pill sits, over a markdown body that autosaves.
@@ -72,12 +73,12 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
   const mode: Mode = note.canEdit ? chosenMode : "preview";
   const [dialog, setDialog] = useState<"rename" | "category" | "delete" | null>(null);
 
-  const { value, onChange, status, retry } = useAutosaveDraft({
+  const { value, onChange, status, retry, useServer, saveDraft } = useAutosaveDraft({
     saved: note.body,
     draftKey: `${list.ownerDid}:note:${list._id}`,
     canEdit: note.canEdit,
-    persist: async (text) => {
-      await updateNoteBody({ listId: list._id, body: text });
+    persist: async (text, expectedBody) => {
+      await updateNoteBody({ listId: list._id, body: text, expectedBody });
     },
   });
 
@@ -185,6 +186,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
         </div>
       </div>
 
+      {status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
       {mode === "edit" ? (
         <textarea
           value={value}

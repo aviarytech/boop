@@ -68,7 +68,7 @@ export const { public: getNoteBody, internal: getNoteBodyInternal } = actorQuery
 export const { public: updateNoteBody, internal: updateNoteBodyInternal } = actorMutation({
   resources: (args) => ({ lists: [args.listId] }),
   scope: "items:write",
-  args: { listId: v.id("lists"), body: v.string() },
+  args: { listId: v.id("lists"), body: v.string(), expectedBody: v.optional(v.string()) },
   handler: async (ctx, args) => {
     if (args.body.length > MAX_NOTE_LENGTH) {
       throw new Error(`Note cannot exceed ${MAX_NOTE_LENGTH} characters`);
@@ -79,6 +79,9 @@ export const { public: updateNoteBody, internal: updateNoteBodyInternal } = acto
       throw resourceUnavailable();
     }
     const row = await getBodyRow(ctx, args.listId);
+    if (args.expectedBody !== undefined && (row?.body ?? "") !== args.expectedBody) {
+      throw new Error("NOTE_CONFLICT: The note changed. Review both versions before saving.");
+    }
     const updatedAt = Date.now();
     await ctx.db.patch(args.listId, {
       noteSummary: { excerpt: excerpt(args.body), wordCount: wordCount(args.body), updatedAt },

@@ -1,100 +1,135 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { clearDraft, draftText, readDraft, writeDraft } from "../lib/noteDrafts";
+import { clearDraft, draftBase, draftText, readDraft, writeDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
-export type SaveStatus = "idle" | "saving" | "saved" | "error";
+export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
 
-const AUTOSAVE_DELAY_MS = 600;
-
-/**
- * Local draft over a server-owned markdown value: debounced autosave, and a
- * flush of any pending edit on unmount. `saved` is undefined while loading.
- */
-export function useAutosaveDraft({
-  saved,
-  draftKey,
-  canEdit,
-  persist,
-}: {
+/** Callers remount this hook when the account/resource key changes. */
+export function useAutosaveDraft({ saved, draftKey, canEdit, persist }: {
   saved: string | undefined;
-  /** Callers must remount the hook when this account/resource key changes. */
   draftKey?: string;
   canEdit: boolean;
-  persist: (text: string) => Promise<void>;
+  persist: (text: string, expectedBody: string) => Promise<void>;
 }) {
-  // null = no local edit yet, so the view keeps tracking the server value.
   const [draft, setDraft] = useState<string | null>(() => draftKey ? draftText(draftKey) : null);
   const [status, setStatus] = useState<SaveStatus>("idle");
-
   const value = draft ?? saved ?? "";
-  // Flush even a draft equal to the current server snapshot: an older write
-  // may still be in flight, and must not undo a user's revert on navigation.
   const dirty = saved !== undefined && canEdit && draft !== null;
-
-  // Refs feed the unmount flush; they are written in an effect, never during render.
   const valueRef = useRef(value);
   const dirtyRef = useRef(dirty);
+  const savedRef = useRef(saved);
+  const editRef = useRef(canEdit);
   const persistRef = useRef(persist);
-  const draftRecordRef = useRef(draftKey ? readDraft(draftKey) : null);
+  const recordRef = useRef(draftKey ? readDraft(draftKey) : null);
+  const baseRef = useRef(draftKey && draft !== null ? draftBase(draftKey) : saved);
+  const recoveredRef = useRef(draft !== null);
+  const revisionRef = useRef(0);
+  const inFlightRef = useRef(false);
+  const queuedRef = useRef(false);
+  const mountedRef = useRef(true);
+  const conflict = dirty && (status === "conflict" ||
+    (recoveredRef.current && !inFlightRef.current && baseRef.current !== saved));
+  const conflictRef = useRef(conflict);
 
   useEffect(() => {
     valueRef.current = value;
     dirtyRef.current = dirty;
+    savedRef.current = saved;
+    editRef.current = canEdit;
     persistRef.current = persist;
+    conflictRef.current = conflict;
   });
 
-  const save = useCallback(async (text: string) => {
-    const record = draftRecordRef.current;
-    setStatus("saving");
+  const save = useCallback(async function drain(): Promise<void> {
+    if (!dirtyRef.current || !editRef.current || conflictRef.current) return;
+    if (inFlightRef.current) { queuedRef.current = true; return; }
+    const base = baseRef.current;
+    if (base === undefined) return;
+    inFlightRef.current = true;
+    queuedRef.current = false;
+    const text = valueRef.current;
+    const revision = revisionRef.current;
+    const record = recordRef.current;
+    if (mountedRef.current) setStatus("saving");
+    let succeeded = false;
     try {
-      await persistRef.current(text);
-      if (draftKey) clearDraft(draftKey, record);
-      // Resume tracking the server value, unless the user typed something newer.
-      if (valueRef.current === text) {
-        setDraft(null);
-        setStatus("saved");
+      await persistRef.current(text, base);
+      succeeded = true;
+      conflictRef.current = false;
+      baseRef.current = text;
+      recoveredRef.current = false;
+      // Equal text does not imply equal edits (A -> B -> A).
+      if (revisionRef.current === revision) {
+        if (draftKey) clearDraft(draftKey, record);
+        dirtyRef.current = false;
+        if (mountedRef.current) { setDraft(null); setStatus("saved"); }
+      } else {
+        // Only rebase this editor's draft; never overwrite another tab's record.
+        if (draftKey && readDraft(draftKey) === recordRef.current) {
+          recordRef.current = writeDraft(draftKey, valueRef.current, text);
+        }
+        queuedRef.current = true;
       }
-    } catch {
-      setStatus("error");
+    } catch (error) {
+      const conflicted = String(error).includes("NOTE_CONFLICT");
+      conflictRef.current = conflicted;
+      if (mountedRef.current) setStatus(conflicted ? "conflict" : "error");
+    } finally {
+      inFlightRef.current = false;
+      if (succeeded && queuedRef.current) await drain();
     }
   }, [draftKey]);
 
   useEffect(() => {
-    if (!dirty) return;
-    const timer = setTimeout(() => void save(value), AUTOSAVE_DELAY_MS);
+    if (!dirty || conflict) return;
+    const timer = setTimeout(() => void save(), 600);
     return () => clearTimeout(timer);
-  }, [value, dirty, save]);
+  }, [value, dirty, conflict, save]);
 
   useEffect(() => {
-    return () => {
-      if (dirtyRef.current) void save(valueRef.current);
-    };
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; void save(); };
   }, [save]);
 
   const onChange = (next: string) => {
     const text = clampNote(next);
-    // Synchronous: navigation can happen before effects or the debounce run.
-    if (draftKey) draftRecordRef.current = writeDraft(draftKey, text);
+    if (!dirtyRef.current) baseRef.current = savedRef.current;
+    revisionRef.current++;
+    if (draftKey) recordRef.current = writeDraft(draftKey, text, baseRef.current);
     valueRef.current = text;
     dirtyRef.current = canEdit && saved !== undefined;
     setDraft(text);
-    setStatus("idle");
+    // Editing a conflicted draft must not silently authorize an overwrite.
+    if (!conflictRef.current) setStatus("idle");
   };
 
-  // Warn before a reload/close destroys a draft that has not reached the server.
+  const useServer = () => {
+    if (inFlightRef.current) return;
+    if (draftKey) clearDraft(draftKey, recordRef.current);
+    revisionRef.current++;
+    recoveredRef.current = false;
+    conflictRef.current = false;
+    dirtyRef.current = false;
+    setDraft(null);
+    setStatus("idle");
+  };
+  const saveDraft = () => {
+    if (inFlightRef.current || !editRef.current || savedRef.current === undefined) return;
+    baseRef.current = savedRef.current;
+    recoveredRef.current = false;
+    conflictRef.current = false;
+    if (draftKey) recordRef.current = writeDraft(draftKey, valueRef.current, baseRef.current);
+    setStatus("idle");
+    void save();
+  };
+
   useEffect(() => {
     if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  const retry = () => {
-    if (dirtyRef.current) void save(valueRef.current);
-  };
-
-  return { value, onChange, status, dirty, retry };
+  return { value, onChange, status: conflict ? "conflict" as const : status,
+    dirty, retry: save, useServer, saveDraft };
 }

@@ -123,3 +123,18 @@ test('stored summaries retain note access checks', async () => {
   await assert.rejects(() => call('notes', 'updateNoteBody', ctx, { authToken, listId: 'N1', body: 'attack' }));
   assert.equal(ctx.rows.noteBodies[0].body, 'secret thoughts');
 });
+
+test('stale note writes cannot overwrite a body or its summary', async () => {
+  const ctx = fixture();
+  await call('notes', 'updateNoteBody', ctx, { authToken, listId:'N1', body:'first', expectedBody:'secret thoughts' });
+  await assert.rejects(() => call('notes', 'updateNoteBody', ctx, {authToken,listId:'N1',body:'stale',expectedBody:'secret thoughts'}), /NOTE_CONFLICT/);
+  assert.equal(ctx.rows.noteBodies[0].body, 'first');
+  assert.equal(ctx.rows.lists[0].noteSummary.excerpt, 'first');
+});
+
+test('item descriptions also reject stale editor writes', async () => {
+  const ctx = fixture();
+  ctx.rows.items.push({_id:'I1',listId:'N1',description:'remote work'});
+  await assert.rejects(() => call('items','updateItem',ctx,{authToken,itemId:'I1',description:'stale',expectedDescription:'old'}), /NOTE_CONFLICT/);
+  assert.equal(ctx.rows.items[0].description, 'remote work');
+});

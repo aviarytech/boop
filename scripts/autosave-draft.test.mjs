@@ -89,3 +89,60 @@ test('late acknowledgement from a previous editor cannot erase newer durable edi
   await act(async () => third.unmount());
   await act(async () => pending.forEach(resolve => resolve()));
 });
+
+test('A -> B -> A remains dirty until the latest revision is acknowledged', async () => {
+  const requests = [];
+  const persist = (text, base) => new Promise(resolve => requests.push({text, base, resolve}));
+  const editor = renderHook(({saved}) => useAutosaveDraft({saved, canEdit:true, persist, draftKey:'owner:note:aba-fixed'}), {initialProps:{saved:'initial'}});
+  try {
+    await act(async () => editor.result.current.onChange('A'));
+    await act(async () => { void editor.result.current.retry(); });
+    await act(async () => editor.result.current.onChange('B'));
+    await act(async () => { void editor.result.current.retry(); });
+    await act(async () => editor.result.current.onChange('A'));
+    assert.equal(requests.length, 1, 'writes must be serialized');
+    await act(async () => { editor.rerender({saved:'A'}); requests[0].resolve(); });
+    assert.equal(editor.result.current.dirty, true);
+    assert.deepEqual(requests.map(r=>[r.text,r.base]), [['A','initial'],['A','A']]);
+    await act(async () => requests[1].resolve());
+    assert.equal(editor.result.current.value, 'A');
+    assert.equal(editor.result.current.dirty, false);
+    assert.equal(localStorage.getItem('boop-note-draft:owner:note:aba-fixed'), null);
+  } finally { editor.unmount(); }
+});
+
+test('recovered stale and legacy drafts require explicit conflict resolution', async () => {
+  for (const base of ['old server', undefined]) {
+    const key = `owner:note:conflict-${base}`;
+    localStorage.setItem(`boop-note-draft:${key}`, JSON.stringify({text:'local work',base,revision:'r1'}));
+    const writes = [];
+    const persist = async (text, expected) => { writes.push([text, expected]); };
+    const editor = renderHook(({saved}) => useAutosaveDraft({saved, canEdit:true, persist, draftKey:key}),{initialProps:{saved:'new remote work'}});
+    assert.equal(editor.result.current.status, 'conflict');
+    await act(async () => { await editor.result.current.retry(); });
+    await act(async () => await new Promise(r=>setTimeout(r,650)));
+    assert.deepEqual(writes, []);
+    await act(async () => editor.result.current.onChange('revised local work'));
+    assert.equal(editor.result.current.status, 'conflict');
+    await act(async () => { editor.result.current.saveDraft(); editor.rerender({saved:'revised local work'}); });
+    assert.deepEqual(writes, [['revised local work','new remote work']]);
+    assert.equal(editor.result.current.status, 'saved');
+    editor.unmount();
+  }
+});
+
+test('a server conflict keeps the durable draft, and using server discards without a write', async () => {
+  let writes = 0;
+  const key = 'owner:note:atomic-conflict';
+  const editor = renderHook(() => useAutosaveDraft({saved:'base',canEdit:true,draftKey:key,
+    persist:async () => { writes++; throw Error('NOTE_CONFLICT'); }}));
+  await act(async () => editor.result.current.onChange('local'));
+  await act(async () => await editor.result.current.retry());
+  assert.equal(editor.result.current.status, 'conflict');
+  assert.equal(JSON.parse(localStorage.getItem(`boop-note-draft:${key}`)).text, 'local');
+  await act(async () => editor.result.current.useServer());
+  assert.equal(editor.result.current.value, 'base');
+  assert.equal(localStorage.getItem(`boop-note-draft:${key}`), null);
+  editor.unmount();
+  assert.equal(writes, 1);
+});

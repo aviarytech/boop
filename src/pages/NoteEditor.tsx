@@ -1,3 +1,4 @@
+import { NoteConflict } from "../components/NoteConflict";
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "../lib/authenticatedConvex";
@@ -36,12 +37,12 @@ function ItemNoteEditor() {
   const updateItem = useMutation(api.items.updateItem);
 
   const [mode, setMode] = useState<"edit" | "preview">("edit");
-  const { value, onChange, status, retry } = useAutosaveDraft({
+  const { value, onChange, status, retry, useServer, saveDraft } = useAutosaveDraft({
     saved: data?.description,
     draftKey: did && itemId ? `${did}:item:${itemId}` : undefined,
     canEdit: !!data?.canEdit,
-    persist: async (text) => {
-      await updateItem({ itemId: itemId as Id<"items">, description: text });
+    persist: async (text, expectedBody) => {
+      await updateItem({ itemId: itemId as Id<"items">, description: text, expectedDescription: expectedBody });
     },
   });
 
@@ -105,6 +106,7 @@ function ItemNoteEditor() {
           </button>
         </div>
       </header>
+      {status === "conflict" && <NoteConflict serverBody={data.description} onUseServer={useServer} onSaveDraft={saveDraft} />}
 
       <main className="flex-1 flex flex-col px-4 py-3 safe-area-inset-bottom">
         {mode === "edit" ? (

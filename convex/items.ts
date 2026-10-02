@@ -244,6 +244,7 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
     // Fields that can be updated
     name: v.optional(v.string()),
     description: v.optional(v.string()),
+    expectedDescription: v.optional(v.string()),
     dueDate: v.optional(v.number()),
     url: v.optional(v.string()),
     recurrence: v.optional(v.object({
@@ -276,6 +277,10 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
       throw resourceUnavailable();
     }
 
+    if (args.description !== undefined && args.expectedDescription !== undefined &&
+        (item.description ?? "") !== args.expectedDescription) {
+      throw new Error("NOTE_CONFLICT: The note changed. Review both versions before saving.");
+    }
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };
