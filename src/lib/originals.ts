@@ -94,6 +94,36 @@ export async function createListAsset(name: string, creatorDid: string): Promise
   };
 }
 
+/** A note's markdown body, its own content-addressed resource beside the metadata. */
+export async function buildNoteBodyResource(body: string): Promise<AssetResource> {
+  return {
+    id: "note-body",
+    type: "NoteBody",
+    contentType: "text/markdown",
+    content: body,
+    hash: await sha256Hex(body),
+  };
+}
+
+/** createListAsset for a note: genesis also commits to the (empty) body. */
+export async function createNoteAsset(name: string, creatorDid: string): Promise<ListAsset> {
+  const sdk = OriginalsSDK.create(config);
+  const createdAt = new Date().toISOString();
+
+  const asset = await sdk.lifecycle.createAsset([
+    await buildListResource(name, creatorDid, createdAt),
+    await buildNoteBodyResource(""),
+  ]);
+
+  return {
+    assetDid: asset.id,
+    name,
+    createdBy: creatorDid,
+    createdAt,
+    envelope: JSON.stringify(asset.serialize()),
+  };
+}
+
 export interface EnvelopeVerification {
   verified: boolean;
   assetDid?: string;

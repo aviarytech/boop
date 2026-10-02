@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { RecoveredNoteDrafts } from "../components/RecoveredNoteDrafts";
+import { NoteConflict } from "../components/NoteConflict";
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import ReactMarkdown from "react-markdown";
@@ -7,11 +9,16 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
-import { MAX_NOTE_LENGTH, clampNote, shouldPersist } from "../lib/noteEditor";
-
-type SaveStatus = "idle" | "saving" | "saved";
+import { useAutosaveDraft } from "../hooks/useAutosaveDraft";
+import { MAX_NOTE_LENGTH } from "../lib/noteEditor";
 
 export function NoteEditor() {
+  const { itemId } = useParams<{ itemId: string }>();
+  const { did } = useCurrentUser();
+  return <ItemNoteEditor key={`${did}:${itemId}`} />;
+}
+
+function ItemNoteEditor() {
   const { itemId } = useParams<{ itemId: string }>();
   const navigate = useNavigate();
   const { haptic } = useSettings();
@@ -20,7 +27,7 @@ export function NoteEditor() {
     if (window.history.length > 1) navigate(-1);
     else navigate("/d");
   };
-  const { did, legacyDid } = useCurrentUser();
+  const { did } = useCurrentUser();
 
   const data = useQuery(
     api.items.getItemForEditor,
@@ -31,66 +38,14 @@ export function NoteEditor() {
   const updateItem = useMutation(api.items.updateItem);
 
   const [mode, setMode] = useState<"edit" | "preview">("edit");
-  // null means "no local edit yet — show the server value". Keeping the Convex
-  // query as the source of truth avoids seeding state in an effect, and lets a
-  // saved note resume tracking the server value instead of holding stale text.
-  const [draft, setDraft] = useState<string | null>(null);
-  const [status, setStatus] = useState<SaveStatus>("idle");
-
-  const value = draft ?? data?.description ?? "";
-  const dirty = !!data && shouldPersist({ draft: value, saved: data.description, canEdit: data.canEdit });
-
-  // Latest value/dirty/persist for the unmount flush. Writing refs inside an
-  // effect is allowed; writing them during render is not.
-  const valueRef = useRef(value);
-  const dirtyRef = useRef(dirty);
-
-  const persist = useCallback(
-    async (text: string) => {
-      if (!itemId || !did) return;
-      setStatus("saving");
-      try {
-        await updateItem({
-          itemId: itemId as Id<"items">,
-          description: text,
-        });
-        // Resume tracking the server value, unless the user typed something newer.
-        if (valueRef.current === text) {
-          setDraft(null);
-          setStatus("saved");
-        }
-      } catch {
-        setStatus("idle");
-      }
+  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
+    saved: data?.description,
+    draftKey: did && itemId ? `${did}:item:${itemId}` : undefined,
+    canEdit: !!data?.canEdit,
+    persist: async (text, expectedBody) => {
+      await updateItem({ itemId: itemId as Id<"items">, description: text, expectedDescription: expectedBody });
     },
-    [itemId, did, legacyDid, updateItem]
-  );
-  const persistRef = useRef(persist);
-
-  useEffect(() => {
-    valueRef.current = value;
-    dirtyRef.current = dirty;
-    persistRef.current = persist;
   });
-
-  // Debounced autosave.
-  useEffect(() => {
-    if (!dirty) return;
-    const timer = setTimeout(() => void persist(value), 600);
-    return () => clearTimeout(timer);
-  }, [value, dirty, persist]);
-
-  // Flush a pending edit if the user leaves before the debounce fires.
-  useEffect(() => {
-    return () => {
-      if (dirtyRef.current) void persistRef.current(valueRef.current);
-    };
-  }, []);
-
-  const onChange = (next: string) => {
-    setDraft(clampNote(next));
-    setStatus("idle");
-  };
 
   // --- Loading
   if (data === undefined) {
@@ -135,8 +90,13 @@ export function NoteEditor() {
           <h1 className="flex-1 truncate text-sm font-semibold text-stone-900 dark:text-stone-100">
             {data.name}
           </h1>
-          <span className="text-xs text-stone-400 w-14 text-right" aria-live="polite">
-            {statusLabel}
+          <span className="text-xs text-stone-400 text-right" aria-live="polite">
+            {status === "error" ? (
+              <span role="alert" className="text-red-600 dark:text-red-400">
+                Not saved to server. Draft kept on this device.{' '}
+                <button type="button" onClick={retry} className="underline">Retry</button>
+              </span>
+            ) : statusLabel}
           </span>
           <button
             onClick={() => { haptic("light"); setMode((mode) => (mode === "edit" ? "preview" : "edit")); }}
@@ -147,6 +107,8 @@ export function NoteEditor() {
           </button>
         </div>
       </header>
+      <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />
+      {status === "conflict" && <NoteConflict serverBody={data.description} onUseServer={useServer} onSaveDraft={saveDraft} />}
 
       <main className="flex-1 flex flex-col px-4 py-3 safe-area-inset-bottom">
         {mode === "edit" ? (

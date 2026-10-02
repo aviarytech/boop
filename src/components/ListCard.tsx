@@ -12,6 +12,7 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import { api } from "../../convex/_generated/api";
 import { useSettings } from "../hooks/useSettings";
 import { LegacyBadge } from "./LegacyBadge";
+import { ownerTag, shortRelativeTime } from "../lib/format";
 
 interface ListCardProps {
   list: Doc<"lists">;
@@ -22,23 +23,8 @@ interface ListCardProps {
   isLegacy?: boolean;
 }
 
-function truncateDid(did: string): string {
-  if (did.length <= 24) return did;
-  return `${did.slice(0, 12)}…${did.slice(-6)}`;
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
-
 export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner, isLegacy }: ListCardProps) {
   const { haptic } = useSettings();
-  const isOwner = list.ownerDid === currentUserDid;
 
   // Pull item counts so the card can show progress. `skip` when we don't need it.
   const items = useQuery(api.items.getListItems, { listId: list._id });
@@ -46,11 +32,7 @@ export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner
   const done = items?.filter(i => i.checked).length ?? 0;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
-  const tagParts: string[] = [];
-  if (showOwner && !isOwner) tagParts.push(truncateDid(list.ownerDid));
-  else if (!isOwner) tagParts.push('shared');
-  else tagParts.push('personal');
-  tagParts.push(formatRelativeTime(list.createdAt));
+  const tagParts = [ownerTag(list.ownerDid, currentUserDid, showOwner), shortRelativeTime(list.createdAt)];
 
   return (
     <Link

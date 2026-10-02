@@ -16,6 +16,10 @@ import { useCategories } from "../hooks/useCategories";
 import { useOffline } from "../hooks/useOffline";
 import { useSettings } from "../hooks/useSettings";
 import { ListCard } from "../components/ListCard";
+import { NoteCard } from "../components/NoteCard";
+import { CreateChooser, type CreateKind } from "../components/CreateChooser";
+import { CreateNoteModal } from "../components/CreateNoteModal";
+import { isNote, type NoteCardSummary } from "../../convex/lib/noteBody";
 import { CreateListModal } from "../components/CreateListModal";
 import { TemplatePickerModal } from "../components/TemplatePickerModal";
 import { CategoryHeader } from "../components/lists/CategoryHeader";
@@ -33,6 +37,18 @@ import { trackFirstListCreated } from "../lib/analytics";
 import { useBilling } from "../hooks/useBilling";
 import { ReferralInviteCurrentUser } from "../components/ReferralInvite";
 
+function IndexCard({ list, summaries, currentUserDid, showOwner, isLegacy }: {
+  list: Doc<"lists">;
+  summaries: Map<Id<"lists">, NoteCardSummary>;
+  currentUserDid: string;
+  showOwner?: boolean;
+  isLegacy?: boolean;
+}) {
+  return isNote(list)
+    ? <NoteCard list={list} summary={summaries.get(list._id)} currentUserDid={currentUserDid} showOwner={showOwner} />
+    : <ListCard list={list} currentUserDid={currentUserDid} showOwner={showOwner} isLegacy={isLegacy} />;
+}
+
 export function Home() {
   const { did, legacyDid, isLoading: userLoading } = useCurrentUser();
   const { isPro } = useBilling();
@@ -45,6 +61,8 @@ export function Home() {
   const createList = useMutation(api.lists.createList);
   const addItem = useMutation(api.items.addItem);
 
+  const [isChooserOpen, setIsChooserOpen] = useState(false);
+  const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
@@ -63,7 +81,7 @@ export function Home() {
   // Check for action param (e.g., from PWA shortcut)
   useEffect(() => {
     if (searchParams.get('action') === 'new') {
-      setIsTemplatePickerOpen(true);
+      setIsChooserOpen(true);
     }
   }, [searchParams]);
 
@@ -83,6 +101,7 @@ export function Home() {
         ownerDid: list.ownerDid,
         categoryId: list.categoryId,
         createdAt: list.createdAt,
+        kind: list.kind,
       }));
       cacheAllLists(listsToCache);
     }
@@ -160,6 +179,13 @@ export function Home() {
     lists && !usingCache ? { listIds: lists.map((l) => l._id) } : "skip"
   );
   const legacySet = useMemo(() => new Set(legacyIds ?? []), [legacyIds]);
+
+  const noteIds = useMemo(() => (lists ?? []).filter(isNote).map((l) => l._id), [lists]);
+  const noteSummaries = useMemo(
+    () => new Map((lists ?? []).flatMap(list => list.noteSummary
+      ? [[list._id, { listId: list._id, ...list.noteSummary }] as const] : [])),
+    [lists]
+  );
 
   // Filter and sort lists
   const processedLists = useMemo(() => {
@@ -259,7 +285,13 @@ export function Home() {
 
   const handleOpenCreate = () => {
     haptic('light');
-    setIsTemplatePickerOpen(true);
+    setIsChooserOpen(true);
+  };
+
+  const handlePickKind = (kind: CreateKind) => {
+    setIsChooserOpen(false);
+    if (kind === "note") setIsCreateNoteOpen(true);
+    else setIsTemplatePickerOpen(true);
   };
 
   const handleCreateBlank = () => {
@@ -286,7 +318,8 @@ export function Home() {
   const isLoading = lists === undefined || categoriesLoading;
   const hasLists = lists && lists.length > 0;
   const hasFilteredResults = processedLists && processedLists.length > 0;
-  const totalListCount = lists?.length ?? 0;
+  const totalNoteCount = noteIds.length;
+  const totalListCount = (lists?.length ?? 0) - totalNoteCount;
 
   return (
     <div className="min-h-full pb-28">
@@ -313,6 +346,14 @@ export function Home() {
               <span>
                 <b className="text-stone-900 dark:text-stone-100">{totalListCount}</b> {totalListCount === 1 ? 'list' : 'lists'}
               </span>
+              {totalNoteCount > 0 && (
+                <>
+                  <span className="text-stone-300 dark:text-stone-600">·</span>
+                  <span>
+                    <b className="text-stone-900 dark:text-stone-100">{totalNoteCount}</b> {totalNoteCount === 1 ? 'note' : 'notes'}
+                  </span>
+                </>
+              )}
               {allSharedLists.length > 0 && (
                 <>
                   <span className="text-stone-300 dark:text-stone-600">·</span>
@@ -357,6 +398,7 @@ export function Home() {
             <SearchInput
               value={searchQuery}
               onChange={setSearchQuery}
+              placeholder="Search lists and notes…"
               className="w-full"
             />
           </div>
@@ -451,7 +493,7 @@ export function Home() {
               <div className="space-y-3">
                 {favouriteLists.map((list, index) => (
                   <div key={`fav-${list._id}`} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                    <ListCard list={list} currentUserDid={did} showOwner={list.ownerDid !== did && list.ownerDid !== legacyDid} isLegacy={legacySet.has(list._id)} />
+                    <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} showOwner={list.ownerDid !== did && list.ownerDid !== legacyDid} isLegacy={legacySet.has(list._id)} />
                   </div>
                 ))}
               </div>
@@ -474,7 +516,7 @@ export function Home() {
                     <div className="space-y-3">
                       {categoryLists.map((list, index) => (
                         <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                          <ListCard list={list} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
+                          <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
                         </div>
                       ))}
                     </div>
@@ -490,7 +532,7 @@ export function Home() {
                   <div className="space-y-3">
                     {ownedLists.uncategorized.map((list, index) => (
                       <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                        <ListCard list={list} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
+                        <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
                       </div>
                     ))}
                   </div>
@@ -513,7 +555,7 @@ export function Home() {
               <div className="space-y-3">
                 {allSharedLists.map((list, index) => (
                   <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
-                    <ListCard list={list} currentUserDid={did} showOwner />
+                    <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} showOwner />
                   </div>
                 ))}
               </div>
@@ -526,7 +568,7 @@ export function Home() {
       <button
         onClick={handleOpenCreate}
         className="fixed bottom-6 right-6 z-30 w-14 h-14 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white rounded-2xl shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 focus:outline-none focus:ring-4 focus:ring-amber-400/30 transition-all active:scale-90 flex items-center justify-center group"
-        aria-label="Create new list"
+        aria-label="Create new list or note"
       >
         <svg 
           className="w-6 h-6 transition-transform duration-200 group-hover:rotate-90" 
@@ -539,6 +581,14 @@ export function Home() {
       </button>
 
       {/* Modals */}
+      {isChooserOpen && (
+        <CreateChooser onPick={handlePickKind} onClose={() => setIsChooserOpen(false)} />
+      )}
+
+      {isCreateNoteOpen && (
+        <CreateNoteModal onClose={() => setIsCreateNoteOpen(false)} />
+      )}
+
       {isTemplatePickerOpen && (
         <TemplatePickerModal 
           onClose={() => setIsTemplatePickerOpen(false)}

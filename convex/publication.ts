@@ -11,6 +11,7 @@ import { query } from "./_generated/server";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 import { internal } from "./_generated/api";
 import { canUserViewList } from "./lib/permissions";
+import { isNote } from "./lib/noteBody";
 
 /**
  * Record a publication for a list.
@@ -38,6 +39,8 @@ export const { public: publishList, internal: publishListInternal } = actorMutat
     if (![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
       throw new Error("Only the owner can publish a list");
     }
+    // Publishing grants everyone edit; note publishing waits on Pro gating and sealing.
+    if (isNote(list)) throw new Error("Notes cannot be published");
 
     // Check if already published
     const existing = await ctx.db

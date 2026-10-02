@@ -21,6 +21,7 @@ type Assertions = ObjectType<typeof assertions>;
 export type ActorCtx<C> = C & { actor: ResolvedActor; credentials: Credentials };
 type Definition<C, A extends PropertyValidators, R> = {
   args: A;
+  allowDeletingAccount?: boolean;
   scope: import("./apiKeyHelpers").Scope;
   resources: (args: ObjectType<A>) => ListResources;
   handler: (ctx: ActorCtx<C>, args: ObjectType<A>) => R | Promise<R>;
@@ -62,7 +63,8 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
   };
 }
 export function actorMutation<A extends PropertyValidators, R>(definition: Definition<MutationCtx, A, R>) {
-  const config = prepare(definition, authenticate);
+  const config = prepare(definition, (ctx: MutationCtx, args) =>
+    authenticate(ctx, args, definition.allowDeletingAccount));
   return { public: mutation(config), internal: internalMutation(config) };
 }
 export function actorQuery<A extends PropertyValidators, R>(definition: Definition<QueryCtx, A, R>) {

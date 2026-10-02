@@ -49,10 +49,13 @@ export default defineSchema({
     expiresAt: v.number(), // Session expiration timestamp
   })
     .index("by_session_id", ["sessionId"])
+    .index("by_email", ["email"])
     .index("by_expires_at", ["expiresAt"]),
 
   // Users table - for display name lookup by DID
   users: defineTable({
+    deletionRequestedAt: v.optional(v.number()),
+    deletionDids: v.optional(v.array(v.string())),
     did: v.optional(v.string()), // did:webvh:... created client-side (null until first login completes)
     displayName: v.string(),
     createdAt: v.number(),
@@ -151,10 +154,23 @@ export default defineSchema({
     }))),
     // Item view mode preference: "alphabetical" (flat A-Z) or "categorized" (grouped by category)
     itemViewMode: v.optional(v.union(v.literal("alphabetical"), v.literal("categorized"))),
+    // Absent = list. Set once at creation; a note is never converted to or from a list.
+    kind: v.optional(v.literal("note")),
+    noteSummary: v.optional(v.object({
+      excerpt: v.string(), wordCount: v.number(), updatedAt: v.number(),
+    })),
   })
     .index("by_owner", ["ownerDid"])
     .index("by_asset_did", ["assetDid"])
     .index("by_category", ["categoryId"]),
+
+  // A note's live markdown body. Off the lists row so the index subscriptions
+  // never carry note text; the index reads summaries via notes.getNoteCards.
+  noteBodies: defineTable({
+    listId: v.id("lists"),
+    body: v.string(),
+    updatedAt: v.number(),
+  }).index("by_list", ["listId"]),
 
   // Serialized Originals AssetEnvelope per list — the signed CEL event log that
   // makes a list's did:cel verifiable. Kept off the lists row (~1.8KB at genesis,
@@ -521,6 +537,7 @@ export default defineSchema({
     proGrantedAt: v.optional(v.number()),
   })
     .index("by_referrer", ["referrerId"])
+    .index("by_code", ["referralCodeId"])
     .index("by_referee", ["refereeId"]),
 
   // Bitcoin anchors table - list/item state anchored to Bitcoin signet (Phase 5 + 6)

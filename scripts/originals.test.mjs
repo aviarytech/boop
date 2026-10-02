@@ -64,6 +64,32 @@ const originals = await loadOriginalsModule();
   assert.ok(envelope.didDocuments["did:cel"], "envelope must carry the did:cel document");
 }
 
+// buildNoteBodyResource / createNoteAsset: a note's body is its own genesis resource
+{
+  const r = await originals.buildNoteBodyResource("");
+  assert.equal(r.id, "note-body");
+  assert.equal(r.type, "NoteBody");
+  assert.equal(r.contentType, "text/markdown");
+  assert.equal(r.content, "");
+  assert.equal(
+    r.hash,
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "empty body must hash to the sha-256 of the empty string",
+  );
+  assert.equal((await originals.buildNoteBodyResource("")).hash, r.hash, "hash must be stable");
+
+  const asset = await originals.createNoteAsset("Why boop signs", "did:webvh:example:alice");
+  assert.match(asset.assetDid, /^did:cel:/);
+  const envelope = JSON.parse(asset.envelope);
+  assert.deepEqual(
+    envelope.resources.map((res) => res.id),
+    ["list-metadata", "note-body"],
+    "note genesis must carry the metadata and the body",
+  );
+  const ok = await originals.verifyListEnvelope(asset.envelope);
+  assert.equal(ok.verified, true, `note envelope should verify, got: ${ok.error ?? ""}`);
+}
+
 // verifyListEnvelope: a persisted envelope round-trips and verifies
 {
   const asset = await originals.createListAsset("Chores", "did:webvh:example:alice");

@@ -1,11 +1,10 @@
 /**
- * Pure helpers for the item-notes markdown editor. No imports on purpose:
- * shared between the React page and the Node test harness.
+ * Pure helpers for the markdown editors. Only imports pure modules, so the
+ * Node test harness can bundle it.
  */
+import { MAX_NOTE_LENGTH } from "../../convex/lib/noteBody";
 
-/** Max length of an item's markdown notes/body. Kept in sync with the
- *  server-side guard in convex/items.ts (updateItem). */
-export const MAX_NOTE_LENGTH = 50000;
+export { MAX_NOTE_LENGTH };
 
 /** Truncate note text to the maximum length. */
 export function clampNote(text: string): string {

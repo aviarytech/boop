@@ -9,6 +9,7 @@ import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { useBilling } from "../hooks/useBilling";
+import { isNote } from "../../convex/lib/noteBody";
 
 export function Profile() {
   const { did, legacyDid, email, displayName, isLoading: userLoading, subOrgId } = useCurrentUser();
@@ -61,8 +62,9 @@ export function Profile() {
     );
   }
 
-  const totalLists = lists?.length ?? 0;
-  const ownedLists = lists?.filter(l => l.ownerDid === did || l.ownerDid === legacyDid).length ?? 0;
+  const listsOnly = lists?.filter(l => !isNote(l));
+  const totalLists = listsOnly?.length ?? 0;
+  const ownedLists = listsOnly?.filter(l => l.ownerDid === did || l.ownerDid === legacyDid).length ?? 0;
   const sharedLists = totalLists - ownedLists;
   const totalItems = stats?.totalItems ?? 0;
   const completedItems = stats?.completedItems ?? 0;

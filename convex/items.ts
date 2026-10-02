@@ -1,3 +1,4 @@
+import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
@@ -6,6 +7,7 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList } from "./lib/permissions";
+import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
 
 /**
  * Creates a Verifiable Credential for item authorship (creation).
@@ -152,6 +154,8 @@ export const { public: addItem, internal: addItemInternal } = actorMutation({
     if (!list) {
       throw new Error("List not found");
     }
+    // Notes are uncapped, so items on one would be an unmetered list.
+    if (isNote(list)) throw new Error("Cannot add items to a note");
 
     // Verify user is authorized (owner or editor)
     const canEdit = await canUserEditList(
@@ -241,6 +245,7 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
     // Fields that can be updated
     name: v.optional(v.string()),
     description: v.optional(v.string()),
+    expectedDescription: v.optional(v.string()),
     dueDate: v.optional(v.number()),
     url: v.optional(v.string()),
     recurrence: v.optional(v.object({
@@ -260,8 +265,8 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
     clearAssigneeDid: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => withMutationObservability("items.updateItem", async () => {
-    if (args.description !== undefined && args.description.length > 50000) {
-      throw new Error("Description cannot exceed 50000 characters");
+    if (args.description !== undefined && args.description.length > MAX_NOTE_LENGTH) {
+      throw new Error(`Description cannot exceed ${MAX_NOTE_LENGTH} characters`);
     }
     const item = await ctx.db.get(args.itemId);
     if (!item) {
@@ -273,6 +278,10 @@ export const { public: updateItem, internal: updateItemInternal } = actorMutatio
       throw resourceUnavailable();
     }
 
+    if (args.description !== undefined && args.expectedDescription !== undefined &&
+        (item.description ?? "") !== args.expectedDescription) {
+      throw noteConflict();
+    }
     const updates: Record<string, unknown> = {
       updatedAt: Date.now(),
     };

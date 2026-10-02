@@ -8,6 +8,7 @@ import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { isNote } from "../../convex/lib/noteBody";
 
 interface DeleteListDialogProps {
   list: Doc<"lists">;
@@ -21,6 +22,7 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useFocusTrap<HTMLDivElement>({ onEscape: onClose });
+  const subject = isNote(list) ? "note" : "list";
 
   const handleDelete = async () => {
     if (!did) return;
@@ -36,7 +38,7 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
       onDeleted();
     } catch (err) {
       console.error("Failed to delete list:", err);
-      setError("Failed to delete list. Please try again.");
+      setError(`Failed to delete ${subject}. Please try again.`);
       setIsDeleting(false);
     }
   };
@@ -51,9 +53,9 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
         aria-describedby="delete-dialog-description"
         className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
       >
-        <h2 id="delete-dialog-title" className="text-xl font-bold text-gray-900 mb-2">Delete List</h2>
+        <h2 id="delete-dialog-title" className="text-xl font-bold text-gray-900 mb-2">Delete {subject === "note" ? "Note" : "List"}</h2>
         <p id="delete-dialog-description" className="text-gray-600 mb-4">
-          Are you sure you want to delete "{list.name}"? This will permanently delete the list and all its items. This action cannot be undone.
+          Are you sure you want to delete "{list.name}"? This will permanently delete the {subject}{subject === "list" ? " and all its items" : ""}. This action cannot be undone.
         </p>
 
         {error && (

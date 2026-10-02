@@ -20,6 +20,7 @@ export interface OfflineList {
   ownerDid: string;
   categoryId?: Id<"categories">;
   createdAt: number;
+  kind?: "note";
   // Timestamp when cached locally
   _cachedAt: number;
 }

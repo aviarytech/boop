@@ -2,6 +2,16 @@ import { resourceUnavailable } from "./authError";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
+/** Read the owner in the same transaction as authorization so starting erasure
+ * conflicts with concurrent writes, including writes by other published-list users. */
+async function ownerIsDeleting(ctx: MutationCtx | QueryCtx, ownerDid: string): Promise<boolean> {
+  const owner = await ctx.db.query("users")
+    .withIndex("by_did", q => q.eq("did", ownerDid)).first()
+    ?? await ctx.db.query("users")
+      .withIndex("by_legacy_did", q => q.eq("legacyDid", ownerDid)).first();
+  return owner?.deletionRequestedAt !== undefined;
+}
+
 /**
  * Check if a user can edit a list.
  * Owner can always edit. If the list has an active publication, anyone can edit.
@@ -13,7 +23,7 @@ export async function canUserEditList(
   legacyDid?: string
 ): Promise<boolean> {
   const list = await ctx.db.get(listId);
-  if (!list) return false;
+  if (!list || await ownerIsDeleting(ctx, list.ownerDid)) return false;
 
   const didsToCheck = [userDid, ...(legacyDid ? [legacyDid] : [])];
   if (didsToCheck.includes(list.ownerDid)) return true;
@@ -76,7 +86,7 @@ export async function authorizeResources(
   }
   for (const listId of listIds) {
     const list = await ctx.db.get(listId);
-    if (!list) throw resourceUnavailable();
+    if (!list || await ownerIsDeleting(ctx, list.ownerDid)) throw resourceUnavailable();
     if ([actor.did, actor.legacyDid].includes(list.ownerDid)) continue;
     const publication = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", listId)).first();
     if (publication?.status !== "active") throw resourceUnavailable();
