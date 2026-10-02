@@ -1,6 +1,6 @@
 import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { clearDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
+import { clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
@@ -69,7 +69,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
       if (revisionRef.current === revision) {
         if (draftKey) clearDraft(draftKey, record);
         const source = sourceRef.current;
-        if (source) clearDraft(source.key, source.record);
+        if (source) clearRecoveredDraft(source);
         sourceRef.current = undefined;
         dirtyRef.current = false;
         if (mountedRef.current) { setDraft(null); setStatus("saved"); }
@@ -98,8 +98,21 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; void save(); };
-  }, [save]);
+    const onPageHide = (event: PageTransitionEvent) => {
+      // BFCache pages can resume editing; they retain ownership.
+      if (!event.persisted && draftKey) releaseDraft(draftKey);
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      mountedRef.current = false;
+      window.removeEventListener("pagehide", onPageHide);
+      // React StrictMode replays cleanup/setup without ending the editor.
+      queueMicrotask(() => {
+        if (!mountedRef.current && draftKey) releaseDraft(draftKey);
+      });
+      void save();
+    };
+  }, [save, draftKey]);
 
   const onChange = (next: string) => {
     const text = clampNote(next);
@@ -117,7 +130,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
     if (inFlightRef.current) return;
     if (draftKey) clearDraft(draftKey, recordRef.current);
     const source = sourceRef.current;
-    if (source) clearDraft(source.key, source.record);
+    if (source) clearRecoveredDraft(source);
     sourceRef.current = undefined;
     revisionRef.current++;
     recoveredRef.current = false;

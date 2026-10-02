@@ -195,3 +195,46 @@ test('multiple unresolved drafts stay individually recoverable',async()=>{
   assert.equal(reopened.result.current.status,'conflict');
   reopened.unmount();
 });
+
+for (const resolution of ['discard','save']) {
+  test(`recovering another active editor's draft cannot delete its storage on ${resolution}`,async()=>{
+    let server='old';
+    const persist=async(text,base)=>{
+      if(base!==server)throw Object.assign(Error('Server Error'),{data:{code:'NOTE_CONFLICT'}});
+      server=text;
+    };
+    const key=`owner:note:live-source-${resolution}`;
+    const create=()=>renderHook(({saved})=>useAutosaveDraft({saved,canEdit:true,persist,draftKey:key}),{initialProps:{saved:server}});
+    const a=create();
+    await act(async()=>a.result.current.onChange('A must survive'));
+    server='remote change';
+    await act(async()=>a.rerender({saved:server}));
+    await act(async()=>await a.result.current.retry());
+    const b=create();
+    assert.equal(b.result.current.status,'conflict');
+    if(resolution==='discard')await act(async()=>b.result.current.useServer());
+    else await act(async()=>b.result.current.saveDraft());
+    assert.ok(durableDrafts(key).some(d=>d.text==='A must survive'));
+    await act(async()=>{a.unmount();b.unmount();});
+    const reopened=create();
+    assert.equal(reopened.result.current.value,'A must survive');
+    await act(async()=>reopened.result.current.useServer());
+    // Now that the source owner is gone, normal recovery can clean it up.
+    assert.equal(durableDrafts(key).length,0);
+    reopened.unmount();
+  });
+}
+
+test('discarding an older recovered snapshot preserves later source edits',async()=>{
+  const key='owner:note:source-revised';
+  const persist=async()=>{throw Object.assign(Error('Server Error'),{data:{code:'NOTE_CONFLICT'}});};
+  const create=()=>renderHook(()=>useAutosaveDraft({saved:'server',canEdit:true,persist,draftKey:key}));
+  const a=create();
+  await act(async()=>a.result.current.onChange('first version'));
+  const b=create();
+  await act(async()=>a.result.current.onChange('newer source version'));
+  await act(async()=>a.unmount());
+  await act(async()=>b.result.current.useServer());
+  assert.ok(durableDrafts(key).some(d=>d.text==='newer source version'));
+  b.unmount();
+});

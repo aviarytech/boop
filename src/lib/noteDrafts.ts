@@ -2,6 +2,8 @@
  * browser storage is unavailable. A save may only clear its own revision. */
 const memory = new Map<string, string>();
 const prefix = "boop-note-draft:";
+const released = new Set<string>();
+const releasePrefix = "boop-note-draft-released:";
 export function readDraft(key: string): string | null {
   try { return memory.get(key) ?? localStorage.getItem(prefix + key) ?? null; }
   catch { return memory.get(key) ?? null; }
@@ -21,7 +23,11 @@ export function draftText(key: string): string | null {
 export function clearDraft(key: string, record: string | null) {
   if (record === null || readDraft(key) !== record) return;
   memory.delete(key);
-  try { localStorage.removeItem(prefix + key); } catch { /* SPA fallback */ }
+  released.delete(key);
+  try {
+    localStorage.removeItem(prefix + key);
+    localStorage.removeItem(releasePrefix + key);
+  } catch { /* SPA fallback */ }
 }
 
 export function draftBase(key: string): string | undefined {
@@ -52,4 +58,19 @@ export function listDrafts(documentKey: string): StoredDraft[] {
             updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : 0}] : [];
       } catch { return []; }
     }).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+
+/** Only the owning editor calls this, after it can no longer accept edits. */
+export function releaseDraft(key: string) {
+  if (readDraft(key) === null) return;
+  released.add(key);
+  try { localStorage.setItem(releasePrefix + key, "released"); } catch { /* conservative across tabs */ }
+}
+
+/** Unknown/crashed owners are preserved. A revision match alone is not ownership. */
+export function clearRecoveredDraft(source: StoredDraft) {
+  let ownerReleased = released.has(source.key);
+  try { ownerReleased ||= localStorage.getItem(releasePrefix + source.key) === "released"; } catch { /* preserve */ }
+  if (ownerReleased) clearDraft(source.key, source.record);
 }
