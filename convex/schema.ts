@@ -55,6 +55,7 @@ export default defineSchema({
   // Users table - for display name lookup by DID
   users: defineTable({
     deletionRequestedAt: v.optional(v.number()),
+    deletionDids: v.optional(v.array(v.string())),
     did: v.optional(v.string()), // did:webvh:... created client-side (null until first login completes)
     displayName: v.string(),
     createdAt: v.number(),

@@ -45,6 +45,9 @@ export const upsertUserInternal = internalMutation({
     }
     if (args.legacyDid) throw new Error("Identity migration requires verified account linking");
     if (existingByTurnkey) {
+      if (existingByTurnkey.deletionRequestedAt !== undefined && args.did && args.did !== existingByTurnkey.did) {
+        throw resourceUnavailable();
+      }
       if (existingByTurnkey.email !== args.email) {
         throw new Error("This identity is linked to a different email.");
       }

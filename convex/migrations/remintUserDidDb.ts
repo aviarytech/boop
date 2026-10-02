@@ -229,6 +229,7 @@ export const applyRemint = internalMutation({
   handler: async (ctx: MutationCtx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error(`User ${args.userId} not found`);
+    if (user.deletionRequestedAt !== undefined) throw new Error("Account deletion is in progress");
     if (user.did !== args.oldDid) {
       // Someone already re-minted this user; don't rewrite a second time.
       return { rewritten: 0, skipped: true };

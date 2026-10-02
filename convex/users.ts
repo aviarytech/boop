@@ -47,6 +47,13 @@ export const continueUserDeletion = internalMutation({
 // reads at most one parent, one item, and four child documents (each <=1 MiB).
 const DELETE_BATCH_SIZE = 4;
 async function deleteUserBatch(ctx: MutationCtx, user: Doc<"users">): Promise<void> {
+  // Snapshot once, including when resuming a deletion started by an older build.
+  // Retries must never replace the identities whose records need erasure.
+  if (user.deletionDids === undefined) {
+    const deletionDids = [...new Set([user.did, user.legacyDid].filter(Boolean) as string[])];
+    await ctx.db.patch(user._id, { deletionDids });
+    user = { ...user, deletionDids };
+  }
   if (!await deleteUserStep(ctx, user)) {
     await ctx.scheduler.runAfter(0, internal.users.continueUserDeletion, { userId: user._id });
   }
@@ -54,7 +61,7 @@ async function deleteUserBatch(ctx: MutationCtx, user: Doc<"users">): Promise<vo
 
 async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boolean> {
   const userId = user._id;
-  const dids = [...new Set([user.did, user.legacyDid].filter(Boolean) as string[])];
+  const dids = user.deletionDids!;
   const drain = async (pending: Promise<{ _id: Id<TableNames> }[]>): Promise<boolean> => {
     const rows = await pending;
     for (const row of rows) await ctx.db.delete(row._id);

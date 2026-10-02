@@ -7,7 +7,7 @@ import { SignJWT } from 'jose';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'note-guards-test-secret-not-a-deployed-credential';
-const names = ['items', 'lists', 'publication', 'users', 'notes'];
+const names = ['items', 'lists', 'publication', 'users', 'notes', 'auth', 'migrations/remintUserDidDb'];
 await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/note-guards-test', bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*', '@originals/*', '@turnkey/*', 'didwebvh-ts', '@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/note-guards-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
@@ -293,3 +293,46 @@ for (const legacyOwner of [false, true]) {
     assert.ok(ctx.rows.users.some(u => u._id === 'U2'));
   });
 }
+
+
+test('identity upgrades and remints are blocked during erasure; login and resume still work', async () => {
+  const ctx = fixture();
+  ctx.rows.users[0].did = 'did:key:old';
+  ctx.rows.users[0].legacyDid = 'did:legacy';
+  ctx.rows.lists[0].ownerDid = 'did:key:old';
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  assert.deepEqual(ctx.rows.users[0].deletionDids, ['did:key:old', 'did:legacy']);
+  await assert.rejects(() => call('auth', 'upsertUserInternal', ctx, {
+    turnkeySubOrgId: 'owner', email: 'owner@example.test', did: 'did:webvh:new:example.test:user',
+  }), /unavailable/i);
+  await assert.rejects(() => call('migrations/remintUserDidDb', 'applyRemint', ctx, {
+    userId: 'U1', oldDid: 'did:key:old', newDid: 'did:webvh:new:example.test:user',
+  }), /deletion/i);
+  assert.equal(ctx.rows.users[0].did, 'did:key:old');
+  // OTP login without an identity change must remain possible to reach Resume.
+  assert.equal(await call('auth', 'upsertUserInternal', ctx, {
+    turnkeySubOrgId: 'owner', email: 'owner@example.test',
+  }), 'U1');
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  while (ctx.jobs.length) await call('users', 'continueUserDeletion', ctx, ctx.jobs.shift());
+  assert.equal(ctx.rows.users.length, 0);
+  assert.equal(ctx.rows.lists.length, 0);
+  assert.equal(ctx.rows.noteBodies.length, 0);
+});
+
+test('erasure retries retain the original identity snapshot even if the user row changes', async () => {
+  const ctx = fixture();
+  ctx.rows.users[0].legacyDid = 'did:legacy';
+  ctx.rows.lists.push({ _id: 'N2', ownerDid: 'did:legacy', name: 'Legacy', kind: 'note', createdAt: 2 });
+  ctx.rows.noteBodies.push({ _id: 'NB2', listId: 'N2', body: 'must erase', updatedAt: 2 });
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  // Simulate an out-of-band operator change. Normal identity writers now reject it.
+  ctx.rows.users[0].did = 'did:changed';
+  ctx.rows.users[0].legacyDid = undefined;
+  await call('users', 'deleteUserData', ctx, { authToken, userId: 'U1' });
+  assert.deepEqual(ctx.rows.users[0].deletionDids, ['did:owner', 'did:legacy']);
+  while (ctx.jobs.length) await call('users', 'continueUserDeletion', ctx, ctx.jobs.shift());
+  assert.equal(ctx.rows.users.length, 0);
+  assert.equal(ctx.rows.lists.length, 0);
+  assert.equal(ctx.rows.noteBodies.length, 0);
+});
