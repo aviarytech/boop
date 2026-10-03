@@ -6,16 +6,16 @@ import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const { renderHook, act, waitFor, cleanup } = await import('@testing-library/react');
+const { renderHook, render, fireEvent, act, waitFor, cleanup } = await import('@testing-library/react');
 const fixture = globalThis.__offlineHooks = {
   user: { turnkeySubOrgId: 'hook-account-a', did: 'did:a' }, token: 'token-a', online: false,
   snapshots: new Map(), calls: [], networkListeners: new Set(), client: { mutation() { throw Error('Unexpected network call while offline'); } },
 };
-await build({ entryPoints: ['src/hooks/useOptimisticItems.tsx', 'src/hooks/useItemDetailsDraft.ts', 'src/lib/offline.ts', 'src/lib/offlineObserver.ts'], outdir: 'tmp/offline-hooks', outbase: '.', bundle: true, splitting: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['react', 'react/jsx-runtime', 'convex/server', 'convex/values', 'idb'], plugins: [{ name: 'offline-hook-fixtures', setup(b) {
+await build({ entryPoints: ['src/hooks/useOptimisticItems.tsx', 'src/hooks/useItemDetailsDraft.ts', 'src/lib/offline.ts', 'src/lib/offlineObserver.ts', 'src/hooks/useOffline.tsx', 'src/lib/sync.ts'], outdir: 'tmp/offline-hooks', outbase: '.', bundle: true, splitting: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['react', 'react/jsx-runtime', 'convex/server', 'convex/values', 'idb'], plugins: [{ name: 'offline-hook-fixtures', setup(b) {
   b.onResolve({ filter: /\/useAuth$|\/authenticatedConvex$|\/network$|^convex\/react$/ }, args => ({ path: args.path, namespace: 'fixture' }));
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents:
     path.endsWith('/useAuth') ? 'export const useAuth=()=>globalThis.__offlineHooks;' :
-    path.endsWith('/authenticatedConvex') ? `export const useQuery=(_ref,args)=>{const f=globalThis.__offlineHooks;f.calls.push(args);return f.snapshots.get(f.user.turnkeySubOrgId+':'+args.listId);};` :
+    path.endsWith('/authenticatedConvex') ? `export const useQuery=(_ref,args)=>{const f=globalThis.__offlineHooks;f.calls.push(args);return f.snapshots.get((f.user?.turnkeySubOrgId ?? '')+':'+args.listId);};` :
     path.endsWith('/network') ? `export const getNetworkStatus=()=>globalThis.__offlineHooks.online;export const onNetworkChange=fn=>{globalThis.__offlineHooks.networkListeners.add(fn);return ()=>globalThis.__offlineHooks.networkListeners.delete(fn)};` :
     'export const useConvex=()=>globalThis.__offlineHooks.client;',
   }));
@@ -217,3 +217,69 @@ test('unmounted queue consumers cannot keep authorizing old callbacks after thei
   assert.deepEqual(await store.getOperations('unmounted-account'), []);
   cleanup();
 });
+
+for (const transition of ['keep-list', 'logout', 'switch-account', 'rotate-token', 'teardown']) {
+  test(`two removed rows hand an active drain to the account session: ${transition}`, async () => {
+    const { createElement: h } = await import('react');
+    const { useOffline } = await load('src/hooks/useOffline');
+    const { syncManager } = await load('src/lib/sync');
+    const accountId = `row-drain-${transition}`, token = `token-${transition}`;
+    fixture.user = { turnkeySubOrgId: accountId, did: 'did:a' };
+    fixture.token = token; fixture.online = true;
+    fixture.snapshots.set(`${accountId}:L1`, { items: [item('I1'), item('I2')], acknowledgments: [], sequence: 0 });
+    let releaseFirst, firstStarted;
+    const firstGate = new Promise(resolve => { firstStarted = resolve; });
+    const responseGate = new Promise(resolve => { releaseFirst = resolve; });
+    const calls = [], enqueues = [];
+    fixture.client = { mutation: async (_ref, args) => {
+      calls.push(args);
+      if (calls.length === 1) { firstStarted(); await responseGate; }
+      return { operationId: args.replay.operationId, result: null, revisions: { [args.itemId]: 'removed' }, sequence: calls.length };
+    } };
+    function Row({ current }) {
+      const { queueMutation } = useOffline();
+      return h('button', { onClick: () => enqueues.push(queueMutation({ type: 'removeItem', payload: { itemId: current._id } }, [current])) }, `Remove ${current._id}`);
+    }
+    function List() {
+      const { items } = useOptimisticItems('L1');
+      return h('div', { 'data-testid': 'mounted-list' }, items.map(current => h(Row, { key: current._localKey ?? current._id, current })));
+    }
+    const view = render(h(List));
+    let unmounted = false;
+    try {
+      // Let the list's empty mount-time sync finish. The first removal must be
+      // initiated by a row, so this catches row-owned liveness regressions.
+      await waitFor(() => assert.equal(syncManager.syncing, false));
+      await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Remove I1' })); await enqueues[0]; });
+      await firstGate;
+      await waitFor(() => assert.ok(!view.queryByRole('button', { name: 'Remove I1' })));
+      await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Remove I2' })); await enqueues[1]; });
+      await waitFor(() => assert.ok(!view.queryByRole('button', { name: 'Remove I2' })));
+      assert.ok(view.getByTestId('mounted-list'));
+      assert.equal(calls.length, 1, 'second removal is queued behind the delayed response');
+      if (transition === 'logout') { fixture.user = null; fixture.token = null; view.rerender(h(List)); }
+      if (transition === 'switch-account') { fixture.user = { turnkeySubOrgId: 'replacement-account', did: 'did:b' }; fixture.token = 'replacement-token'; view.rerender(h(List)); }
+      if (transition === 'rotate-token') { fixture.token = 'replacement-token'; view.rerender(h(List)); }
+      if (transition === 'teardown') { view.unmount(); unmounted = true; }
+      await act(async () => { releaseFirst(); });
+      await waitFor(() => assert.equal(syncManager.syncing, false), { timeout: 2000 });
+      const operations = await store.getOperations(accountId);
+      assert.equal(operations[0].state, 'acked', 'in-flight acknowledgment persists to its original account');
+      if (transition === 'keep-list' || transition === 'rotate-token') {
+        assert.equal(calls.length, 2, 'drains immediately, before the five-second poll');
+        assert.equal(calls[1].itemId, 'I2');
+        assert.equal(calls[1].authToken, transition === 'rotate-token' ? 'replacement-token' : token);
+        assert.equal(operations[1].state, 'acked');
+      } else {
+        assert.equal(calls.length, 1, 'revoked session cannot send the queued removal');
+        assert.equal(operations[1].state, 'pending');
+      }
+    } finally {
+      fixture.online = false;
+      releaseFirst();
+      if (!unmounted) view.unmount();
+      await waitFor(() => assert.equal(syncManager.syncing, false));
+      cleanup();
+    }
+  });
+}

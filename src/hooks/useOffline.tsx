@@ -16,18 +16,21 @@ export function useOffline() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const current = useRef({ accountId, token });
   current.current = { accountId, token };
+  const observer = offlineObserver(accountId);
   const sync = useCallback(() => {
-    if (!mounted.current || !accountId || !token || !getNetworkStatus()) return;
-    return syncManager.sync(convex, { accountId, token }, () => mounted.current && current.current.accountId === accountId && current.current.token === token);
-  }, [convex, accountId, token]);
+    if (!accountId || !token || !observer.hasSession(token) || !getNetworkStatus()) return;
+    return syncManager.sync(convex, { accountId, token }, () => observer.hasSession(token));
+  }, [convex, accountId, token, observer]);
   useEffect(() => onNetworkChange(setOnline), []);
   useEffect(() => syncManager.subscribe(s => { if (s.accountId === current.current.accountId) setStatus(s); }), []);
-  const observer = offlineObserver(accountId);
-  const subscribe = useCallback((listener: () => void) => observer.subscribe(listener, () => { void sync(); }), [observer, sync]);
+  const subscribe = useCallback((listener: () => void) => observer.subscribe(listener, () => { void sync(); }, token ? {
+    token,
+    isCurrent: () => mounted.current && current.current.accountId === accountId && current.current.token === token,
+  } : undefined), [observer, sync, accountId, token]);
   const saved = useSyncExternalStore(subscribe, observer.getSnapshot, observer.getSnapshot);
   useEffect(() => { if (isOnline) void sync(); }, [isOnline, sync]);
   const queueMutation = useCallback(async (input: Parameters<typeof enqueue>[1], snapshots?: OfflineItem[]) => {
-    if (!mounted.current || !token || current.current.accountId !== accountId) throw new Error('Sign in to save this edit');
+    if (!mounted.current || !token || current.current.accountId !== accountId || current.current.token !== token) throw new Error('Sign in to save this edit');
     const id = await enqueue(accountId, input, snapshots);
     void sync();
     return id;
