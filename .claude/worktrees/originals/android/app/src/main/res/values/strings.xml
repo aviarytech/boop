@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">boop</string>
-    <string name="title_activity_main">boop</string>
-    <string name="package_name">ad.boop.app</string>
-    <string name="custom_url_scheme">ad.boop.app</string>
-</resources>

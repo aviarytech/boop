@@ -39,3 +39,6 @@ tmp/
 
 # Brainstorming visual companion
 .superpowers/
+
+# Local agent worktrees
+.claude/worktrees/
