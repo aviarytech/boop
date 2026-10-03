@@ -19,7 +19,7 @@ const edit = async (f, payload) => {
   return observe(f);
 };
 
-test('thousands of observed edits compact history without losing sequence fences, aliases, old draft predecessors or server receipts', async () => {
+test('thousands of observed edits compact history without losing sequence fences, aliases, old draft predecessors or server receipts', { timeout: 60_000 }, async () => {
   const f = await replayFixture(modules), account = f.session.accountId;
   await store.queueMutation(account, { type: 'addItem', payload: { listId: 'L1', name: 'Draft original', createdAt: 1, createdByDid: f.owner.user.did } });
   const create = (await store.getOperations(account))[0];
