@@ -450,3 +450,20 @@ test('session cleanup keeps persistent mobile sessions and their revocations', a
   assert.equal((await call('lists','getUserLists',ctx,{authToken:liveToken})).length,1);
   await assert.rejects(()=>call('actorSession','establish',ctx,{authToken:revokedToken}),/token/);
 });
+
+test('public DID attribution exposes only display names to anonymous and unrelated callers', async () => {
+  for (const identity of [null, { subject: 'stranger' }]) {
+    const ctx = fixture();
+    ctx.auth = { getUserIdentity: async () => identity };
+    ctx.rows.users[0].displayName = 'Public attribution';
+    const result = await call('users', 'getUsersByDids', ctx, {
+      dids: ['did:owner', 'did:stranger', 'did:unknown-person'],
+    });
+    assert.deepEqual(result, {
+      'did:owner': { displayName: 'Public attribution' },
+      'did:stranger': { displayName: null },
+      'did:unknown-person': { displayName: 'unknown-' },
+    });
+    assert.ok(!JSON.stringify(result).includes('example.test'));
+  }
+});

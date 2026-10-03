@@ -114,14 +114,14 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
 
 /**
  * Look up display names for a list of DIDs.
- * Returns a map of DID -> { displayName, email }.
+ * Returns public attribution names only; never derive names from private email.
  */
 export const getUsersByDids = query({
   args: {
     dids: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const result: Record<string, { displayName: string | null; email: string | null }> = {};
+    const result: Record<string, { displayName: string | null }> = {};
 
     for (const did of args.dids) {
       // Look up user by their DID
@@ -132,8 +132,7 @@ export const getUsersByDids = query({
 
       if (user) {
         result[did] = {
-          displayName: user.displayName ?? user.email?.split('@')[0] ?? null,
-          email: user.email ?? null,
+          displayName: user.displayName ?? null,
         };
       } else {
         // Extract a short name from DID for display
@@ -142,7 +141,6 @@ export const getUsersByDids = query({
           : did.slice(0, 8);
         result[did] = {
           displayName: shortName,
-          email: null,
         };
       }
     }

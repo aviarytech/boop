@@ -86,3 +86,41 @@ New OTP logins from the iOS and Android apps request a persistent session. The s
 On mobile, session restoration retries unexpected server/connection failures every five seconds while keeping the saved credentials. Private queries stay signed out and the loading state remains active until the server accepts the session. Explicit invalid-token/account rejections clear the saved login.
 
 Deploy the schema and backend before distributing updated native builds. Existing tokens retain their original expiry; users receive a persistent token on their next login in the updated app. Old native builds continue receiving 30-day sessions. This change has been validated locally with the auth boundary/provider/client and DID-log auth scripts (43 tests), frontend/backend TypeScript checks, and lint on the changed source files. Native device and live deployment checks are still needed when releasing.
+
+## Bounded #236 follow-up: public attribution and auth budgets
+
+`users.getUsersByDids` intentionally remains public for attribution. Its response
+contains only `displayName`: stored public names are preserved, unnamed accounts
+return `null`, and unknown DIDs retain the existing shortened-DID label. The query
+never returns email or derives a fallback from email. ItemAttribution,
+ItemDetailsModal, and both ProvenanceInfo consumers read only `displayName`.
+Existing stored display names (including names historically set during signup)
+are not rewritten by this change.
+
+Auth HTTP initiation and verification dispatch to
+`rateLimits.checkAndIncrementInternal`. Counter inspection and expired-record
+cleanup also have internal registrations; the old public names reject without
+reading or changing budgets, following the OTP-helper compatibility convention.
+Any trusted cleanup integration using the old public name must move to
+`cleanupExpiredInternal`. There are no cleanup/status callers in this checkout.
+Compatibility retirement still requires the deployed-client inventory above.
+The existing production-only limiting policy and fixed windows remain unchanged:
+10 initiate attempts per IP and 5 verify attempts per session per minute.
+
+Local regressions cover anonymous/unrelated public DID lookups, rejecting direct
+counter access, internal registration visibility, HTTP dispatch, the final allowed
+attempt, 429/Retry-After responses, and exact window expiry. HTTP tests run the
+production router branch with in-memory budget storage and stubbed OTP providers;
+they do not contact a deployed backend or prove live proxy IP-header trust.
+
+This is a bounded follow-up, not full closure of #236. The action revocation race
+between an authorization check and a later action side effect remains a separate
+follow-up; this change does not address it. Deployed-client inventory, staging
+validation, and rollout evidence remain pending. No deployment is included.
+
+Validation for this follow-up: focused auth/rate-limit boundary tests 40 passed;
+full `bun test` 311 passed; `tsc -b`, `tsc -p convex/tsconfig.json`,
+`node scripts/generate-auth-client.mjs --check`, and `vite build` passed. The
+build used checked-in Convex declarations and local tooling without deployment
+codegen or live credentials. Vite reported large chunks; the explorer-filter test
+reported a React `act(...)` warning. Generated image test artifacts were reverted.
