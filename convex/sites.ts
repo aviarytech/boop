@@ -1,3 +1,4 @@
+import { getSiteAllowance, requireSiteCapacity, requireCustomDomains } from "./lib/sitePlans";
 import { isResourceOwner } from "./lib/permissions";
 import { actorAction, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
@@ -167,5 +168,21 @@ export const getPublicSiteByHostname = query({
         .map((entry) => entry.entryJsonl)
         .join("\n"),
     };
+  },
+});
+
+export const { public: getSitePlan, internal: getSitePlanInternal } = actorQuery({
+  resources: () => ({}),
+  scope: "*",
+  args: {},
+  handler: async ctx => getSiteAllowance(ctx, ctx.actor.did),
+});
+
+// Action preflight only; mutations repeat these checks in their write transaction.
+export const checkSitePlan = internalQuery({
+  args: { ownerDid: v.string(), operation: v.union(v.literal("create"), v.literal("customDomain")) },
+  handler: async (ctx, args) => {
+    if (args.operation === "create") await requireSiteCapacity(ctx, args.ownerDid);
+    else await requireCustomDomains(ctx, args.ownerDid);
   },
 });

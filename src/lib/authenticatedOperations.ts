@@ -115,6 +115,7 @@ export const authenticatedOperations = new Set([
   api.siteAssets.removeSiteAsset,
   api.sites.generateSiteUploadUrl,
   api.sites.getSite,
+  api.sites.getSitePlan,
   api.sites.getSitePreviewUrl,
   api.sites.listSites,
   api.tags.addTagToItem,

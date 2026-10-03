@@ -1,6 +1,19 @@
+import { authenticate, requireScope, type Credentials } from "./lib/actor";
+import type { MutationCtx } from "./_generated/server";
+import { requireSiteCapacity, requireCustomDomains } from "./lib/sitePlans";
 import { isResourceOwner } from "./lib/permissions";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+
+const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) };
+
+async function requireSiteWriter(ctx: MutationCtx, args: Credentials, ownerDid: string) {
+  // Re-resolve credentials in the write transaction: a revoked key/session or
+  // account erasure during the action must prevent finalization.
+  const actor = await authenticate(ctx, args);
+  requireScope(actor, "*");
+  if (![actor.did, actor.legacyDid].includes(ownerDid)) throw new Error("Not authorized");
+}
 
 export const isHostnameAvailable = internalQuery({
   args: { hostname: v.string() },
@@ -15,6 +28,7 @@ export const isHostnameAvailable = internalQuery({
 
 export const createSiteRecord = internalMutation({
   args: {
+    ...credentials,
     ownerDid: v.string(),
     bucketKey: v.string(),
     contentType: v.string(),
@@ -35,6 +49,8 @@ export const createSiteRecord = internalMutation({
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
+    await requireSiteWriter(ctx, args, args.ownerDid);
+    await requireSiteCapacity(ctx, args.ownerDid);
     const existing = await ctx.db
       .query("siteHostnames")
       .withIndex("by_hostname", (q) => q.eq("hostname", args.hostname))
@@ -131,6 +147,7 @@ export const getSiteIdentityForUpdate = internalQuery({
 
 export const applyDomainMigration = internalMutation({
   args: {
+    ...credentials,
     siteId: v.id("sites"),
     hostname: v.string(),
     did: v.string(),
@@ -144,6 +161,13 @@ export const applyDomainMigration = internalMutation({
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
     if (!site) throw new Error("Site not found");
+
+    // Cron migration is trusted internal work. User-triggered migrations carry
+    // credentials and must revalidate them at commit time too.
+    if (args.authToken !== undefined || args.apiKey !== undefined) {
+      await requireSiteWriter(ctx, args, site.ownerDid);
+    }
+    await requireCustomDomains(ctx, site.ownerDid);
 
     const existing = await ctx.db
       .query("siteHostnames")
@@ -208,6 +232,7 @@ export const applyDomainMigration = internalMutation({
 
 export const recordCustomHostnameRequest = internalMutation({
   args: {
+    ...credentials,
     siteId: v.id("sites"),
     hostname: v.string(),
     cfHostnameId: v.string(),
@@ -230,6 +255,10 @@ export const recordCustomHostnameRequest = internalMutation({
     now: v.number(),
   },
   handler: async (ctx, args) => {
+    const site = await ctx.db.get(args.siteId);
+    if (!site) throw new Error("Site not found");
+    await requireSiteWriter(ctx, args, site.ownerDid);
+    await requireCustomDomains(ctx, site.ownerDid);
     const existing = await ctx.db
       .query("siteHostnames")
       .withIndex("by_hostname", (q) => q.eq("hostname", args.hostname))
@@ -330,6 +359,7 @@ export const clearHostnameErrors = internalMutation({
 
 export const replaceSiteFileRecord = internalMutation({
   args: {
+    ...credentials,
     siteId: v.id("sites"),
     bucketKey: v.string(),
     contentType: v.string(),
@@ -340,6 +370,7 @@ export const replaceSiteFileRecord = internalMutation({
   handler: async (ctx, args) => {
     const site = await ctx.db.get(args.siteId);
     if (!site) throw new Error("Site not found");
+    await requireSiteWriter(ctx, args, site.ownerDid);
 
     const newFileId = await ctx.db.insert("siteFiles", {
       bucketKey: args.bucketKey,
