@@ -7,6 +7,7 @@ import { useOffline } from './useOffline';
 import { cacheListSnapshot, getCachedListSnapshot, type OfflineItem } from '../lib/offline';
 import { projectItems } from '../lib/optimisticItems';
 const EMPTY_ITEMS: OfflineItem[] = [];
+const EMPTY_OPERATION_IDS: string[] = [];
 export interface OptimisticItem extends Doc<'items'> { _isOptimistic?: boolean; _syncError?: string; _localKey?: string; _operationId?: string }
 
 /** Durable queue entries are the optimistic state, including after reload.
@@ -25,7 +26,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
     ...(cached.scope === scope ? cached.operationIds : []),
   ]);
   const coversFrontier = (ids: string[]) => [...frontier].every(id => ids.includes(id));
-  const snapshotIds = snapshot?.acknowledgments.map(a => a.operationId) ?? [];
+  const snapshotIds = useMemo(() => snapshot?.acknowledgments.map(a => a.operationId) ?? EMPTY_OPERATION_IDS, [snapshot]);
   const serverItems = snapshot && coversFrontier(snapshotIds) ? snapshot.items : undefined;
   if (last.current?.scope !== scope) last.current = undefined;
   if (serverItems && accountId) last.current = { scope, items: serverItems, operationIds: snapshotIds };
@@ -44,9 +45,13 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   const lastItems = last.current && coversFrontier(last.current.operationIds) ? last.current.items : undefined;
   const cachedItems = cached.scope === scope && coversFrontier(cached.operationIds) ? cached.items : EMPTY_ITEMS;
   const base = accountId ? serverItems ?? lastItems ?? cachedItems : EMPTY_ITEMS;
+  // The item data and its receipt proof are one snapshot. The separately read
+  // operation queue may still be stale when another tab advances the cache.
+  const baseOperationIds = !accountId ? EMPTY_OPERATION_IDS : serverItems ? snapshotIds
+    : lastItems ? last.current!.operationIds : cachedItems !== EMPTY_ITEMS ? cached.operationIds : EMPTY_OPERATION_IDS;
   const previousProjection = useRef<{ scope: string; items: OptimisticItem[] }>({ scope, items: [] });
   const items = useMemo(() => {
-    const projected = projectItems(base, operations, listId, new Set(serverItems ? snapshot?.acknowledgments.map(a => a.operationId) ?? [] : []));
+    const projected = projectItems(base, operations, listId, new Set(baseOperationIds));
     const previous = new Map((previousProjection.current.scope === scope ? previousProjection.current.items : []).map(i => [i._id, i]));
     const stable = projected.map(item => {
       const old = previous.get(item._id);
@@ -54,7 +59,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
     });
     previousProjection.current = { scope, items: stable };
     return stable;
-  }, [base, operations, listId, snapshot, scope, serverItems]);
+  }, [base, operations, listId, baseOperationIds, scope]);
   const snapshots = useRef(base);
   snapshots.current = base;
   const enqueue = useCallback((type: Parameters<typeof queueMutation>[0]['type'], payload: unknown) => queueMutation({ type, payload }, snapshots.current).then(() => undefined), [queueMutation]);

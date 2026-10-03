@@ -130,3 +130,37 @@ test('observed receipts stay in query arguments and a cross-tab cache advancemen
     assert.equal(view.result.current.items[0].checked, false);
   } finally { view.unmount(); cleanup(); }
 });
+
+// Freeze the independently loaded queue to reproduce the observer race: cache
+// data/receipts advance in IDB while useOffline still exposes its earlier read.
+await build({ entryPoints: ['src/hooks/useOptimisticItems.tsx'], outfile: 'tmp/offline-hooks-stale-observer.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react', 'convex/server', 'idb'], plugins: [{ name: 'stale-queue-observer', setup(b) {
+  b.onResolve({ filter: /^\.\/useOffline$|\/authenticatedConvex$/ }, args => ({ path: args.path, namespace: 'stale-observer' }));
+  b.onLoad({ filter: /.*/, namespace: 'stale-observer' }, ({ path }) => ({ contents: path.endsWith('/useOffline')
+    ? 'export const useOffline=()=>globalThis.__staleOfflineObserver;'
+    : 'export const useQuery=()=>globalThis.__staleOfflineObserver.snapshot;' }));
+} }] });
+const { useOptimisticItems: useStaleObserverItems } = await import(pathToFileURL(`${process.cwd()}/tmp/offline-hooks-stale-observer.mjs`));
+for (const fallback of ['cache', 'last']) {
+  test(`${fallback} fallback carries receipt IDs when cached data is newer than the separately loaded operation queue`, async () => {
+    const accountId = `hook-stale-operations-${fallback}`;
+    const original = { ...item(), name: 'Original' };
+    await store.cacheItems(accountId, [original], 'L1');
+    await store.queueMutation(accountId, { type: 'updateItem', payload: { itemId: 'I1', name: 'Local' } }, [original]);
+    const operations = await store.getOperations(accountId);
+    const ack = { operationId: operations[0].operationId, result: 'I1', revisions: { I1: 'revision' } };
+    const snapshot = { items: [{ ...original, name: 'Later collaborator' }], acknowledgments: [ack] };
+    await store.cacheListSnapshot(accountId, 'L1', snapshot.items, snapshot.acknowledgments);
+    const observer = globalThis.__staleOfflineObserver = { accountId, operations, isOnline: false, queueMutation: () => {}, snapshot: fallback === 'last' ? snapshot : undefined };
+    const view = renderHook(() => useStaleObserverItems('L1'));
+    try {
+      await waitFor(() => assert.equal(view.result.current.items[0]?.name, 'Later collaborator'));
+      assert.equal(observer.operations[0].state, 'pending', 'operation observer deliberately has not caught up');
+      if (fallback === 'last') {
+        observer.snapshot = undefined;
+        view.rerender();
+        assert.equal(view.result.current.items[0]?.name, 'Later collaborator');
+      }
+      assert.ok(!view.result.current.items[0]._isOptimistic);
+    } finally { view.unmount(); cleanup(); }
+  });
+}
