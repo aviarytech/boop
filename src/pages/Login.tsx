@@ -91,7 +91,7 @@ export function Login({ embedded = false }: LoginProps) {
       }
     } catch (err) {
       console.error("Failed to verify OTP:", err);
-      // Show actual error message for debugging
+      // Server sanitizes /auth/verify errors, so its message is safe to show.
       const message = err instanceof Error ? err.message : "Verification failed";
       setError(message);
     }

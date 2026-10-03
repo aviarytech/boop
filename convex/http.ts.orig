@@ -168,7 +168,7 @@ const initiate = httpAction(async (ctx, request) => {
   } catch (error) {
     console.error("[authHttp] Initiate error:", error);
     return jsonResponse(
-      { error: "Couldn't send a verification code. Please try again." },
+      { error: error instanceof Error ? error.message : "Failed to initiate auth" },
       500,
       {},
       request
@@ -228,7 +228,7 @@ const verify = httpAction(async (ctx, request) => {
     });
 
     if (!result.verified || !result.email || !result.subOrgId) {
-      return jsonResponse({ error: "That code didn't work. Check it, or send a new one." }, 400, {}, request);
+      return jsonResponse({ error: "Verification failed" }, 400, {}, request);
     }
 
     console.log(`[authHttp] OTP verified for: ${result.email}`);
@@ -290,7 +290,7 @@ const verify = httpAction(async (ctx, request) => {
   } catch (error) {
     console.error("[authHttp] Verify error:", error);
     return jsonResponse(
-      { error: "Something went wrong verifying your code. Please try again." },
+      { error: error instanceof Error ? error.message : "Verification failed" },
       500,
       {},
       request
