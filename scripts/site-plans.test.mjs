@@ -48,13 +48,14 @@ const createArgs = suffix => ({ apiKey: 'key', ownerDid: 'did:owner', bucketKey:
   hostname: `${suffix}.boop.ad`, did: `did:${suffix}`, scid: suffix, publicKeyMultibase: 'key', encryptedPrivateKey: 'encrypted',
   didLogEntries: [{ versionId: '1', entryJsonl: '{}', signedAt: 1 }], createdAt: 1 });
 const create = (ctx, suffix = 'new') => call('siteInternals', 'createSiteRecord', ctx, createArgs(suffix));
+const siteLimit = error => error.data?.code === 'SITE_LIMIT';
 
 test('Free gets one site; Pro and Team get five, including legacy-owned sites', async () => {
   for (const [plan, limit] of [['free', 1], ['pro', 5], ['team', 5]]) {
     const ctx = fixture({ plan, count: limit - 1 });
     await create(ctx);
     const before = structuredClone(ctx.rows);
-    await assert.rejects(create(ctx, 'overflow'), /PLAN_LIMIT/);
+    await assert.rejects(create(ctx, 'overflow'), siteLimit);
     assert.deepEqual(ctx.rows, before, 'denied creation must not leave files, keys or logs');
     assert.equal(ctx.rows.sites.length, limit);
     assert.equal((await call('sites', 'getSitePlan', ctx, { apiKey: 'key' })).canCreate, false);
@@ -71,14 +72,14 @@ test('creation reads quota inside the write transaction and rejects a retried fi
   assert.ok(first.reads.has('sites') && second.reads.has('sites'));
   assert.ok(first.reads.has('subscriptions') && second.reads.has('subscriptions'));
   Object.assign(committed.rows, first.rows);
-  await assert.rejects(create(committed, 'second'), /PLAN_LIMIT/);
+  await assert.rejects(create(committed, 'second'), siteLimit);
   assert.equal(committed.rows.sites.length, 5);
 });
 
 test('authenticated create actions preflight before storage or key generation; identity assertions cannot bypass quota', async () => {
   const ctx = fixture({ count: 1 });
   for (const name of ['createSiteFromUpload', 'createSiteFromUploadInternal']) {
-    await assert.rejects(call('siteActions', name, ctx, { apiKey: 'key', bucketKey: 'siteFiles/did%3Aowner/file.html' }), /PLAN_LIMIT/);
+    await assert.rejects(call('siteActions', name, ctx, { apiKey: 'key', bucketKey: 'siteFiles/did%3Aowner/file.html' }), siteLimit);
     await assert.rejects(call('siteActions', name, ctx, { apiKey: 'key', ownerDid: 'did:someone', bucketKey: 'siteFiles/did%3Aowner/file.html' }), /assertion/);
     await assert.rejects(call('siteActions', name, ctx, { bucketKey: 'siteFiles/did%3Aowner/file.html' }), /Authentication/);
   }
@@ -120,7 +121,7 @@ test('paid and referral entitlements agree between billing, quota and custom dom
   ]) {
     const ctx = fixture({ ...options, count: 1 });
     assert.equal(await modules.billing.getEffectivePlan(ctx, 'U1'), 'free');
-    await assert.rejects(create(ctx), /PLAN_LIMIT/);
+    await assert.rejects(create(ctx), siteLimit);
     await assert.rejects(modules.billing.requirePlan(ctx, 'U1', 'pro'), /Pro plan/);
   }
 });
@@ -130,7 +131,7 @@ test('downgrades between action preflight and write are enforced without changin
   await call('sites', 'checkSitePlan', ctx, { ownerDid: 'did:owner', operation: 'create' });
   await call('sites', 'checkSitePlan', ctx, { ownerDid: 'did:owner', operation: 'customDomain' });
   ctx.rows.subscriptions[0].status = 'canceled';
-  await assert.rejects(create(ctx), /PLAN_LIMIT/);
+  await assert.rejects(create(ctx), siteLimit);
   await assert.rejects(call('siteInternals', 'recordCustomHostnameRequest', ctx, { apiKey: 'key', siteId: 'S0', hostname: 'example.test' }), /Pro plan/);
   const original = { ...ctx.rows.sites[0] };
   await call('siteInternals', 'replaceSiteFileRecord', ctx, { apiKey: 'key', siteId: 'S0', bucketKey: 'replacement', contentType: 'text/html', sha256: 'new', byteLength: 20, now: 2 });

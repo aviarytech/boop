@@ -108,6 +108,24 @@ test('creation waits for entitlements, then enables below the limit', () => {
   }
 });
 
+test('losing the last site slot displays the structured message without a diagnostic prefix', async () => {
+  const message = 'Your Free plan includes 1 site. Upgrade to Pro at /pricing for 5 sites and custom domains.';
+  globalThis.siteUI = { plan: { plan: 'free', maxSites: 1, canCreate: true }, sites: [], action: async key => {
+    if (key === 'upload') return { uploadUrl: 'https://fixture.test/upload', bucketKey: 'fixture' };
+    assert.equal(key, 'create');
+    throw Object.assign(new Error('Server Error'), { data: { code: 'SITE_LIMIT', message } });
+  } };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true });
+  const view = mount(Sites);
+  try {
+    fireEvent.change(view.getByPlaceholderText('Paste HTML here...'), { target: { value: '<p>ready</p>' } });
+    fireEvent.click(view.getByRole('button', { name: 'Make my link' }));
+    await waitFor(() => assert.ok(view.getByText(message)));
+    assert.equal(view.queryByText(/PLAN_LIMIT|Server Error/), null);
+  } finally { view.unmount(); globalThis.fetch = originalFetch; }
+});
+
 test('Pro defaults to $48 yearly checkout and monthly remains selectable', async () => {
   const requests = [];
   const originalFetch = globalThis.fetch;
