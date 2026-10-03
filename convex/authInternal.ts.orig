@@ -256,12 +256,6 @@ async function createStamp(body: string, publicKey: string, privateKey: string):
   return stringToBase64url(JSON.stringify(stamp));
 }
 
-class TurnkeyApiError extends Error {
-  constructor(readonly status: number, body: string) {
-    super(`Turnkey API error ${status}: ${body}`);
-  }
-}
-
 /**
  * Make an authenticated request to the Turnkey API.
  */
@@ -284,7 +278,7 @@ async function turnkeyRequest<T>(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new TurnkeyApiError(response.status, errorText);
+    throw new Error(`Turnkey API error ${response.status}: ${errorText}`);
   }
 
   return response.json();
@@ -568,11 +562,9 @@ export const verifyAuth = internalAction({
       };
     } catch (error) {
       console.error(`[authInternal] OTP verification failed:`, error);
-      // Turnkey answers a wrong/expired code with 400; 401/403/5xx are our config or their outage.
-      if (error instanceof TurnkeyApiError && error.status === 400) {
-        return { verified: false };
-      }
-      throw error;
+      throw new Error(
+        `Invalid verification code: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   },
 });
