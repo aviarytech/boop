@@ -140,3 +140,29 @@ rate-limit boundary, and login-account tests passed; full `bun test` passed 314
 tests; frontend/backend TypeScript and the generated auth registry check passed.
 The existing React `act(...)` warning remains. Test-generated icon/splash changes
 were reverted. No live signup, production data migration, or deployment was run.
+
+Review correction for PR #251 comment 4172706903: masking now uses the shared
+`convex/lib/publicDisplayName.ts` helper in all three anonymous stored-name
+projections: `users.getUsersByDids`, `publication.getPublicList.list.ownerName`,
+and `publication.getPublicList.items[].createdByName`. Published-list attribution
+retains `Unknown` for masked/missing names, including contributors resolved by
+legacy DID; DID lookup retains `null` for masked names. Genuine non-email names
+remain public. The generated Convex module declaration includes the new helper;
+it adds no callable operation or authenticated-client registry entry.
+
+The Convex attribution audit searched display-name reads and user-record lookups,
+then checked registrations and return values. Raw account queries in `auth.ts`
+are internal or authenticated self reads. The HTTP name response follows verified
+OTP login. Signup storage and the internal welcome-email greeting remain private.
+DID resource/log endpoints do not project stored user names. Other account reads
+in billing, referrals, quotas, permissions, session resolution, admin/dev helpers,
+and migrations are authenticated/internal or return no display name. The new
+boundary regression checks anonymous and unrelated callers, historical owner and
+creator names, migrated legacy-DID contributors, deliberately public names, and
+unchanged stored profiles across both public attribution queries.
+
+Validation after the shared-helper correction: 55 focused auth/rate-limit/login
+boundary tests and 315 full Bun tests passed; frontend/backend TypeScript and the
+authenticated-client registry check passed. The existing React `act(...)` warning
+remains. Test-generated icons/splashes were restored. These are local handler and
+static checks, not deployed validation; the #236 limitations above still apply.

@@ -1,3 +1,4 @@
+import { publicDisplayName } from "./lib/publicDisplayName";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * Publication functions for did:webvh public list publishing.
@@ -173,7 +174,7 @@ export const getPublicList = query({
           name: item.name,
           checked: item.checked,
           createdByDid: item.createdByDid,
-          createdByName: resolvedCreator?.displayName ?? "Unknown",
+          createdByName: publicDisplayName(resolvedCreator) ?? "Unknown",
           createdAt: item.createdAt,
           checkedAt: item.checkedAt,
           checkedByDid: item.checkedByDid,
@@ -192,7 +193,7 @@ export const getPublicList = query({
         _id: list._id,
         name: list.name,
         ownerDid: list.ownerDid,
-        ownerName: owner?.displayName ?? "Unknown",
+        ownerName: publicDisplayName(owner) ?? "Unknown",
         createdAt: list.createdAt,
         assetDid: list.assetDid,
         customAisles: list.customAisles,

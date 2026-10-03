@@ -1,3 +1,4 @@
+import { publicDisplayName } from "./lib/publicDisplayName";
 import { canUserViewList } from "./lib/permissions";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
@@ -132,11 +133,7 @@ export const getUsersByDids = query({
 
       if (user) {
         result[did] = {
-          // Older signups persisted this private email-derived default. Mask it
-          // at read time without changing authenticated self profiles.
-          displayName: user.displayName === user.email?.split("@")[0]
-            ? null
-            : user.displayName ?? null,
+          displayName: publicDisplayName(user),
         };
       } else {
         // Extract a short name from DID for display

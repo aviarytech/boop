@@ -522,3 +522,38 @@ test('OTP HTTP signup stores neutral attribution and returning login preserves s
     });
   }
 });
+
+test('all anonymous attribution masks historical owner and current/legacy creator names and preserves public names', async () => {
+  for (const deliberateNames of [false, true]) for (const identity of [null, { subject: 'stranger' }]) {
+    const ctx = fixture({ published: true });
+    ctx.auth = { getUserIdentity: async () => identity };
+    ctx.rows.users[0].email = 'private.owner@example.test';
+    ctx.rows.users[0].displayName = deliberateNames ? 'List curator' : 'private.owner';
+    ctx.rows.users[1].email = 'private.creator@example.test';
+    ctx.rows.users[1].displayName = deliberateNames ? 'Contributor' : 'private.creator';
+    ctx.rows.users.push({
+      _id: 'U3', did: 'did:migrated', legacyDid: 'did:old-contributor',
+      email: 'private.migrated@example.test',
+      displayName: deliberateNames ? 'Migrated contributor' : 'private.migrated',
+    });
+    ctx.rows.items = [
+      { _id: 'I1', listId: 'L1', name: 'Owner item', createdByDid: 'did:owner', createdAt: 1 },
+      { _id: 'I2', listId: 'L1', name: 'Contributor item', createdByDid: 'did:stranger', createdAt: 2 },
+      { _id: 'I3', listId: 'L1', name: 'Migrated item', createdByDid: 'did:old-contributor', createdAt: 3 },
+      { _id: 'I4', listId: 'L1', name: 'Unknown item', createdByDid: 'did:missing', createdAt: 4 },
+    ];
+    const before = structuredClone(ctx.rows.users);
+    const result = await call('publication', 'getPublicList', ctx, { webvhDid: 'did:webvh:public' });
+    assert.equal(result.list.ownerName, deliberateNames ? 'List curator' : 'Unknown');
+    assert.deepEqual(result.items.map(item => item.createdByName), deliberateNames
+      ? ['List curator', 'Contributor', 'Migrated contributor', 'Unknown']
+      : ['Unknown', 'Unknown', 'Unknown', 'Unknown']);
+    const profiles = await call('users', 'getUsersByDids', ctx, { dids: ['did:owner', 'did:stranger', 'did:migrated'] });
+    assert.deepEqual(Object.values(profiles).map(user => user.displayName), deliberateNames
+      ? ['List curator', 'Contributor', 'Migrated contributor'] : [null, null, null]);
+    for (const prefix of ['private.owner', 'private.creator', 'private.migrated']) {
+      assert.ok(!JSON.stringify({ result, profiles }).includes(prefix));
+    }
+    assert.deepEqual(ctx.rows.users, before, 'Public reads must not rewrite private profiles');
+  }
+});
