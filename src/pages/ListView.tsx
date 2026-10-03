@@ -103,6 +103,8 @@ export function ListView() {
     checkItem,
     uncheckItem,
     reorderItems,
+    removeItem,
+    updateItem,
     isLoading: itemsLoading,
     usingCache,
   } = useOptimisticItems(listId);
@@ -149,8 +151,6 @@ export function ListView() {
   );
 
   // Mutation for removing items via keyboard
-  const removeItemMutation = useMutation(api.items.removeItem);
-  const updateItemMutation = useMutation(api.items.updateItem);
 
   // Custom aisle state
   const addCategoryMutation = useMutation(api.itemCategories.addListCategory);
@@ -393,11 +393,12 @@ export function ListView() {
     if (targetAisleId === currentAisleId) return; // Same aisle, nothing to do
 
     haptic('medium');
-    await updateItemMutation({
+    await updateItem({
+      userDid: did,
       itemId: draggedId as Id<"items">,
       groceryAisle: targetAisleId,
     });
-  }, [did, legacyDid, sortedItems, haptic, updateItemMutation]);
+  }, [did, legacyDid, sortedItems, haptic, updateItem]);
 
   const groceryTouchDrag = useTouchDrag({
     onReorder: handleGroceryTouchReorder,
@@ -557,7 +558,7 @@ export function ListView() {
           const item = sortedItems[focusedIndex];
           if (item) {
             haptic('medium');
-            removeItemMutation({ itemId: item._id });
+            void removeItem(item._id, did, legacyDid ?? undefined);
             // Move focus up if at end of list
             if (focusedIndex >= sortedItems.length - 1) {
               setFocusedIndex(Math.max(0, sortedItems.length - 2));
@@ -573,7 +574,7 @@ export function ListView() {
           const item = sortedItems[focusedIndex];
           if (item) {
             haptic('medium');
-            removeItemMutation({ itemId: item._id });
+            void removeItem(item._id, did, legacyDid ?? undefined);
             // Move focus up if at end of list
             if (focusedIndex >= sortedItems.length - 1) {
               setFocusedIndex(Math.max(0, sortedItems.length - 2));
@@ -589,7 +590,7 @@ export function ListView() {
           const item = sortedItems[focusedIndex];
           if (item) {
             haptic('medium');
-            removeItemMutation({ itemId: item._id });
+            void removeItem(item._id, did, legacyDid ?? undefined);
             // Move focus up if at end of list
             if (focusedIndex >= sortedItems.length - 1) {
               setFocusedIndex(Math.max(0, sortedItems.length - 2));
@@ -609,7 +610,7 @@ export function ListView() {
         },
       },
     ];
-  }, [sortedItems, focusedIndex, did, legacyDid, checkItemWithStreak, uncheckItem, removeItemMutation, haptic, isSelectMode, clearSelection]);
+  }, [sortedItems, focusedIndex, did, legacyDid, checkItemWithStreak, uncheckItem, removeItem, haptic, isSelectMode, clearSelection]);
 
   const { showHelp, setShowHelp } = useKeyboardShortcuts({
     enabled: viewMode === "list" && !editingItem,
@@ -1033,7 +1034,7 @@ export function ListView() {
                       const hasAisleOverride = !!(item as OptimisticItem & { groceryAisle?: string }).groceryAisle;
                       return (
                         <div
-                          key={item._id}
+                          key={item._localKey ?? item._id}
                           data-item-id={item._id}
                           className="animate-slide-up relative"
                         >
@@ -1143,7 +1144,7 @@ export function ListView() {
                       const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                       return (
                         <div
-                          key={item._id}
+                          key={item._localKey ?? item._id}
                           data-item-id={item._id}
                         >
                           <NestedListItem
@@ -1180,7 +1181,7 @@ export function ListView() {
                   const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                   return (
                     <div 
-                      key={item._id} 
+                      key={item._localKey ?? item._id}
                       data-item-id={item._id}
                       className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-amber-100/60 dark:border-gray-700 overflow-hidden animate-slide-up"
                     >
@@ -1238,7 +1239,7 @@ export function ListView() {
                         const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                         return (
                           <div
-                            key={item._id}
+                            key={item._localKey ?? item._id}
                             data-item-id={item._id}
                           >
                             <NestedListItem

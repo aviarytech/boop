@@ -105,7 +105,8 @@ async function assertListQuota(
   return { owner, isFirstList: existingLists.length === 0 };
 }
 
-export const { public: createList, internal: createListInternal } = actorMutation({
+export const { public: createList, internal: createListInternal, replay: createListReplay } = actorMutation({
+  offlineOperation: "createList",
   resources: () => ({}),
   scope: "items:write",
   args: {
@@ -291,7 +292,8 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
 /**
  * Rename a list. Only the owner can rename.
  */
-export const { public: renameList, internal: renameListInternal } = actorMutation({
+export const { public: renameList, internal: renameListInternal, replay: renameListReplay } = actorMutation({
+  offlineOperation: "renameList",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -515,7 +517,8 @@ export const { public: getLegacyListIds, internal: getLegacyListIdsInternal } = 
  * Delete a list and all its items.
  * Only the owner can delete a list.
  */
-export const { public: deleteList, internal: deleteListInternal } = actorMutation({
+export const { public: deleteList, internal: deleteListInternal, replay: deleteListReplay } = actorMutation({
+  offlineOperation: "deleteList",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {

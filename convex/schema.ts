@@ -9,6 +9,10 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  offlineReceipts: defineTable({
+    accountId: v.id("users"), operationId: v.string(), fingerprint: v.string(),
+    result: v.any(), revisions: v.record(v.string(), v.string()),
+  }).index("by_account_operation", ["accountId", "operationId"]),
   accessSessions: defineTable({
     tokenHash: v.string(),
     subject: v.string(),

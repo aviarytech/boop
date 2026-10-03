@@ -1,314 +1,195 @@
-/**
- * IndexedDB setup for offline data storage (Phase 5.2)
- *
- * Uses the `idb` package for type-safe IndexedDB access.
- * Stores: lists, items, mutations (queue for offline mutations)
- */
-
-import { openDB, type IDBPDatabase } from "idb";
-import type { Id } from "../../convex/_generated/dataModel";
-
-// ============================================================================
-// Types mirroring Convex schema for offline storage
-// ============================================================================
-
-/** Offline-cached list data */
-export interface OfflineList {
-  _id: Id<"lists">;
-  assetDid: string;
-  name: string;
-  ownerDid: string;
-  categoryId?: Id<"categories">;
-  createdAt: number;
-  kind?: "note";
-  // Timestamp when cached locally
-  _cachedAt: number;
-}
-
-/** Offline-cached item data */
-export interface OfflineItem {
-  _id: Id<"items">;
-  listId: Id<"lists">;
-  name: string;
-  checked: boolean;
-  createdByDid: string;
-  checkedByDid?: string;
-  createdAt: number;
-  checkedAt?: number;
-  order?: number;
-  // Enhanced fields
-  description?: string;
-  dueDate?: number;
-  url?: string;
-  recurrence?: {
-    frequency: "daily" | "weekly" | "monthly";
-    interval?: number;
-    nextDue?: number;
-    endDate?: number;
-  };
-  assigneeDid?: string;
-  // Timestamp when cached locally
-  _cachedAt: number;
-}
-
-/** Mutation types supported offline */
-export type MutationType = 
-  | "addItem" 
-  | "checkItem" 
-  | "uncheckItem" 
-  | "reorderItem"
-  | "updateItem"
-  | "removeItem"
-  | "batchCheckItems"
-  | "batchUncheckItems"
-  | "batchDeleteItems"
-  | "createList"
-  | "renameList"
-  | "deleteList";
-
-/** A mutation queued for later sync */
+import { openDB, type DBSchema } from 'idb';
+import type { Doc } from '../../convex/_generated/dataModel';
+import { revision, replayTargets, type ExpectedRevision, type ReplayAck } from '../../shared/replay';
+export type OfflineItem = Doc<'items'>;
+export type OfflineList = Doc<'lists'>;
+export type MutationType = 'addItem' | 'checkItem' | 'uncheckItem' | 'reorderItem' | 'updateItem' | 'removeItem' | 'batchCheckItems' | 'batchUncheckItems' | 'batchDeleteItems' | 'createList' | 'renameList' | 'deleteList';
 export interface QueuedMutation {
-  id?: number; // Auto-incremented by IndexedDB
+  id?: number;
+  operationId: string;
+  accountId: string;
   type: MutationType;
-  payload: unknown;
+  payload: Record<string, unknown>;
+  expected: ExpectedRevision[];
   timestamp: number;
   retryCount: number;
+  error?: string;
+  state: 'pending' | 'failed' | 'conflict' | 'acked';
+  ack?: ReplayAck;
+  listIds: string[];
+  observedListIds?: string[];
+  nextAttemptAt?: number;
 }
-
-// ============================================================================
-// IndexedDB Schema Definition
-// ============================================================================
-
-/** Type-safe IndexedDB schema */
-export interface OfflineDBSchema {
-  lists: {
-    key: string; // _id as string
-    value: OfflineList;
-  };
-  items: {
-    key: string; // _id as string
-    value: OfflineItem;
-    indexes: { byList: string }; // Index by listId
-  };
-  mutations: {
-    key: number; // Auto-increment ID
-    value: QueuedMutation;
-  };
+interface OfflineDB extends DBSchema {
+  items: { key: string; value: OfflineItem; indexes: { byList: string } };
+  lists: { key: string; value: OfflineList };
+  mutations: { key: number; value: QueuedMutation };
 }
-
-const DB_NAME = "lisa-offline";
-const DB_VERSION = 1;
-
-// Singleton promise to avoid multiple DB connections
-let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
-
-/**
- * Get the offline IndexedDB database instance.
- * Creates the database and stores if they don't exist.
- */
-export async function getOfflineDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
-  if (!dbPromise) {
-    dbPromise = openDB<OfflineDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        // Lists store - keyed by _id
-        if (!db.objectStoreNames.contains("lists")) {
-          db.createObjectStore("lists", { keyPath: "_id" });
-        }
-
-        // Items store - keyed by _id with index for efficient list queries
-        if (!db.objectStoreNames.contains("items")) {
-          const itemsStore = db.createObjectStore("items", { keyPath: "_id" });
-          itemsStore.createIndex("byList", "listId");
-        }
-
-        // Mutations queue - auto-increment ID for ordering
-        if (!db.objectStoreNames.contains("mutations")) {
-          db.createObjectStore("mutations", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-        }
-      },
+const connections = new Map<string, ReturnType<typeof openDB<OfflineDB>>>();
+const listeners = new Set<() => void>();
+export function subscribeOffline(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+function changed() { listeners.forEach(fn => fn()); }
+export function getOfflineDB(accountId: string) {
+  if (!accountId) throw new Error('Sign in to save offline edits');
+  let db = connections.get(accountId);
+  if (!db) {
+    // The unscoped lisa-offline database is deliberately left intact. Its owner
+    // cannot be established from caller-supplied DIDs. Never expose/auto-claim it.
+    db = openDB<OfflineDB>(`boop-offline-v2:${encodeURIComponent(accountId)}`, 1, { upgrade(db) {
+      db.createObjectStore('lists', { keyPath: '_id' });
+      db.createObjectStore('items', { keyPath: '_id' }).createIndex('byList', 'listId');
+      db.createObjectStore('mutations', { keyPath: 'id', autoIncrement: true });
+    } });
+    connections.set(accountId, db);
+  }
+  return db;
+}
+export async function getOperations(accountId: string): Promise<QueuedMutation[]> {
+  if (!accountId) return [];
+  return (await getOfflineDB(accountId)).getAll('mutations');
+}
+export async function getQueuedMutations(accountId: string) { return (await getOperations(accountId)).filter(m => m.state !== 'acked'); }
+// Preserve invocation order even when hashing/caching takes different amounts
+// of time. IDB still serializes transaction insertion across tabs.
+const enqueueTails = new Map<string, Promise<unknown>>();
+export function queueMutation(...args: Parameters<typeof enqueueMutation>): Promise<number> {
+  const [accountId] = args;
+  const next = (enqueueTails.get(accountId) ?? Promise.resolve()).catch(() => undefined).then(() => enqueueMutation(...args));
+  enqueueTails.set(accountId, next);
+  return next;
+}
+async function enqueueMutation(accountId: string, input: {
+  type: MutationType; payload: unknown; timestamp?: number; retryCount?: number;
+}, snapshots: OfflineItem[] = []): Promise<number> {
+  const db = await getOfflineDB(accountId);
+  const payload = input.payload as Record<string, unknown>;
+  const targets = replayTargets(input.type, payload);
+  // Hash outside the transaction: awaiting crypto within an IDB transaction
+  // closes it. Queue predecessor selection + insertion remain one transaction.
+  const revisions = new Map<string, string>();
+  const sourceOperations = new Map<string, string>();
+  const listIds = new Set<string>(typeof payload.listId === "string" ? [payload.listId] : []);
+  for (const id of targets) {
+    const doc = snapshots.find(i => i._id === id) ?? await db.get('items', id) ?? await db.get('lists', id);
+    const sourceOperation = doc && '_operationId' in doc ? doc._operationId : undefined;
+    if (typeof sourceOperation === 'string') sourceOperations.set(id, sourceOperation);
+    const clean = doc && Object.fromEntries(Object.entries(doc).filter(([key]) => !['_isOptimistic', '_syncError', '_localKey', '_operationId'].includes(key)));
+    revisions.set(id, clean ? await revision(clean) : 'unknown');
+    if (doc) listIds.add('listId' in doc ? doc.listId : doc._id);
+  }
+  const tx = db.transaction('mutations', 'readwrite');
+  const prior = await tx.store.getAll();
+  const expected = targets.map(id => {
+    const resolvedId = resolveOperationId(id, prior);
+    const predecessor = [...prior].reverse().find(m => {
+      const createsTarget = m.type === 'addItem' && (`temp-${m.operationId}` === id || m.ack?.result === resolvedId);
+      const target = m.expected.find(e => resolveOperationId(e.id, prior) === resolvedId);
+      if (!createsTarget && !target) return false;
+      m.listIds.forEach(list => listIds.add(list));
+      if (m.state !== 'acked') return true;
+      const observed = m.listIds.every(list => m.observedListIds?.includes(list));
+      // A response may arrive while the reactive snapshot still shows the base
+      // from before that operation. Chain through that receipt, including creates
+      // whose real ID is now visible but not yet present in any cached snapshot.
+      return sourceOperations.get(id) === m.operationId || revisions.get(id) === 'unknown' || (!observed && (createsTarget || target?.revision === revisions.get(id)));
     });
-  }
-  return dbPromise;
-}
-
-// ============================================================================
-// Mutation Queue CRUD Helpers
-// ============================================================================
-
-/**
- * Queue a mutation for later sync when back online.
- * @param mutation - The mutation to queue (id will be auto-assigned)
- * @returns The auto-generated mutation ID
- */
-export async function queueMutation(
-  mutation: Omit<QueuedMutation, "id">
-): Promise<number> {
-  const db = await getOfflineDB();
-  const id = await db.add("mutations", mutation as QueuedMutation);
-  return id as number;
-}
-
-/**
- * Get all queued mutations in order (oldest first).
- */
-export async function getQueuedMutations(): Promise<QueuedMutation[]> {
-  const db = await getOfflineDB();
-  return db.getAll("mutations");
-}
-
-/**
- * Remove a mutation from the queue (after successful sync or max retries).
- * @param id - The mutation ID to remove
- */
-export async function clearMutation(id: number): Promise<void> {
-  const db = await getOfflineDB();
-  await db.delete("mutations", id);
-}
-
-/**
- * Update the retry count for a failed mutation.
- * @param id - The mutation ID
- * @param retryCount - The new retry count
- */
-export async function updateMutationRetry(
-  id: number,
-  retryCount: number
-): Promise<void> {
-  const db = await getOfflineDB();
-  const mutation = await db.get("mutations", id);
-  if (mutation) {
-    mutation.retryCount = retryCount;
-    await db.put("mutations", mutation);
-  }
-}
-
-// ============================================================================
-// List Cache Helpers (for future phases)
-// ============================================================================
-
-/**
- * Cache a list for offline access.
- */
-export async function cacheList(list: Omit<OfflineList, "_cachedAt">): Promise<void> {
-  const db = await getOfflineDB();
-  await db.put("lists", { ...list, _cachedAt: Date.now() });
-}
-
-/**
- * Get a cached list by ID.
- */
-export async function getCachedList(
-  listId: Id<"lists">
-): Promise<OfflineList | undefined> {
-  const db = await getOfflineDB();
-  return db.get("lists", listId);
-}
-
-/**
- * Get all cached lists.
- */
-export async function getAllCachedLists(): Promise<OfflineList[]> {
-  const db = await getOfflineDB();
-  return db.getAll("lists");
-}
-
-/**
- * Cache multiple lists at once (more efficient than individual calls).
- */
-export async function cacheAllLists(
-  lists: Omit<OfflineList, "_cachedAt">[]
-): Promise<void> {
-  const db = await getOfflineDB();
-  const tx = db.transaction("lists", "readwrite");
-  const store = tx.objectStore("lists");
-  const now = Date.now();
-  await Promise.all([
-    ...lists.map((list) => store.put({ ...list, _cachedAt: now })),
-    tx.done,
-  ]);
-}
-
-/**
- * Remove a list from the cache.
- */
-export async function removeCachedList(listId: Id<"lists">): Promise<void> {
-  const db = await getOfflineDB();
-  await db.delete("lists", listId);
-}
-
-// ============================================================================
-// Item Cache Helpers (for future phases)
-// ============================================================================
-
-/**
- * Cache an item for offline access.
- */
-export async function cacheItem(item: Omit<OfflineItem, "_cachedAt">): Promise<void> {
-  const db = await getOfflineDB();
-  await db.put("items", { ...item, _cachedAt: Date.now() });
-}
-
-/**
- * Get a cached item by ID.
- */
-export async function getCachedItem(
-  itemId: Id<"items">
-): Promise<OfflineItem | undefined> {
-  const db = await getOfflineDB();
-  return db.get("items", itemId);
-}
-
-/**
- * Get all cached items for a specific list.
- */
-export async function getCachedItemsByList(
-  listId: Id<"lists">
-): Promise<OfflineItem[]> {
-  const db = await getOfflineDB();
-  return db.getAllFromIndex("items", "byList", listId);
-}
-
-/**
- * Cache multiple items at once (more efficient than individual calls).
- */
-export async function cacheItems(
-  items: Omit<OfflineItem, "_cachedAt">[]
-): Promise<void> {
-  const db = await getOfflineDB();
-  const tx = db.transaction("items", "readwrite");
-  const store = tx.objectStore("items");
-  const now = Date.now();
-  await Promise.all([
-    ...items.map((item) => store.put({ ...item, _cachedAt: now })),
-    tx.done,
-  ]);
-}
-
-/**
- * Remove an item from the cache.
- */
-export async function removeCachedItem(itemId: Id<"items">): Promise<void> {
-  const db = await getOfflineDB();
-  await db.delete("items", itemId);
-}
-
-/**
- * Remove all items for a list from the cache.
- */
-export async function removeCachedItemsByList(listId: Id<"lists">): Promise<void> {
-  const db = await getOfflineDB();
-  const tx = db.transaction("items", "readwrite");
-  const store = tx.objectStore("items");
-  const index = store.index("byList");
-
-  let cursor = await index.openCursor(listId);
-  while (cursor) {
-    await cursor.delete();
-    cursor = await cursor.continue();
-  }
-
+    return { id, revision: revisions.get(id)!, ...(predecessor ? { predecessor: predecessor.operationId } : {}) };
+  });
+  const id = await tx.store.add({ ...input, payload, accountId, listIds: [...listIds], operationId: crypto.randomUUID(), expected, state: 'pending', timestamp: input.timestamp ?? Date.now(), retryCount: 0 });
   await tx.done;
+  changed();
+  return id;
+}
+export async function saveOperation(accountId: string, mutation: QueuedMutation) {
+  if (mutation.accountId !== accountId) throw new Error('Offline account mismatch');
+  const tx = (await getOfflineDB(accountId)).transaction('mutations', 'readwrite');
+  const previous = await tx.store.get(mutation.id!);
+  // A reactive receipt can arrive before the mutation promise (or its error).
+  // Never overwrite that stronger acknowledgment with a stale in-flight copy.
+  if (previous?.operationId === mutation.operationId) {
+    if (previous.state !== 'acked' || mutation.state === 'acked') {
+      await tx.store.put({ ...mutation, observedListIds: previous.observedListIds });
+    }
+  }
+  await tx.done; changed();
+}
+export async function retryOperations(accountId: string) {
+  const db = await getOfflineDB(accountId);
+  const tx = db.transaction('mutations', 'readwrite');
+  for (const m of await tx.store.getAll()) if (m.state === 'failed') await tx.store.put({ ...m, state: 'pending', retryCount: 0, nextAttemptAt: undefined, error: undefined });
+  await tx.done; changed();
+}
+export async function cacheItems(accountId: string, items: OfflineItem[], listId?: string) {
+  const db = await getOfflineDB(accountId);
+  const tx = db.transaction('items', 'readwrite');
+  if (listId) for (const id of await tx.store.index('byList').getAllKeys(listId)) await tx.store.delete(id);
+  for (const item of items) await tx.store.put(item);
+  await tx.done;
+}
+export async function getCachedItemsByList(accountId: string, listId: string) {
+  if (!accountId) return [];
+  return (await getOfflineDB(accountId)).getAllFromIndex('items', 'byList', listId);
+}
+/** Explicit recovery after a definite server conflict. A fresh operation is
+ * created; changing content under an already-sent operation ID is forbidden. */
+export async function rebaseOperation(accountId: string, id: number, snapshots: OfflineItem[]) {
+  const db = await getOfflineDB(accountId);
+  const revisions = new Map(await Promise.all(snapshots.map(async doc => [doc._id as string, await revision(doc)] as const)));
+  const tx = db.transaction('mutations', 'readwrite');
+  const m = await tx.store.get(id);
+  if (!m || m.state !== 'conflict') throw new Error('Only a rejected conflict can be reapplied');
+  const operations = await tx.store.getAll();
+  if (m.expected.some(e => !revisions.has(resolveOperationId(e.id, operations)))) throw new Error('Refresh the list before reviewing this edit');
+  const operationId = crypto.randomUUID();
+  await tx.store.put({ ...m, operationId, expected: m.expected.map(e => ({ id: e.id, revision: revisions.get(resolveOperationId(e.id, operations))! })), state: 'pending', error: undefined, retryCount: 0, nextAttemptAt: undefined });
+  for (const next of await tx.store.getAll()) {
+    if (next.id === id) continue;
+    if (next.expected.some(e => e.predecessor === m.operationId)) await tx.store.put({ ...next, expected: next.expected.map(e => e.predecessor === m.operationId ? { ...e, predecessor: operationId } : e) });
+  }
+  await tx.done; changed();
+}
+
+/** Cache replacement and overlay retirement commit together. A receipt observed
+ * on list B cannot retire an overlay whose list A cache is still stale. */
+export async function cacheListSnapshot(accountId: string, listId: string, items: OfflineItem[], acknowledgments: ReplayAck[]) {
+  const db = await getOfflineDB(accountId);
+  const tx = db.transaction(['items', 'mutations'], 'readwrite');
+  const itemStore = tx.objectStore('items');
+  const mutationStore = tx.objectStore('mutations');
+  let updated = false;
+  try {
+    const acks = new Map(acknowledgments.map(a => [a.operationId, a]));
+    for (const id of await itemStore.index('byList').getAllKeys(listId)) await itemStore.delete(id);
+    for (const item of items) {
+      if (item.listId !== listId) throw new Error('Snapshot list mismatch');
+      await itemStore.put(item);
+    }
+    for (const m of await mutationStore.getAll()) {
+      const ack = acks.get(m.operationId);
+      if (ack && m.listIds.includes(listId) && !m.observedListIds?.includes(listId)) {
+        await mutationStore.put({ ...m, ack, observedListIds: [...m.observedListIds ?? [], listId], state: 'acked', error: undefined });
+        updated = true;
+      }
+    }
+    await tx.done;
+  } catch (error) {
+    try { tx.abort(); } catch { /* The transaction may already have aborted. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+  if (updated) changed();
+}
+export function resolveOperationId(id: string, operations: QueuedMutation[]): string {
+  if (!id.startsWith('temp-')) return id;
+  const create = operations.find(m => m.operationId === id.slice(5));
+  return typeof create?.ack?.result === 'string' ? create.ack.result : id;
+}
+export async function cacheAllLists(accountId: string, lists: OfflineList[]) {
+  const tx = (await getOfflineDB(accountId)).transaction('lists', 'readwrite');
+  await tx.store.clear();
+  for (const list of lists) await tx.store.put(list);
+  await tx.done;
+}
+export async function getAllCachedLists(accountId: string) {
+  return accountId ? (await getOfflineDB(accountId)).getAll('lists') : [];
 }

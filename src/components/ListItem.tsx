@@ -7,13 +7,10 @@
  */
 
 import { useState, useRef, lazy, Suspense, memo } from "react";
-import { useMutation } from "../lib/authenticatedConvex";
-import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ItemAttribution } from "./ItemAttribution";
 import { useSettings } from "../hooks/useSettings";
 import { useOffline } from "../hooks/useOffline";
-import { queueMutation } from "../lib/offline";
 import type { OptimisticItem } from "../hooks/useOptimisticItems";
 import { useSubItemProgress } from "./SubItems";
 import { shareItem } from "../lib/share";
@@ -62,13 +59,8 @@ export const ListItem = memo(function ListItem({
   onLongPress,
 }: ListItemProps) {
   const { haptic } = useSettings();
-  const { isOnline } = useOffline();
+  const { queueMutation } = useOffline();
   
-  // Fallback mutations for when callbacks aren't provided
-  const checkItemMutation = useMutation(api.items.checkItem);
-  const uncheckItemMutation = useMutation(api.items.uncheckItem);
-  const removeItem = useMutation(api.items.removeItem);
-
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const itemRef = useRef<HTMLDivElement>(null);
@@ -110,27 +102,15 @@ export const ListItem = memo(function ListItem({
 
   const handleToggleCheck = async () => {
     if (isUpdating) return;
-
     haptic(item.checked ? 'light' : 'success');
     setIsUpdating(true);
-
     try {
       if (item.checked) {
-        if (onUncheck) {
-          await onUncheck(item._id, userDid, legacyDid);
-        } else {
-          await uncheckItemMutation({ itemId: item._id,   });
-        }
+        if (onUncheck) await onUncheck(item._id, userDid, legacyDid);
+        else await queueMutation({ type: "uncheckItem", payload: { itemId: item._id, userDid, legacyDid } });
       } else {
-        if (onCheck) {
-          await onCheck(item._id, userDid, legacyDid);
-        } else {
-          await checkItemMutation({
-            itemId: item._id,
-
-            checkedAt: Date.now(),
-          });
-        }
+        if (onCheck) await onCheck(item._id, userDid, legacyDid);
+        else await queueMutation({ type: "checkItem", payload: { itemId: item._id, checkedByDid: userDid, legacyDid, checkedAt: Date.now() } });
       }
     } catch (err) {
       console.error("Failed to toggle item:", err);
@@ -142,23 +122,10 @@ export const ListItem = memo(function ListItem({
 
   const handleRemove = async () => {
     if (isUpdating) return;
-
     haptic('medium');
     setIsUpdating(true);
-
     try {
-      const payload = { itemId: item._id, userDid, legacyDid };
-      
-      if (isOnline) {
-        await removeItem(payload);
-      } else {
-        await queueMutation({
-          type: "removeItem",
-          payload,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
-      }
+      await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } });
     } catch (err) {
       console.error("Failed to remove item:", err);
       haptic('error');
