@@ -4,7 +4,7 @@ import { useQuery } from '../lib/authenticatedConvex';
 import { api } from '../../convex/_generated/api';
 import type { Doc, Id } from '../../convex/_generated/dataModel';
 import { useOffline } from './useOffline';
-import { cacheListSnapshot, getCachedListSnapshot, type OfflineItem } from '../lib/offline';
+import { cacheListSnapshot, getCachedListSnapshot, replayOperationIds, type OfflineItem } from '../lib/offline';
 import { projectItems } from '../lib/optimisticItems';
 const EMPTY_ITEMS: OfflineItem[] = [];
 const EMPTY_ACKNOWLEDGMENTS: ReplayAck[] = [];
@@ -14,47 +14,65 @@ export interface OptimisticItem extends Doc<'items'> { _isOptimistic?: boolean; 
 /** Durable queue entries are the optimistic state, including after reload.
  * Acknowledgments identify creates by operation ID; names and clocks never do. */
 export function useOptimisticItems(listId: Id<'lists'>) {
-  const { isOnline, accountId, operations, queueMutation } = useOffline();
-  // Keep the complete receipt frontier in every query, including already
-  // observed operations. A delayed tab must prove it saw all accepted writes.
-  const snapshot = useQuery(api.items.getListItemsForReplay, { listId, operationIds: operations.filter(m => m.listIds.includes(listId)).map(m => m.operationId) });
+  const { isOnline, accountId, operations, queueMutation, aliases, compaction } = useOffline();
+  const [scanOffset, setScanOffset] = useState(0);
+  const needsReceiptScan = operations.filter(m => m.listIds.includes(listId) && m.state !== 'acked' && m.state !== 'conflict').length > 64;
+  useEffect(() => {
+    if (!needsReceiptScan) return;
+    const timer = setInterval(() => setScanOffset(offset => offset + 64), 5000);
+    return () => clearInterval(timer);
+  }, [accountId, listId, needsReceiptScan]);
+  const snapshot = useQuery(api.items.getListItemsForReplay, { listId, operationIds: replayOperationIds(operations, listId, scanOffset) });
   const scope = `${accountId}:${listId}`;
-  type CachedSnapshot = { scope: string; items: OfflineItem[]; operationIds: string[]; acknowledgments: ReplayAck[] };
-  const [cached, setCached] = useState<CachedSnapshot>({ scope: '', items: [], operationIds: [], acknowledgments: [] });
-  const last = useRef<CachedSnapshot | undefined>(undefined);
+  type CachedSnapshot = Awaited<ReturnType<typeof getCachedListSnapshot>> & { scope: string };
+  const [cached, setCached] = useState<CachedSnapshot>({ scope: '', items: [], operationIds: [], acknowledgments: [], sequence: undefined, retiredThrough: 0, retainedOperationIds: [] });
+  type Base = { items: OfflineItem[]; operationIds: string[]; acknowledgments: ReplayAck[]; sequence?: number; scope: string };
+  const last = useRef<Base | undefined>(undefined);
+  if (last.current?.scope !== scope) last.current = undefined;
+  const acceptedSequence = Math.max(cached.scope === scope ? cached.sequence ?? -1 : -1, last.current?.sequence ?? -1, compaction?.sequences?.[listId] ?? -1);
   const frontier = new Set([
     ...operations.filter(m => m.observedListIds?.includes(listId)).map(m => m.operationId),
     ...(cached.scope === scope ? cached.operationIds : []),
   ]);
-  const coversFrontier = (ids: string[]) => [...frontier].every(id => ids.includes(id));
+  const coversFrontier = (candidate: { sequence?: number; operationIds: string[] }) => {
+    if (candidate.sequence !== undefined) return candidate.sequence >= acceptedSequence;
+    return acceptedSequence < 0 && [...frontier].every(id => candidate.operationIds.includes(id));
+  };
   const snapshotIds = useMemo(() => snapshot?.acknowledgments.map(a => a.operationId) ?? EMPTY_OPERATION_IDS, [snapshot]);
-  const serverItems = snapshot && coversFrontier(snapshotIds) ? snapshot.items : undefined;
-  if (last.current?.scope !== scope) last.current = undefined;
-  if (serverItems && accountId) last.current = { scope, items: serverItems, operationIds: snapshotIds, acknowledgments: snapshot!.acknowledgments };
+  const server = snapshot && coversFrontier({ sequence: snapshot.sequence, operationIds: snapshotIds })
+    ? { ...snapshot, operationIds: snapshotIds, scope } : undefined;
+  if (server && accountId) last.current = server;
   useEffect(() => {
     let active = true;
     const persist = async () => {
-      if (snapshot && accountId) await cacheListSnapshot(accountId, listId, snapshot.items, snapshot.acknowledgments);
-      // Also refresh after a rejected snapshot: a different tab may own a newer
-      // accepted cache than either this query or our in-memory fallback.
+      if (snapshot && accountId) await cacheListSnapshot(accountId, listId, snapshot.items, snapshot.acknowledgments, snapshot.sequence);
       const stored = await getCachedListSnapshot(accountId, listId);
       if (active) setCached({ scope, ...stored });
     };
     void persist();
     return () => { active = false; };
   }, [snapshot, accountId, listId, scope, operations]);
-  const lastItems = last.current && coversFrontier(last.current.operationIds) ? last.current.items : undefined;
-  const cachedItems = cached.scope === scope && coversFrontier(cached.operationIds) ? cached.items : EMPTY_ITEMS;
-  const base = accountId ? serverItems ?? lastItems ?? cachedItems : EMPTY_ITEMS;
-  // The item data and its receipt proof are one snapshot. The separately read
-  // operation queue may still be stale when another tab advances the cache.
-  const baseOperationIds = !accountId ? EMPTY_OPERATION_IDS : serverItems ? snapshotIds
-    : lastItems ? last.current!.operationIds : cachedItems !== EMPTY_ITEMS ? cached.operationIds : EMPTY_OPERATION_IDS;
-  const baseAcknowledgments = !accountId ? EMPTY_ACKNOWLEDGMENTS : serverItems ? snapshot!.acknowledgments
-    : lastItems ? last.current!.acknowledgments : cachedItems !== EMPTY_ITEMS ? cached.acknowledgments : EMPTY_ACKNOWLEDGMENTS;
+  const lastBase = last.current && coversFrontier(last.current) ? last.current : undefined;
+  // The shared observer may advance before this hook's cache effect. Carry
+  // its atomic item snapshot too, so compaction cannot expose an older fallback
+  // or briefly unmount an open row while the per-list cache read catches up.
+  const sharedBase = useMemo(() => compaction?.items ? {
+    items: compaction.items.filter(item => item.listId === listId),
+    sequence: compaction.sequences?.[listId],
+    operationIds: compaction.operations.filter(m => m.observedListIds?.includes(listId)).map(m => m.operationId),
+    acknowledgments: compaction.operations.filter(m => m.observedListIds?.includes(listId)).flatMap(m => m.ack ? [m.ack] : []),
+  } : undefined, [compaction, listId]);
+  const selected = accountId ? server ?? lastBase ?? (cached.scope === scope && coversFrontier(cached) ? cached : undefined)
+    ?? (sharedBase && coversFrontier(sharedBase) ? sharedBase : undefined) : undefined;
+  const base = selected?.items ?? EMPTY_ITEMS;
+  const baseOperationIds = selected?.operationIds ?? EMPTY_OPERATION_IDS;
+  const baseAcknowledgments = selected?.acknowledgments ?? EMPTY_ACKNOWLEDGMENTS;
+  const baseSequence = selected?.sequence;
   const previousProjection = useRef<{ scope: string; items: OptimisticItem[] }>({ scope, items: [] });
   const items = useMemo(() => {
-    const projected = projectItems(base, operations, listId, new Set(baseOperationIds), baseAcknowledgments);
+    const identities = { ...Object.fromEntries((previousProjection.current.scope === scope ? previousProjection.current.items : []).filter(i => i._localKey).map(i => [i._id, i._localKey!])), ...Object.fromEntries((cached.scope === scope ? cached.items : []).filter(i => i._localKey).map(i => [i._id, i._localKey!])), ...aliases };
+    const proof = cached.scope === scope && cached.retiredThrough > (compaction?.retiredThrough ?? 0) ? cached : compaction;
+    const projected = projectItems(base, operations, listId, new Set(baseOperationIds), baseAcknowledgments, { ...proof, aliases: identities, sequence: baseSequence });
     const previous = new Map((previousProjection.current.scope === scope ? previousProjection.current.items : []).map(i => [i._id, i]));
     const stable = projected.map(item => {
       const old = previous.get(item._id);
@@ -62,7 +80,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
     });
     previousProjection.current = { scope, items: stable };
     return stable;
-  }, [base, operations, listId, baseOperationIds, baseAcknowledgments, scope]);
+  }, [base, operations, listId, baseOperationIds, baseAcknowledgments, baseSequence, aliases, compaction, cached, scope]);
   const snapshots = useRef(base);
   snapshots.current = base;
   const enqueue = useCallback((type: Parameters<typeof queueMutation>[0]['type'], payload: unknown) => queueMutation({ type, payload }, snapshots.current).then(() => undefined), [queueMutation]);
@@ -73,6 +91,6 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   const updateItem = useCallback((args: { itemId: Id<'items'>; userDid: string; legacyDid?: string; [key: string]: unknown }) => enqueue('updateItem', args), [enqueue]);
   const removeItem = useCallback((itemId: Id<'items'>, userDid: string, legacyDid?: string) => enqueue('removeItem', { itemId, userDid, legacyDid }), [enqueue]);
   return { items, addItem, checkItem, uncheckItem, reorderItems, updateItem, removeItem,
-    isLoading: serverItems === undefined && cached.scope !== scope && !last.current,
-    usingCache: !isOnline && serverItems === undefined && cached.scope === scope };
+    isLoading: server === undefined && cached.scope !== scope && !last.current,
+    usingCache: !isOnline && server === undefined && cached.scope === scope };
 }

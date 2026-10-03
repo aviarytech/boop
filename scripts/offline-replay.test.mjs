@@ -366,7 +366,7 @@ for (const type of ['checkItem', 'addItem', 'removeItem']) {
     // An older upsert helper is also a cache writer and may not bypass the fence.
     await store.cacheItems(f.session.accountId, stale);
     await store.cacheItems(f.session.accountId, stale, 'L1');
-    assert.deepEqual((await store.getCachedItemsByList(f.session.accountId, 'L1')).sort((a, b) => a._id.localeCompare(b._id)), [...fresh.items].sort((a, b) => a._id.localeCompare(b._id)));
+    assert.deepEqual((await store.getCachedItemsByList(f.session.accountId, 'L1')).map(({ _localKey, ...item }) => item).sort((a, b) => a._id.localeCompare(b._id)), [...fresh.items].sort((a, b) => a._id.localeCompare(b._id)));
     assert.deepEqual((await store.getCachedListSnapshot(f.session.accountId, 'L1')).operationIds, operationIds);
     const offline = projectItems(await store.getCachedItemsByList(f.session.accountId, 'L1'), await all(f), 'L1');
     if (type === 'checkItem') assert.equal(offline[0].checked, true);

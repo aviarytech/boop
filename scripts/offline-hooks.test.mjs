@@ -11,7 +11,7 @@ const fixture = globalThis.__offlineHooks = {
   user: { turnkeySubOrgId: 'hook-account-a', did: 'did:a' }, token: 'token-a', online: false,
   snapshots: new Map(), calls: [], networkListeners: new Set(), client: { mutation() { throw Error('Unexpected network call while offline'); } },
 };
-await build({ entryPoints: ['src/hooks/useOptimisticItems.tsx', 'src/hooks/useItemDetailsDraft.ts', 'src/lib/offline.ts'], outdir: 'tmp/offline-hooks', outbase: '.', bundle: true, splitting: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['react', 'react/jsx-runtime', 'convex/server', 'convex/values', 'idb'], plugins: [{ name: 'offline-hook-fixtures', setup(b) {
+await build({ entryPoints: ['src/hooks/useOptimisticItems.tsx', 'src/hooks/useItemDetailsDraft.ts', 'src/lib/offline.ts', 'src/lib/offlineObserver.ts'], outdir: 'tmp/offline-hooks', outbase: '.', bundle: true, splitting: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['react', 'react/jsx-runtime', 'convex/server', 'convex/values', 'idb'], plugins: [{ name: 'offline-hook-fixtures', setup(b) {
   b.onResolve({ filter: /\/useAuth$|\/authenticatedConvex$|\/network$|^convex\/react$/ }, args => ({ path: args.path, namespace: 'fixture' }));
   b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents:
     path.endsWith('/useAuth') ? 'export const useAuth=()=>globalThis.__offlineHooks;' :
@@ -101,11 +101,11 @@ test('dirty draft survives a temporary item acquiring its acknowledged server ID
   } finally { view.unmount(); cleanup(); }
 });
 
-test('observed receipts stay in query arguments and a cross-tab cache advancement fences the stale in-memory fallback', async () => {
+test('versioned cross-tab cache fences the stale fallback without querying observed receipt history', async () => {
   const accountId = 'hook-cross-tab';
   fixture.user = { turnkeySubOrgId: accountId, did: 'did:a' }; fixture.token = 'token-cross-tab';
   const stale = [item()];
-  fixture.snapshots.set(`${accountId}:L1`, { items: stale, acknowledgments: [] });
+  fixture.snapshots.set(`${accountId}:L1`, { items: stale, acknowledgments: [], sequence: 0 });
   const view = renderHook(() => useOptimisticItems('L1'));
   try {
     await waitFor(() => assert.equal(view.result.current.items.length, 1));
@@ -114,16 +114,17 @@ test('observed receipts stay in query arguments and a cross-tab cache advancemen
     const db = await store.getOfflineDB(accountId);
     const operationId = 'other-tab-check';
     const ack = { operationId, result: null, revisions: { I1: 'checked-revision' } };
-    const tx = db.transaction(['items', 'mutations'], 'readwrite');
+    const tx = db.transaction(['items', 'mutations', 'metadata'], 'readwrite');
+    await tx.objectStore('metadata').put({ key: 'sequence:L1', sequence: 1 });
     await tx.objectStore('items').put({ ...item(), checked: true });
     await tx.objectStore('mutations').add({ accountId, operationId, type: 'checkItem', payload: { itemId: 'I1', checkedAt: 1 }, expected: [], timestamp: 1, retryCount: 0, state: 'acked', listIds: ['L1'], observedListIds: ['L1'], ack });
     await tx.done;
     await act(async () => { window.dispatchEvent(new StorageEvent('storage', { key: 'boop-offline-change', newValue: 'nonce' })); });
     await waitFor(() => assert.equal(view.result.current.items[0]?.checked, true));
-    assert.deepEqual(fixture.calls.at(-1).operationIds, [operationId], 'query must continue requesting the observed receipt');
+    assert.deepEqual(fixture.calls.at(-1).operationIds, [], 'observed history is fenced by the sequence, not requeried');
     assert.equal((await store.getCachedItemsByList(accountId, 'L1'))[0].checked, true);
     // A genuinely newer snapshot that includes the frontier must not be frozen.
-    fixture.snapshots.set(`${accountId}:L1`, { items: [{ ...item(), checked: false, name: 'Later collaborator' }], acknowledgments: [ack] });
+    fixture.snapshots.set(`${accountId}:L1`, { items: [{ ...item(), checked: false, name: 'Later collaborator' }], acknowledgments: [], sequence: 1 });
     view.rerender();
     await waitFor(() => assert.equal(view.result.current.items[0]?.name, 'Later collaborator'));
     await waitFor(async () => assert.equal((await store.getCachedItemsByList(accountId, 'L1'))[0].name, 'Later collaborator'));
@@ -164,3 +165,55 @@ for (const fallback of ['cache', 'last']) {
     } finally { view.unmount(); cleanup(); }
   });
 }
+
+test('many mounted queue consumers share one account read and one polling timer', async () => {
+  const { offlineObserver } = await load('src/lib/offlineObserver');
+  const account = 'shared-observer-many-rows';
+  await store.queueMutation(account, { type: 'addItem', payload: { listId: 'L1', name: 'Shared', createdAt: 1, createdByDid: 'did:a' } });
+  const observer = offlineObserver(account);
+  const getAll = IDBObjectStore.prototype.getAll;
+  const interval = globalThis.setInterval;
+  let mutationReads = 0, timers = 0;
+  IDBObjectStore.prototype.getAll = function (...args) { if (this.name === 'mutations' && this.transaction.db.name === `boop-offline-v2:${account}`) mutationReads++; return getAll.apply(this, args); };
+  globalThis.setInterval = (...args) => { if (args[1] === 5000) timers++; return interval(...args); };
+  const unsubscribes = [];
+  try {
+    for (let i = 0; i < 80; i++) unsubscribes.push(observer.subscribe(() => {}, () => {}));
+    await waitFor(() => assert.equal(observer.getSnapshot().operations.length, 1));
+    assert.equal(mutationReads, 1, 'one getAll across 80 subscribers');
+    assert.equal(timers, 1, 'one polling timer across 80 subscribers');
+  } finally {
+    unsubscribes.forEach(unsubscribe => unsubscribe());
+    IDBObjectStore.prototype.getAll = getAll;
+    globalThis.setInterval = interval;
+  }
+});
+
+test('shared atomic cache advances immediately when compaction removes the separately rendered fallback history', async () => {
+  const accountId = 'hook-shared-compaction-race';
+  const original = item();
+  await store.cacheListSnapshot(accountId, 'L1', [original], [], 0);
+  const observer = globalThis.__staleOfflineObserver = { accountId, operations: [], isOnline: false, queueMutation: () => {}, snapshot: undefined };
+  const view = renderHook(() => useStaleObserverItems('L1'));
+  try {
+    await waitFor(() => assert.equal(view.result.current.items[0]?.name, 'Milk'));
+    // Another tab has compacted its history. The shared observer carries both
+    // newer data and fence before this hook's async per-list read can finish.
+    const newer = { ...original, name: 'After compaction', _localKey: 'retired-create' };
+    observer.aliases = { I1: 'retired-create' };
+    observer.compaction = { operations: [], items: [newer], sequences: { L1: 40 }, aliases: observer.aliases, retiredThrough: 10, retainedOperationIds: [] };
+    view.rerender();
+    assert.equal(view.result.current.items[0]?.name, 'After compaction');
+    assert.equal(view.result.current.items[0]?._localKey, 'retired-create');
+  } finally { view.unmount(); cleanup(); }
+});
+
+test('unmounted queue consumers cannot keep authorizing old callbacks after their account UI is gone', async () => {
+  fixture.user = { turnkeySubOrgId: 'unmounted-account', did: 'did:a' }; fixture.token = 'old-token';
+  const view = renderHook(() => useOptimisticItems('L1'));
+  const add = view.result.current.addItem;
+  view.unmount();
+  await assert.rejects(add({ name: 'Old callback', createdAt: 1, createdByDid: 'did:a' }), /Sign in/);
+  assert.deepEqual(await store.getOperations('unmounted-account'), []);
+  cleanup();
+});

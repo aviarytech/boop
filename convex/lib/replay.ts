@@ -25,7 +25,7 @@ export async function replayOperation(
   const receipt = await ctx.db.query('offlineReceipts').withIndex('by_account_operation', q => q.eq('accountId', actor.userId).eq('operationId', meta.operationId)).unique();
   if (receipt) {
     if (receipt.fingerprint !== fingerprint) throw new Error('Operation ID reused with different content');
-    return { operationId: receipt.operationId, result: receipt.result, revisions: receipt.revisions };
+    return { operationId: receipt.operationId, result: receipt.result, revisions: receipt.revisions, ...(receipt.sequence !== undefined ? { sequence: receipt.sequence } : {}) };
   }
   const targets = replayTargets(operation, payload);
   if (canonical([...targets].sort()) !== canonical(meta.expected.map(e => e.id).sort())) throw conflict('Missing expected revision. Review this saved edit before applying it.');
@@ -45,6 +45,10 @@ export async function replayOperation(
   if ((operation === 'addItem' || operation === 'createList') && typeof result === 'string') {
     revisions[result] = await revision(await ctx.db.get(result as Id<'items'>));
   }
-  await ctx.db.insert('offlineReceipts', { accountId: actor.userId, operationId: meta.operationId, fingerprint, result, revisions });
-  return { operationId: meta.operationId, result, revisions };
+  const account = await ctx.db.get(actor.userId);
+  if (!account) throw new AuthError('Account unavailable', 'UNAUTHORIZED');
+  const sequence = (account.replaySequence ?? 0) + 1;
+  await ctx.db.patch(actor.userId, { replaySequence: sequence });
+  await ctx.db.insert('offlineReceipts', { sequence, accountId: actor.userId, operationId: meta.operationId, fingerprint, result, revisions });
+  return { operationId: meta.operationId, result, revisions, sequence };
 }

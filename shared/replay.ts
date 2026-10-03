@@ -11,7 +11,7 @@ export async function revision(value: unknown): Promise<string> {
   return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
 }
 export type ExpectedRevision = { id: string; revision: string; predecessor?: string };
-export type ReplayAck = { operationId: string; result: unknown; revisions: Record<string, string> };
+export type ReplayAck = { operationId: string; sequence?: number; result: unknown; revisions: Record<string, string> };
 export function replayTargets(type: string, payload: Record<string, unknown>): string[] {
   if (type === 'addItem' || type === 'createList') return [];
   if (typeof payload.itemId === 'string') return [payload.itemId];

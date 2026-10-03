@@ -11,6 +11,7 @@ import { v } from "convex/values";
 export default defineSchema({
   offlineReceipts: defineTable({
     accountId: v.id("users"), operationId: v.string(), fingerprint: v.string(),
+    sequence: v.optional(v.number()),
     result: v.any(), revisions: v.record(v.string(), v.string()),
   }).index("by_account_operation", ["accountId", "operationId"]),
   accessSessions: defineTable({
@@ -58,6 +59,7 @@ export default defineSchema({
 
   // Users table - for display name lookup by DID
   users: defineTable({
+    replaySequence: v.optional(v.number()), // Own successful replays, not collaborator revisions
     deletionRequestedAt: v.optional(v.number()),
     deletionDids: v.optional(v.array(v.string())),
     did: v.optional(v.string()), // did:webvh:... created client-side (null until first login completes)

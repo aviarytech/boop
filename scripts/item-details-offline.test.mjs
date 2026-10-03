@@ -180,3 +180,66 @@ for (const receiptSource of ['live', 'cache']) {
     } finally { releaseResponse(); await sync; view.unmount(); cleanup(); }
   });
 }
+
+test('sleeping tab keeps an open temporary draft when another tab acknowledges and compacts its create', async () => {
+  const f = await replayFixture(modules), store = modules.offline, accountId = f.session.accountId;
+  await store.queueMutation(accountId, { type: 'addItem', payload: { listId: 'L1', name: 'Sleeping draft', createdAt: 1, createdByDid: f.owner.user.did } });
+  const operations = await store.getOperations(accountId), create = operations[0];
+  const enqueue = (m, snapshots) => store.queueMutation(accountId, m, snapshots);
+  const state = globalThis.__detailFixture = {
+    did: f.owner.user.did, snapshot: undefined,
+    offline: { accountId, operations, isOnline: false, queueMutation: enqueue },
+    query(ref, args) {
+      if (args === 'skip') return undefined;
+      const name = getFunctionName(ref);
+      assert.ok(!JSON.stringify(args).includes('temp-'), `${name} sent temporary ID`);
+      if (name === 'items:getListItemsForReplay') return state.snapshot;
+      if (name === 'lists:getList') return f.rows.lists[0];
+      if (name === 'users:getUsersByDids') return {};
+      return [];
+    },
+    mutate() { throw Error('Unexpected direct mutation'); },
+  };
+  function Rows() {
+    return useOptimisticItems('L1').items.map(item => h(NestedListItem, { key: item._localKey ?? item._id, item, userDid: f.owner.user.did, canEdit: true }));
+  }
+  const tree = () => h(MemoryRouter, null, h(Rows));
+  const view = render(tree());
+  try {
+    fireEvent.click(view.getByText('Sleeping draft'));
+    const input = await view.findByDisplayValue('Sleeping draft');
+    fireEvent.click(view.getByRole('button', { name: /High/ }));
+    await new modules.sync.SyncManager().sync(f.client, f.session);
+    const observe = async () => {
+      const ops = await store.getOperations(accountId);
+      const snap = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: store.replayOperationIds(ops, 'L1') });
+      await store.cacheListSnapshot(accountId, 'L1', snap.items, snap.acknowledgments, snap.sequence);
+    };
+    await observe();
+    const realId = (await store.getOperations(accountId))[0].ack.result;
+    for (let index = 0; index < 40; index++) {
+      await store.queueMutation(accountId, { type: 'updateItem', payload: { itemId: 'I1', name: `Other item ${index}` } }, f.rows.items);
+      await new modules.sync.SyncManager().sync(f.client, f.session);
+      await observe();
+    }
+    assert.ok(!(await store.getOperations(accountId)).some(m => m.operationId === create.operationId));
+    // Wake: both the queue and durable aliases arrive in one observer read.
+    const saved = await store.getOfflineState(accountId);
+    state.offline = { ...saved, compaction: saved, accountId, isOnline: true, queueMutation: enqueue };
+    state.snapshot = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [] });
+    view.rerender(tree());
+    assert.ok(view.queryByDisplayValue('Sleeping draft') === input, 'same mounted draft survives the missed acknowledgment');
+    await f.call('items', 'updateItem', { itemId: realId, name: 'Collaborator while sleeping' }, f.collaborator);
+    state.snapshot = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [] });
+    view.rerender(tree());
+    assert.ok(view.queryByDisplayValue('Sleeping draft') === input);
+    fireEvent.click(view.getByRole('button', { name: 'Save' }));
+    await waitFor(() => assert.ok(!view.queryByDisplayValue('Sleeping draft')));
+    const edit = (await store.getQueuedMutations(accountId))[0];
+    assert.equal(edit.payload.priority, 'high');
+    assert.equal(edit.expected[0].predecessor, create.operationId);
+    await new modules.sync.SyncManager().sync(f.client, f.session);
+    assert.equal((await store.getQueuedMutations(accountId))[0].state, 'conflict');
+    assert.equal(f.rows.items.find(i => i._id === realId).name, 'Collaborator while sleeping');
+  } finally { view.unmount(); cleanup(); }
+});

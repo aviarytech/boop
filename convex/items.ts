@@ -1016,11 +1016,12 @@ export const { public: getListItemsForReplay } = actorQuery({
   handler: async (ctx, args) => {
     const items = await ctx.db.query("items").withIndex("by_list", q => q.eq("listId", args.listId)).collect();
     const acknowledgments = [];
+    if (args.operationIds.length > 128) throw new Error("Too many replay receipts requested");
     for (const operationId of args.operationIds) {
       const receipt = await ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", ctx.actor.userId).eq("operationId", operationId)).unique();
-      if (receipt) acknowledgments.push({ operationId, result: receipt.result, revisions: receipt.revisions });
+      if (receipt) acknowledgments.push({ operationId, result: receipt.result, revisions: receipt.revisions, ...(receipt.sequence !== undefined ? { sequence: receipt.sequence } : {}) });
     }
-    return { items: items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)), acknowledgments };
+    return { items: items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)), acknowledgments, sequence: (await ctx.db.get(ctx.actor.userId))?.replaySequence ?? 0 };
   },
 });
 

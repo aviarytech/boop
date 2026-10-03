@@ -71,3 +71,47 @@ test('HTTP recognizes serialized authentication errors without matching their pr
   assert.equal(modules.http.handlerErrorResponse(request, new Error('Missing scope: write'), 'Failed').status, 403);
   assert.equal(modules.http.handlerErrorResponse(request, wireError('FORBIDDEN'), 'Failed').status, 403);
 });
+
+test('edits enqueued during an active request drain immediately without waiting for polling', async () => {
+  const f = await seed(), manager = new SyncManager();
+  let release, started;
+  const gate = new Promise(resolve => { started = resolve; });
+  const response = new Promise(resolve => { release = resolve; });
+  let calls = 0;
+  const client = { mutation: async (...args) => {
+    calls++;
+    const ack = await f.client.mutation(...args);
+    if (calls === 1) { started(); await response; }
+    return ack;
+  } };
+  const running = manager.sync(client, f.session);
+  await gate;
+  await store.queueMutation(f.session.accountId, { type: 'updateItem', payload: { itemId: 'I1', name: 'Rapid edit' } }, f.rows.items);
+  await manager.sync(client, f.session);
+  release(); await running;
+  assert.equal(f.rows.items[0].name, 'Rapid edit');
+  assert.equal(calls, 3);
+  assert.equal((await store.getQueuedMutations(f.session.accountId)).length, 0);
+});
+
+test('rerun belongs to its account/session; switching accounts cannot send the old queued edit', async () => {
+  const a = await seed(), b = await seed(), manager = new SyncManager();
+  let current = a.session.accountId, release, started;
+  const gate = new Promise(resolve => { started = resolve; });
+  const response = new Promise(resolve => { release = resolve; });
+  let oldCalls = 0;
+  const client = { mutation: async (...args) => { oldCalls++; const ack = await a.client.mutation(...args); started(); await response; return ack; } };
+  const isA = () => current === a.session.accountId;
+  const running = manager.sync(client, a.session, isA);
+  await gate;
+  await manager.sync(client, a.session, isA);
+  current = b.session.accountId;
+  await manager.sync(b.client, b.session, () => current === b.session.accountId);
+  release(); await running;
+  assert.equal(oldCalls, 1);
+  assert.equal((await store.getQueuedMutations(a.session.accountId)).length, 1);
+  assert.equal((await store.getQueuedMutations(b.session.accountId)).length, 0);
+  current = a.session.accountId;
+  await manager.sync(a.client, a.session, isA);
+  assert.equal((await store.getQueuedMutations(a.session.accountId)).length, 0);
+});

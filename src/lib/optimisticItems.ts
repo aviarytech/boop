@@ -3,15 +3,21 @@ import type { Id } from '../../convex/_generated/dataModel';
 import type { OptimisticItem } from '../hooks/useOptimisticItems';
 import type { OfflineItem, QueuedMutation } from './offline';
 
-export function projectItems(base: OfflineItem[], operations: QueuedMutation[], listId: Id<'lists'>, observed?: Set<string>, acknowledgments: ReplayAck[] = []): OptimisticItem[] {
+export function projectItems(base: OfflineItem[], operations: QueuedMutation[], listId: Id<'lists'>, observed?: Set<string>, acknowledgments: ReplayAck[] = [], proof?: { retiredThrough?: number; retainedOperationIds?: string[]; aliases?: Record<string, string>; sequence?: number }): OptimisticItem[] {
   // Reactive receipts can arrive before the mutation response / queue observer.
   // Use their create results immediately for row identity and pending targets.
   const receipts = new Map(operations.flatMap(m => m.ack ? [[m.operationId, m.ack] as const] : []));
   for (const ack of acknowledgments) receipts.set(ack.operationId, ack);
   const localKeys = new Map(operations.filter(m => m.type === 'addItem' && typeof receipts.get(m.operationId)?.result === 'string').map(m => [receipts.get(m.operationId)!.result as string, m.operationId]));
+  for (const [id, key] of Object.entries(proof?.aliases ?? {})) localKeys.set(id, key);
   const items = new Map<string, OptimisticItem>(base.map(i => [i._id, localKeys.has(i._id) ? { ...i, _localKey: localKeys.get(i._id) } : i]));
   const ids = new Map(operations.filter(m => typeof receipts.get(m.operationId)?.result === 'string').map(m => [`temp-${m.operationId}`, receipts.get(m.operationId)!.result as string]));
+  for (const [id, key] of localKeys) ids.set(`temp-${key}`, id);
+  const retained = new Set(proof?.retainedOperationIds);
   for (const m of operations) {
+    if (m.id !== undefined && m.id <= (proof?.retiredThrough ?? 0) && !retained.has(m.operationId)) continue;
+    const sequence = receipts.get(m.operationId)?.sequence;
+    if (sequence !== undefined && proof?.sequence !== undefined && sequence <= proof.sequence) continue;
     if (!m.listIds.includes(listId) || m.observedListIds?.includes(listId) || observed?.has(m.operationId)) continue;
     const p = m.payload;
     if (m.type === 'addItem' && p.listId === listId) {
