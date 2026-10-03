@@ -1,3 +1,4 @@
+import { getReplaySequence } from "./lib/replay";
 import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
@@ -1021,7 +1022,7 @@ export const { public: getListItemsForReplay } = actorQuery({
       const receipt = await ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", ctx.actor.userId).eq("operationId", operationId)).unique();
       if (receipt) acknowledgments.push({ operationId, result: receipt.result, revisions: receipt.revisions, ...(receipt.sequence !== undefined ? { sequence: receipt.sequence } : {}) });
     }
-    return { items: items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)), acknowledgments, sequence: (await ctx.db.get(ctx.actor.userId))?.replaySequence ?? 0 };
+    return { items: items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)), acknowledgments, sequence: (await getReplaySequence(ctx, ctx.actor.userId)).sequence };
   },
 });
 

@@ -337,9 +337,10 @@ test('erasure retries retain the original identity snapshot even if the user row
   assert.equal(ctx.rows.noteBodies.length, 0);
 });
 
-test('account erasure drains only its own durable replay receipts in bounded resumable batches', async () => {
+test('account erasure drains only its own durable replay receipts and isolated counter in bounded resumable batches', async () => {
   const ctx = fixture();
   ctx.rows.lists = []; ctx.rows.noteBodies = [];
+  ctx.rows.replaySequences = [{ _id: 'counter-own', accountId: 'U1', sequence: 11 }, { _id: 'counter-other', accountId: 'U2', sequence: 3 }];
   ctx.rows.offlineReceipts = [
     ...Array.from({ length: 11 }, (_, i) => ({ _id: `receipt-${i}`, accountId: 'U1', operationId: `op-${i}` })),
     { _id: 'other-receipt', accountId: 'U2', operationId: 'other' },
@@ -353,5 +354,6 @@ test('account erasure drains only its own durable replay receipts in bounded res
     assert.ok(before - ctx.rows.offlineReceipts.length <= 4);
   }
   assert.deepEqual(ctx.rows.offlineReceipts.map(r => r._id), ['other-receipt']);
+  assert.deepEqual(ctx.rows.replaySequences.map(r => r._id), ['counter-other']);
   assert.equal(ctx.rows.users.length, 0);
 });

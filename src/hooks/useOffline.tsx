@@ -41,5 +41,6 @@ export function useOffline() {
   const syncStatus: SyncStatus = status.accountId === accountId ? { ...status } : { status: 'idle' };
   // A successful earlier run must never hide subsequently queued/failed work.
   if (pending.length && syncStatus.status === 'synced') syncStatus.status = 'idle';
+  if (!pending.length && syncStatus.status === 'error') { syncStatus.status = 'idle'; syncStatus.message = undefined; }
   return { isOnline, syncStatus, pendingCount: pending.length, manualSync, queueMutation, operations, accountId, aliases: saved.aliases, compaction: saved };
 }

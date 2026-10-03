@@ -2,7 +2,7 @@ import type { ConvexReactClient } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { api } from '../../convex/_generated/api';
 import { authErrorData } from '../../convex/lib/authError';
-import { getOperations, getQueuedMutations, saveOperation, type MutationType, type QueuedMutation } from './offline';
+import { getOperations, prepareOperationForSync, getQueuedMutations, saveOperation, type MutationType, type QueuedMutation } from './offline';
 import type { ReplayAck } from '../../shared/replay';
 export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'error';
 export interface SyncStatus { status: SyncStatusType; message?: string; accountId?: string }
@@ -39,12 +39,15 @@ export class SyncManager {
           if (attempted.has(m.operationId) || m.state === 'acked' || m.state === 'conflict' || m.retryCount >= 5 || (m.nextAttemptAt ?? 0) > Date.now()) continue;
           if (m.accountId !== accountId) throw new Error('Offline account mismatch');
           if (m.expected.some(e => e.predecessor && operations.some(prior => prior.operationId === e.predecessor) && !acknowledged.has(e.predecessor))) continue;
+          const current = await prepareOperationForSync(accountId, m.id!, m.operationId);
+          if (!isCurrent()) return;
+          if (!current) continue;
           attempted.add(m.operationId);
           try {
-            const ack = await this.executeMutation(convex, m, token, acknowledged);
+            const ack = await this.executeMutation(convex, current, token, acknowledged);
             if (ack.operationId !== m.operationId) throw new Error('Missing operation acknowledgment');
             // Always persist an in-flight old-account acknowledgment to its own DB.
-            await saveOperation(accountId, { ...m, state: 'acked', ack, error: undefined });
+            await saveOperation(accountId, { ...current, state: 'acked', ack, error: undefined });
             acknowledged.set(m.operationId, ack);
           } catch (error) {
             const auth = authErrorData(error);
@@ -54,7 +57,7 @@ export class SyncManager {
             }
             const conflict = error instanceof ConvexError && error.data?.code === 'REPLAY_CONFLICT';
             const message = conflict ? String(error.data.message) : error instanceof Error ? error.message : 'Sync failed';
-            await saveOperation(accountId, { ...m, retryCount: m.retryCount + 1, state: conflict ? 'conflict' : 'failed', nextAttemptAt: Date.now() + 1000 * 2 ** m.retryCount, error: message });
+            await saveOperation(accountId, { ...current, retryCount: current.retryCount + 1, state: conflict ? 'conflict' : 'failed', nextAttemptAt: Date.now() + 1000 * 2 ** current.retryCount, error: message });
           }
         }
         const fresh = await getQueuedMutations(accountId);

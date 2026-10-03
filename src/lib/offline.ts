@@ -24,7 +24,7 @@ export interface QueuedMutation {
 export const RECENT_OPERATIONS = 32;
 export const RECEIPT_QUERY_LIMIT = 128;
 export interface CompactionProof { retiredThrough: number; retainedOperationIds: string[] }
-type CacheMetadata = { key: string; sequence?: number; retiredThrough?: number };
+type CacheMetadata = { key: string; sequence?: number; retiredThrough?: number; discarded?: boolean };
 const cleanDocument = (doc: object) => Object.fromEntries(Object.entries(doc).filter(([key]) => !['_isOptimistic', '_syncError', '_localKey', '_operationId'].includes(key)));
 export function replayOperationIds(operations: QueuedMutation[], listId: string, scanOffset = 0): string[] {
   const relevant = operations.filter(m => m.listIds.includes(listId) && !m.observedListIds?.includes(listId) && m.state !== 'conflict');
@@ -142,8 +142,9 @@ async function enqueueMutation(accountId: string, input: {
     revisions.set(id, clean ? await revision(clean) : 'unknown');
     if (doc) listIds.add('listId' in doc ? doc.listId : doc._id);
   }
-  const tx = db.transaction('mutations', 'readwrite');
-  const prior = await tx.store.getAll();
+  const tx = db.transaction(['mutations', 'metadata'], 'readwrite');
+  const mutationStore = tx.objectStore('mutations');
+  const prior = await mutationStore.getAll();
   const expected = targets.map(id => {
     const resolvedId = resolveOperationId(id, prior);
     const predecessor = [...prior].reverse().find(m => {
@@ -164,7 +165,15 @@ async function enqueueMutation(accountId: string, input: {
     const predecessorId = sourceOperations.get(id) ?? predecessor?.operationId;
     return { id, revision: revisions.get(id)!, ...(predecessorId ? { predecessor: predecessorId } : {}) };
   });
-  const id = await tx.store.add({ ...input, payload, accountId, listIds: [...listIds], operationId: randomId(), expected, state: 'pending', timestamp: input.timestamp ?? Date.now(), retryCount: 0 });
+  const dependencies = [...expected.flatMap(e => e.predecessor ? [e.predecessor] : []), ...operationReferences({ payload, expected }).filter(id => id.startsWith('temp-')).map(id => id.slice(5))];
+  for (const dependency of new Set(dependencies)) {
+    if ((await tx.objectStore('metadata').get(`discarded:${dependency}`))?.discarded) {
+      tx.abort();
+      await tx.done.catch(() => undefined);
+      throw new Error('This draft depends on a discarded edit. Reopen the current item before editing again.');
+    }
+  }
+  const id = await mutationStore.add({ ...input, payload, accountId, listIds: [...listIds], operationId: randomId(), expected, state: 'pending', timestamp: input.timestamp ?? Date.now(), retryCount: 0 });
   await tx.done;
   changed();
   return id;
@@ -181,6 +190,77 @@ export async function saveOperation(accountId: string, mutation: QueuedMutation)
     }
   }
   await tx.done; changed();
+}
+function operationReferences(m: Pick<QueuedMutation, 'payload' | 'expected'>): string[] {
+  return [...m.expected.map(e => e.id), ...['itemId', 'listId', 'parentId'].flatMap(key => typeof m.payload[key] === 'string' ? [m.payload[key] as string] : []), ...(Array.isArray(m.payload.itemIds) ? m.payload.itemIds.filter((id): id is string => typeof id === 'string') : [])];
+}
+/** Preview the whole unsynced dependency chain. Acknowledged work is not
+ * discarded: it has already reached the server and remains receipt evidence. */
+export function discardCascade(operations: QueuedMutation[], operationId: string): QueuedMutation[] {
+  const selected = new Set([operationId]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const m of operations) {
+      if (m.state === 'acked' || selected.has(m.operationId)) continue;
+      const references = operationReferences(m);
+      if (m.expected.some(e => e.predecessor && selected.has(e.predecessor)) || references.some(id => id.startsWith('temp-') && selected.has(id.slice(5)))) {
+        selected.add(m.operationId);
+        added = true;
+      }
+    }
+  }
+  return operations.filter(m => m.state !== 'acked' && selected.has(m.operationId));
+}
+/** Confirmed local-only loss. Recompute the closure inside one write transaction
+ * and require the reviewed set, so a concurrent edit cannot be silently lost. */
+export async function discardOperation(accountId: string, operationId: string, reviewedOperationIds: string[], isCurrent: () => boolean = () => true): Promise<number> {
+  const tx = (await getOfflineDB(accountId)).transaction(['mutations', 'metadata'], 'readwrite');
+  const mutations = tx.objectStore('mutations');
+  const metadata = tx.objectStore('metadata');
+  try {
+    const operations = (await mutations.getAll()).filter(m => m.accountId === accountId);
+    if (!isCurrent()) throw new Error('Sign in again and review the saved edits before discarding.');
+    const root = operations.find(m => m.operationId === operationId);
+    if (!root || (root.state !== 'conflict' && root.state !== 'failed')) throw new Error('This edit changed. Review the saved edits again before discarding.');
+    const cascade = discardCascade(operations, operationId);
+    if (cascade.length !== new Set(reviewedOperationIds).size || cascade.some(m => !reviewedOperationIds.includes(m.operationId))) throw new Error('Dependent edits changed. Review the discard confirmation again.');
+    for (const m of cascade) {
+      await mutations.delete(m.id!);
+      // Small identity-only tombstones distinguish discarded work from safely
+      // compacted receipts, including drafts whose enqueue is still hashing.
+      await metadata.put({ key: `discarded:${m.operationId}`, discarded: true });
+    }
+    const meta = await metadata.get('compaction');
+    await metadata.put({ key: 'compaction', retiredThrough: cascade.reduce((high, m) => Math.max(high, m.id!), meta?.retiredThrough ?? 0) });
+    if (!isCurrent()) throw new Error('Sign in again and review the saved edits before discarding.');
+    await tx.done;
+    changed();
+    return cascade.length;
+  } catch (error) {
+    try { tx.abort(); } catch { /* Already aborted/completed. */ }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+/** Serialize dispatch eligibility with discard/rebase. An active retry leaves
+ * the parked failed state before sending; it cannot be discarded as failed.
+ * Already-sent requests remain irrevocable and may finish after a network loss. */
+export async function prepareOperationForSync(accountId: string, id: number, operationId: string) {
+  const tx = (await getOfflineDB(accountId)).transaction('mutations', 'readwrite');
+  const current = await tx.store.get(id);
+  if (!current || current.accountId !== accountId || current.operationId !== operationId || current.state === 'acked' || current.state === 'conflict' || current.retryCount >= 5 || (current.nextAttemptAt ?? 0) > Date.now()) {
+    await tx.done;
+    return undefined;
+  }
+  const wasFailed = current.state === 'failed';
+  if (wasFailed) {
+    current.state = 'pending';
+    await tx.store.put(current);
+  }
+  await tx.done;
+  if (wasFailed) changed();
+  return current;
 }
 export async function retryOperations(accountId: string) {
   const db = await getOfflineDB(accountId);

@@ -62,7 +62,8 @@ test('thousands of observed edits compact history without losing sequence fences
   const duplicate = await f.client.mutation(firstRequest.ref, firstRequest.args);
   assert.equal(duplicate.sequence, 1);
   assert.equal(f.rows.offlineReceipts.length, receiptCount);
-  assert.equal(f.rows.users[0].replaySequence, 2050, 'duplicate does not advance sequence');
+  assert.equal(f.rows.replaySequences[0].sequence, 2050, 'duplicate does not advance sequence');
+  assert.equal(f.rows.users[0].replaySequence, undefined, 'ordinary replay never writes the user counter');
   await f.call('items', 'updateItem', { itemId: realId, name: 'Collaborator rename' }, f.collaborator);
   await observe(f);
   await store.queueMutation(account, { type: 'updateItem', payload: { itemId: realId, name: 'Draft original', priority: 'high' } }, [tempSource]);
@@ -206,7 +207,7 @@ test('unsequenced permanent receipts migrate through an explicit versioned zero 
   let request;
   await new SyncManager().sync({ mutation: async (ref, args) => { request = { ref, args }; return f.client.mutation(ref, args); } }, f.session);
   delete f.rows.offlineReceipts[0].sequence;
-  delete f.rows.users[0].replaySequence;
+  f.rows.replaySequences = [];
   const before = f.rows.items.length;
   const ack = await f.client.mutation(request.ref, request.args);
   assert.equal(ack.sequence, undefined);

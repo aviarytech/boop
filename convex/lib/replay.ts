@@ -1,6 +1,6 @@
 import { AuthError } from './authError';
 import { v, ConvexError } from 'convex/values';
-import type { MutationCtx } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
 import type { ResolvedActor } from './actor';
 import { canonical, revision, replayTargets, type ReplayAck } from '../../shared/replay';
@@ -11,6 +11,14 @@ export const replayMetadata = v.object({
 });
 type Metadata = typeof replayMetadata.type;
 const conflict = (message: string) => new ConvexError({ code: 'REPLAY_CONFLICT', message });
+
+/** Isolated counter: advancing replay must not invalidate general auth or
+ * permission reads of the user row. Preserve a pre-migration fence without
+ * patching that hot row; the first new replay seeds the dedicated counter. */
+export async function getReplaySequence(ctx: QueryCtx, accountId: Id<'users'>) {
+  const row = await ctx.db.query('replaySequences').withIndex('by_account', q => q.eq('accountId', accountId)).unique();
+  return { row, sequence: row?.sequence ?? (await ctx.db.get(accountId))?.replaySequence ?? 0 };
+}
 
 /** Called inside the authenticated mutation transaction. Receipts are permanent:
  * deleting one would make an old/lost-response replay unsafe. No signed evidence
@@ -45,10 +53,10 @@ export async function replayOperation(
   if ((operation === 'addItem' || operation === 'createList') && typeof result === 'string') {
     revisions[result] = await revision(await ctx.db.get(result as Id<'items'>));
   }
-  const account = await ctx.db.get(actor.userId);
-  if (!account) throw new AuthError('Account unavailable', 'UNAUTHORIZED');
-  const sequence = (account.replaySequence ?? 0) + 1;
-  await ctx.db.patch(actor.userId, { replaySequence: sequence });
+  const counter = await getReplaySequence(ctx, actor.userId);
+  const sequence = counter.sequence + 1;
+  if (counter.row) await ctx.db.patch(counter.row._id, { sequence });
+  else await ctx.db.insert('replaySequences', { accountId: actor.userId, sequence });
   await ctx.db.insert('offlineReceipts', { sequence, accountId: actor.userId, operationId: meta.operationId, fingerprint, result, revisions });
   return { operationId: meta.operationId, result, revisions, sequence };
 }

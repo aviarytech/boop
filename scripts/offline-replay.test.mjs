@@ -398,3 +398,30 @@ test('receipt frontier grows atomically and an older partial frontier cannot era
   assert.deepEqual(writes, [true, false]);
   assert.ok(!(await store.getCachedItemsByList(f.session.accountId, 'L1')).some(i => i._id === create.ack.result));
 });
+
+test('isolated replay counters preserve legacy floors and duplicate sequences without writing auth user documents', async () => {
+  const f = await replayFixture(modules);
+  f.rows.users[0].replaySequence = 47;
+  const before = structuredClone(f.rows.users);
+  const userWrites = [];
+  const patch = f.ctx.db.patch;
+  f.ctx.db.patch = async (id, fields) => { if (f.rows.users.some(u => u._id === id)) userWrites.push(fields); return patch(id, fields); };
+  const base = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [] });
+  assert.equal(base.sequence, 47);
+  const args = { listId: 'L1', name: 'Counter migration', createdAt: 1, replay: { operationId: 'counter-create', accountId: f.session.accountId, expected: [] } };
+  const ack = await f.call('items', 'addItemReplay', args);
+  assert.equal(ack.sequence, 48);
+  assert.equal(f.rows.replaySequences.length, 1);
+  assert.equal(f.rows.replaySequences[0].accountId, f.owner.user._id);
+  assert.deepEqual(await f.call('items', 'addItemReplay', args), ack);
+  assert.equal(f.rows.replaySequences[0].sequence, 48);
+  const later = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [ack.operationId] });
+  assert.equal(later.sequence, 48);
+  assert.equal(later.acknowledgments[0].sequence, 48);
+  assert.deepEqual(userWrites, []);
+  assert.deepEqual(f.rows.users, before);
+  const other = await f.call('items', 'addItemReplay', { ...args, name: 'Collaborator counter', replay: { operationId: 'other-counter', accountId: f.collaborator.user.turnkeySubOrgId, expected: [] } }, f.collaborator);
+  assert.equal(other.sequence, 1);
+  assert.equal(f.rows.replaySequences.find(r => r.accountId === f.owner.user._id).sequence, 48);
+  assert.deepEqual(f.rows.users, before);
+});
