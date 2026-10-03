@@ -1,5 +1,6 @@
 import type { QueryCtx } from "../_generated/server";
 import { getEffectivePlan, PLANS, requirePlan } from "../billing";
+import { PlanError } from "./planError";
 
 type DbCtx = Pick<QueryCtx, "db">;
 
@@ -20,7 +21,7 @@ export async function getSiteAllowance(ctx: DbCtx, ownerDid: string) {
   const owned = await Promise.all(identities.map(did => ctx.db.query("sites")
     .withIndex("by_owner", q => q.eq("ownerDid", did)).take(maxSites)));
   const count = owned.reduce((total, sites) => total + sites.length, 0);
-  return { plan, maxSites, canCreate: count < maxSites };
+  return { plan, maxSites, customDomains: PLANS[plan].customDomains, canCreate: count < maxSites };
 }
 
 export async function requireSiteCapacity(ctx: DbCtx, ownerDid: string) {
@@ -29,7 +30,7 @@ export async function requireSiteCapacity(ctx: DbCtx, ownerDid: string) {
     const advice = allowance.plan === "free"
       ? "Upgrade to Pro at /pricing for 5 sites and custom domains."
       : "Pro and Team include 5 sites per account. You can still update your existing sites.";
-    throw new Error(`PLAN_LIMIT: Your ${PLANS[allowance.plan].name} plan includes ${allowance.maxSites} site${allowance.maxSites === 1 ? "" : "s"}. ${advice}`);
+    throw new PlanError("SITE_LIMIT", `PLAN_LIMIT: Your ${PLANS[allowance.plan].name} plan includes ${allowance.maxSites} site${allowance.maxSites === 1 ? "" : "s"}. ${advice}`);
   }
 }
 

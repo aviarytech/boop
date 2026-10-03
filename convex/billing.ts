@@ -1,4 +1,5 @@
 import { actorQuery } from "./lib/authenticated";
+import { PlanError } from "./lib/planError";
 /**
  * Billing module — Stripe subscription management.
  *
@@ -140,6 +141,6 @@ export async function getEffectivePlan(ctx: DbCtx, userId: Id<"users">): Promise
 export async function requirePlan(ctx: DbCtx, userId: Id<"users">, minPlan: Plan): Promise<void> {
   const currentPlan = await getEffectivePlan(ctx, userId);
   if (PLAN_ORDER.indexOf(currentPlan) < PLAN_ORDER.indexOf(minPlan)) {
-    throw new Error(`This feature requires the ${PLANS[minPlan].name} plan. Please upgrade at /pricing.`);
+    throw new PlanError("PLAN_REQUIRED", `This feature requires the ${PLANS[minPlan].name} plan. Please upgrade at /pricing.`);
   }
 }

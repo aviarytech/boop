@@ -1,4 +1,6 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { planErrorData } from "../../../convex/lib/planError";
 import { useAction, useQuery } from "../../lib/authenticatedConvex";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -27,6 +29,7 @@ export function ConnectDomainModal({
   const [domain, setDomain] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
 
   const cnameTarget =
     (import.meta.env.VITE_CUSTOM_DOMAIN_CNAME_TARGET as string | undefined) ||
@@ -43,11 +46,14 @@ export function ConnectDomainModal({
     if (!domain.trim()) return;
     setSubmitting(true);
     setSubmitError(null);
+    setUpgradeRequired(false);
     try {
       await requestCustomHostname({ ownerDid, siteId, hostname: domain });
       setDomain("");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Something went wrong.");
+      const planError = planErrorData(error);
+      setSubmitError(planError?.message ?? (error instanceof Error ? error.message : "Something went wrong."));
+      setUpgradeRequired(planError?.code === "PLAN_REQUIRED");
     } finally {
       setSubmitting(false);
     }
@@ -78,6 +84,7 @@ export function ConnectDomainModal({
         </div>
 
         <div className="p-5 space-y-5">
+          {upgradeRequired && <Link to="/pricing" className="block font-semibold text-amber-600 dark:text-amber-400 underline">Upgrade to Pro for custom domains</Link>}
           {phase.kind === "idle" && (
             <IdleForm
               domain={domain}

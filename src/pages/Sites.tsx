@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { useToast } from "../hooks/useToast";
+import { planErrorData } from "../../convex/lib/planError";
 
 export function Sites() {
   const navigate = useNavigate();
@@ -67,7 +68,7 @@ export function Sites() {
       haptic("success");
       navigate(`/s/${result.siteId}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not make that link yet.";
+      const message = planErrorData(err)?.message ?? (err instanceof Error ? err.message : "Could not make that link yet.");
       setError(message);
       addToast(message, "error");
       haptic("error");

@@ -61,6 +61,7 @@ import type * as lib_noteConflict from "../lib/noteConflict.js";
 import type * as lib_noteBody from "../lib/noteBody.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_planError from "../lib/planError.js";
 import type * as lib_session from "../lib/session.js";
 import type * as lib_sessionTokens from "../lib/sessionTokens.js";
 import type * as lib_sitePlans from "../lib/sitePlans.js";
@@ -155,6 +156,7 @@ declare const fullApi: ApiFromModules<{
   "lib/noteConflict": typeof lib_noteConflict;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;
+  "lib/planError": typeof lib_planError;
   "lib/session": typeof lib_session;
   "lib/sessionTokens": typeof lib_sessionTokens;
   "lib/sitePlans": typeof lib_sitePlans;

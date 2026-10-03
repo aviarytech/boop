@@ -1,5 +1,9 @@
 # Sites
 
+Free accounts see a Pro upgrade link for custom domains on the site detail page.
+Plan errors carry structured, user-readable data, including when an entitlement
+changes during an in-flight create or domain request.
+
 Sites adds a second product surface to boop: a signed-in user can publish a single HTML file to a memorable `*.boop.ad` URL, then optionally connect their own domain without losing the site's portable identity.
 
 The feature is deliberately separate from collaborative todo lists. Lists remain private or shared app data; Sites are public, host-routed HTML documents with their own `did:webvh` log and hostname lifecycle.

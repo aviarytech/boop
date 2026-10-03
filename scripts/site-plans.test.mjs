@@ -89,6 +89,10 @@ test('domain actions and internal writes reject Free before side effects', async
   ctx.rows.siteKeys.push({ _id: 'K', siteId: 'S0' });
   const request = { apiKey: 'key', siteId: 'S0', hostname: 'example.test', cfHostnameId: 'cf', cfStatus: 'pending', cfSslStatus: 'initializing', now: 1 };
   const before = structuredClone(ctx.rows);
+  await assert.rejects(call('siteActions', 'requestCustomHostname', ctx, { apiKey: 'key', siteId: 'S0', hostname: 'example.test' }), error => {
+    assert.deepEqual(JSON.parse(JSON.stringify(error.data)), { code: 'PLAN_REQUIRED', message: 'This feature requires the Pro plan. Please upgrade at /pricing.' });
+    return true;
+  });
   for (const name of ['requestCustomHostname', 'requestCustomHostnameInternal']) {
     await assert.rejects(call('siteActions', name, ctx, { apiKey: 'key', siteId: 'S0', hostname: 'example.test' }), /Pro plan/);
   }
