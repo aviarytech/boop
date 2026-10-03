@@ -1,9 +1,10 @@
 import { test } from '@e2e-dev/web';
 import { expect } from 'e2e';
 
-test('app opens', async ({ app, browser }) => {
+test('landing page renders', async ({ app, browser }) => {
   await app.open('/');
-  await expect(browser.locator('body')).toBeVisible();
+  // body is always visible once CSS loads; landing copy proves React rendered.
+  await expect(browser.locator('h1')).toContainText('with receipts');
 });
 
 // With the model key in the environment, uncomment:

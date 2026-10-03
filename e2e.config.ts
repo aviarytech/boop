@@ -15,7 +15,14 @@ export default {
     app: {
       url: process.env.APP_URL ?? 'http://127.0.0.1:5173',
       // Reuses a running `bun run dev` instead of starting a second one.
-      command: { executable: 'bun', args: ['run', 'dev', '--host', '127.0.0.1', '--port', '{port}', '--strictPort'], log: '.e2e/logs/app.log', reuseExisting: true },
+      command: {
+        executable: 'bun',
+        args: ['run', 'dev', '--host', '127.0.0.1', '--port', '{port}', '--strictPort'],
+        log: '.e2e/logs/app.log',
+        reuseExisting: true,
+        // The app only inherits PATH/HOME/tmp; forward Convex's URL without shadowing .env.local.
+        env: process.env.VITE_CONVEX_URL ? { VITE_CONVEX_URL: process.env.VITE_CONVEX_URL } : {},
+      },
     },
   }],
 } satisfies E2EConfig;

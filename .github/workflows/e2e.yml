@@ -42,8 +42,9 @@ jobs:
         env:
           E2E_TELEMETRY_DISABLED: '1'
           AI_GATEWAY_API_KEY: ${{ secrets.AI_GATEWAY_API_KEY }}
-          # Placeholder keeps the dev server booting; Convex calls fail until a real URL is set.
-          VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL || 'https://placeholder.convex.cloud' }}
+          # Dedicated secret keeps agent flows off the deployment Lighthouse builds against.
+          # The placeholder lets the landing page render; Convex calls fail until it's set.
+          VITE_CONVEX_URL: ${{ secrets.E2E_CONVEX_URL || 'https://placeholder.convex.cloud' }}
 
       - name: Upload report
         if: ${{ !cancelled() }}
