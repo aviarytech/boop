@@ -1,0 +1,57 @@
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.5'
+
+      # e2e needs Node >= 22.12.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run e2e
+        run: bun run test:e2e --reporter list,junit
+        env:
+          E2E_TELEMETRY_DISABLED: '1'
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          include-hidden-files: true
+          path: |
+            .e2e/report.json
+            .e2e/junit.xml
+            .e2e/artifacts
+            .e2e/logs
+          if-no-files-found: warn
+          retention-days: 7

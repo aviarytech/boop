@@ -42,3 +42,6 @@ tmp/
 
 # Local agent worktrees
 .claude/worktrees/
+
+# e2e runner reports, recordings, and logs
+.e2e/
