@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-GlobalRegistrator.register();
+if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 const React = await import('react');
 const { MemoryRouter } = await import('react-router-dom');
 const { render, fireEvent, waitFor } = await import('@testing-library/react');

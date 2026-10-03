@@ -257,8 +257,11 @@ async function createStamp(body: string, publicKey: string, privateKey: string):
 }
 
 class TurnkeyApiError extends Error {
-  constructor(readonly status: number, body: string) {
+  readonly status: number;
+
+  constructor(status: number, body: string) {
     super(`Turnkey API error ${status}: ${body}`);
+    this.status = status;
   }
 }
 
