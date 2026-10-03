@@ -7,7 +7,7 @@ import { extractTokenFromRequest } from "./lib/jwt";
 
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { internal, api } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { createList, deleteList } from "./listsHttp";
 import {
   createCategory,
@@ -123,7 +123,7 @@ const initiate = httpAction(async (ctx, request) => {
     const clientIp = getClientIp(request);
 
     if (!SKIP_RATE_LIMIT) {
-      const rateLimitResult = await ctx.runMutation(api.rateLimits.checkAndIncrement, {
+      const rateLimitResult = await ctx.runMutation(internal.rateLimits.checkAndIncrementInternal, {
         key: clientIp,
         endpoint: "initiate",
       });
@@ -190,7 +190,7 @@ const verify = httpAction(async (ctx, request) => {
     }
 
     if (!SKIP_RATE_LIMIT) {
-      const rateLimitResult = await ctx.runMutation(api.rateLimits.checkAndIncrement, {
+      const rateLimitResult = await ctx.runMutation(internal.rateLimits.checkAndIncrementInternal, {
         key: sessionId,
         endpoint: "verify",
       });
@@ -246,7 +246,6 @@ const verify = httpAction(async (ctx, request) => {
       turnkeySubOrgId: result.subOrgId,
       email: result.email,
       did: undefined,
-      displayName: result.email.split("@")[0],
     });
 
     // Return the DID we actually hold. This used to be hardcoded null, so every

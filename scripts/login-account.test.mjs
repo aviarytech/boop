@@ -178,3 +178,20 @@ test("an existing identity cannot be reused under a different email", async () =
   await assert.rejects(handler(auth.upsertUserInternal)(ctx, { email: "stranger@example.com", turnkeySubOrgId: original.turnkeySubOrgId }), /different email/i);
   assert.equal(ctx.users[0].lastLoginAt, undefined);
 });
+
+test("new account storage defaults to a neutral name while welcome greeting stays private", async () => {
+  const ctx = context();
+  const greetings = [];
+  ctx.scheduler.runAfter = async (_delay, ref, args) => {
+    assert.equal(getFunctionName(ref), 'feedback:sendWelcomeEmail');
+    greetings.push(args);
+  };
+  await handler(auth.upsertUserInternal)(ctx, { email: EMAIL, turnkeySubOrgId: 'new-account' });
+  assert.equal(ctx.users[0].displayName, 'boop user');
+  assert.equal(ctx.users[0].email, EMAIL);
+  assert.deepEqual(greetings, [{ email: EMAIL, displayName: 'owner' }]);
+  await handler(auth.upsertUserInternal)(ctx, {
+    email: 'other@example.com', turnkeySubOrgId: 'named-account', displayName: 'Public author',
+  });
+  assert.equal(ctx.users[1].displayName, 'Public author');
+});

@@ -86,3 +86,83 @@ New OTP logins from the iOS and Android apps request a persistent session. The s
 On mobile, session restoration retries unexpected server/connection failures every five seconds while keeping the saved credentials. Private queries stay signed out and the loading state remains active until the server accepts the session. Explicit invalid-token/account rejections clear the saved login.
 
 Deploy the schema and backend before distributing updated native builds. Existing tokens retain their original expiry; users receive a persistent token on their next login in the updated app. Old native builds continue receiving 30-day sessions. This change has been validated locally with the auth boundary/provider/client and DID-log auth scripts (43 tests), frontend/backend TypeScript checks, and lint on the changed source files. Native device and live deployment checks are still needed when releasing.
+
+## Bounded #236 follow-up: public attribution and auth budgets
+
+`users.getUsersByDids` intentionally remains public for attribution. Its response
+contains only `displayName`: names equal to the account email local part and
+unnamed accounts return `null`; other stored public names are preserved. Unknown
+DIDs retain the existing shortened-DID label. The query
+never returns email or derives a fallback from email. ItemAttribution,
+ItemDetailsModal, and both ProvenanceInfo consumers read only `displayName`.
+New OTP signups no longer pass an email-derived name, and new-account storage
+uses the neutral default `boop user`. The welcome email may still use a private
+local-part greeting. Historical email-derived names are masked at public read
+time without a production data migration. Exact local-part matches are masked
+even if deliberately chosen; other public attribution names remain unchanged.
+Authenticated self-profile email and stored names remain intact, including on
+returning logins.
+
+Auth HTTP initiation and verification dispatch to
+`rateLimits.checkAndIncrementInternal`. Counter inspection and expired-record
+cleanup also have internal registrations; the old public names reject without
+reading or changing budgets, following the OTP-helper compatibility convention.
+Any trusted cleanup integration using the old public name must move to
+`cleanupExpiredInternal`. There are no cleanup/status callers in this checkout.
+Compatibility retirement still requires the deployed-client inventory above.
+The existing production-only limiting policy and fixed windows remain unchanged:
+10 initiate attempts per IP and 5 verify attempts per session per minute.
+
+Local regressions cover the HTTP new-signup path, neutral storage defaults,
+historical name masking, authenticated self-profile preservation,
+anonymous/unrelated public DID lookups, rejecting direct
+counter access, internal registration visibility, HTTP dispatch, the final allowed
+attempt, 429/Retry-After responses, and exact window expiry. HTTP tests run the
+production router branch with in-memory budget storage and stubbed OTP providers;
+they do not contact a deployed backend or prove live proxy IP-header trust.
+
+This is a bounded follow-up, not full closure of #236. The action revocation race
+between an authorization check and a later action side effect remains a separate
+follow-up; this change does not address it. Deployed-client inventory, staging
+validation, and rollout evidence remain pending. No deployment is included.
+
+Validation for this follow-up: focused auth/rate-limit boundary tests 40 passed;
+full `bun test` 311 passed; `tsc -b`, `tsc -p convex/tsconfig.json`,
+`node scripts/generate-auth-client.mjs --check`, and `vite build` passed. The
+build used checked-in Convex declarations and local tooling without deployment
+codegen or live credentials. Vite reported large chunks; the explorer-filter test
+reported a React `act(...)` warning. Generated image test artifacts were reverted.
+
+Review correction for PR #251 comment 4172648564: the original fallback removal
+still exposed signup-derived stored names. The new-account default and historical
+read-time masking above address that gap. Revalidation: 54 focused auth boundary,
+rate-limit boundary, and login-account tests passed; full `bun test` passed 314
+tests; frontend/backend TypeScript and the generated auth registry check passed.
+The existing React `act(...)` warning remains. Test-generated icon/splash changes
+were reverted. No live signup, production data migration, or deployment was run.
+
+Review correction for PR #251 comment 4172706903: masking now uses the shared
+`convex/lib/publicDisplayName.ts` helper in all three anonymous stored-name
+projections: `users.getUsersByDids`, `publication.getPublicList.list.ownerName`,
+and `publication.getPublicList.items[].createdByName`. Published-list attribution
+retains `Unknown` for masked/missing names, including contributors resolved by
+legacy DID; DID lookup retains `null` for masked names. Genuine non-email names
+remain public. The generated Convex module declaration includes the new helper;
+it adds no callable operation or authenticated-client registry entry.
+
+The Convex attribution audit searched display-name reads and user-record lookups,
+then checked registrations and return values. Raw account queries in `auth.ts`
+are internal or authenticated self reads. The HTTP name response follows verified
+OTP login. Signup storage and the internal welcome-email greeting remain private.
+DID resource/log endpoints do not project stored user names. Other account reads
+in billing, referrals, quotas, permissions, session resolution, admin/dev helpers,
+and migrations are authenticated/internal or return no display name. The new
+boundary regression checks anonymous and unrelated callers, historical owner and
+creator names, migrated legacy-DID contributors, deliberately public names, and
+unchanged stored profiles across both public attribution queries.
+
+Validation after the shared-helper correction: 55 focused auth/rate-limit/login
+boundary tests and 315 full Bun tests passed; frontend/backend TypeScript and the
+authenticated-client registry check passed. The existing React `act(...)` warning
+remains. Test-generated icons/splashes were restored. These are local handler and
+static checks, not deployed validation; the #236 limitations above still apply.

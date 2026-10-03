@@ -61,6 +61,7 @@ import type * as lib_noteConflict from "../lib/noteConflict.js";
 import type * as lib_noteBody from "../lib/noteBody.js";
 import type * as lib_observability from "../lib/observability.js";
 import type * as lib_permissions from "../lib/permissions.js";
+import type * as lib_publicDisplayName from "../lib/publicDisplayName.js";
 import type * as lib_session from "../lib/session.js";
 import type * as lib_sessionTokens from "../lib/sessionTokens.js";
 import type * as lib_turnkeyClient from "../lib/turnkeyClient.js";
@@ -154,6 +155,7 @@ declare const fullApi: ApiFromModules<{
   "lib/noteConflict": typeof lib_noteConflict;
   "lib/observability": typeof lib_observability;
   "lib/permissions": typeof lib_permissions;
+  "lib/publicDisplayName": typeof lib_publicDisplayName;
   "lib/session": typeof lib_session;
   "lib/sessionTokens": typeof lib_sessionTokens;
   "lib/turnkeyClient": typeof lib_turnkeyClient;
