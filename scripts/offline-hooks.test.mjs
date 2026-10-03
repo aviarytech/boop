@@ -100,3 +100,33 @@ test('dirty draft survives a temporary item acquiring its acknowledged server ID
     assert.equal(view.result.current.source.current, source);
   } finally { view.unmount(); cleanup(); }
 });
+
+test('observed receipts stay in query arguments and a cross-tab cache advancement fences the stale in-memory fallback', async () => {
+  const accountId = 'hook-cross-tab';
+  fixture.user = { turnkeySubOrgId: accountId, did: 'did:a' }; fixture.token = 'token-cross-tab';
+  const stale = [item()];
+  fixture.snapshots.set(`${accountId}:L1`, { items: stale, acknowledgments: [] });
+  const view = renderHook(() => useOptimisticItems('L1'));
+  try {
+    await waitFor(() => assert.equal(view.result.current.items.length, 1));
+    // Model another tab using the shared IDB connection directly: no in-process
+    // subscribeOffline notification is emitted for these writes.
+    const db = await store.getOfflineDB(accountId);
+    const operationId = 'other-tab-check';
+    const ack = { operationId, result: null, revisions: { I1: 'checked-revision' } };
+    const tx = db.transaction(['items', 'mutations'], 'readwrite');
+    await tx.objectStore('items').put({ ...item(), checked: true });
+    await tx.objectStore('mutations').add({ accountId, operationId, type: 'checkItem', payload: { itemId: 'I1', checkedAt: 1 }, expected: [], timestamp: 1, retryCount: 0, state: 'acked', listIds: ['L1'], observedListIds: ['L1'], ack });
+    await tx.done;
+    await act(async () => { window.dispatchEvent(new StorageEvent('storage', { key: 'boop-offline-change', newValue: 'nonce' })); });
+    await waitFor(() => assert.equal(view.result.current.items[0]?.checked, true));
+    assert.deepEqual(fixture.calls.at(-1).operationIds, [operationId], 'query must continue requesting the observed receipt');
+    assert.equal((await store.getCachedItemsByList(accountId, 'L1'))[0].checked, true);
+    // A genuinely newer snapshot that includes the frontier must not be frozen.
+    fixture.snapshots.set(`${accountId}:L1`, { items: [{ ...item(), checked: false, name: 'Later collaborator' }], acknowledgments: [ack] });
+    view.rerender();
+    await waitFor(() => assert.equal(view.result.current.items[0]?.name, 'Later collaborator'));
+    await waitFor(async () => assert.equal((await store.getCachedItemsByList(accountId, 'L1'))[0].name, 'Later collaborator'));
+    assert.equal(view.result.current.items[0].checked, false);
+  } finally { view.unmount(); cleanup(); }
+});

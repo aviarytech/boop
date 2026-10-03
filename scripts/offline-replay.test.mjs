@@ -324,3 +324,77 @@ test('overlapping enqueue calls retain invocation order and predecessor linkage'
   await new SyncManager().sync(f.client, f.session);
   assert.equal(f.rows.items[0].checked, false); assert.equal(f.rows.items[0].name, 'Last');
 });
+
+for (const collaboratorChanges of [false, true]) {
+  test(`dirty temp draft saved with real ID preserves its create predecessor (remote rename: ${collaboratorChanges})`, async () => {
+    const f = await replayFixture(modules);
+    await store.queueMutation(f.session.accountId, { type: 'addItem', payload: { listId: 'L1', name: 'Original', createdAt: 1, createdByDid: f.owner.user.did } });
+    const draftSource = projectItems([], await all(f), 'L1')[0];
+    await new SyncManager().sync(f.client, f.session);
+    const [create] = await all(f), realId = create.ack.result;
+    if (collaboratorChanges) await f.call('items', 'updateItem', { itemId: realId, name: 'Collaborator name' }, f.collaborator);
+    const snapshot = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [create.operationId] });
+    await store.cacheListSnapshot(f.session.accountId, 'L1', snapshot.items, snapshot.acknowledgments);
+    await store.queueMutation(f.session.accountId, { type: 'updateItem', payload: { itemId: realId, name: 'Original', priority: 'high' } }, [draftSource]);
+    assert.equal((await pending(f))[0].expected[0].predecessor, create.operationId);
+    await new SyncManager().sync(f.client, f.session);
+    if (collaboratorChanges) {
+      assert.equal(f.rows.items.find(i => i._id === realId).name, 'Collaborator name');
+      assert.equal((await pending(f)).length, 1);
+      assert.equal((await pending(f))[0].state, 'conflict');
+      assert.equal((await pending(f))[0].payload.priority, 'high');
+    } else {
+      assert.equal((await pending(f)).length, 0);
+      assert.equal(f.rows.items.find(i => i._id === realId).priority, 'high');
+    }
+  });
+}
+
+for (const type of ['checkItem', 'addItem', 'removeItem']) {
+  test(`receipt fence rejects delayed another-tab snapshots after acknowledged ${type}, while fresh collaborator snapshots advance`, async () => {
+    const f = await replayFixture(modules);
+    const stale = structuredClone(f.rows.items);
+    await store.cacheItems(f.session.accountId, stale, 'L1');
+    const payload = type === 'addItem' ? { listId: 'L1', name: 'Accepted addition', createdAt: 1, createdByDid: f.owner.user.did }
+      : type === 'checkItem' ? { itemId: 'I1', checkedAt: 1 } : { itemId: 'I1' };
+    await queue(f, type, payload);
+    await new SyncManager().sync(f.client, f.session);
+    const operationIds = (await all(f)).map(m => m.operationId);
+    const fresh = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds });
+    assert.equal(await store.cacheListSnapshot(f.session.accountId, 'L1', fresh.items, fresh.acknowledgments), true);
+    assert.equal(await store.cacheListSnapshot(f.session.accountId, 'L1', stale, []), false);
+    // An older upsert helper is also a cache writer and may not bypass the fence.
+    await store.cacheItems(f.session.accountId, stale);
+    await store.cacheItems(f.session.accountId, stale, 'L1');
+    assert.deepEqual((await store.getCachedItemsByList(f.session.accountId, 'L1')).sort((a, b) => a._id.localeCompare(b._id)), [...fresh.items].sort((a, b) => a._id.localeCompare(b._id)));
+    assert.deepEqual((await store.getCachedListSnapshot(f.session.accountId, 'L1')).operationIds, operationIds);
+    const offline = projectItems(await store.getCachedItemsByList(f.session.accountId, 'L1'), await all(f), 'L1');
+    if (type === 'checkItem') assert.equal(offline[0].checked, true);
+    if (type === 'addItem') assert.equal(offline.filter(i => i.name === 'Accepted addition').length, 1);
+    if (type === 'removeItem') assert.equal(offline.length, 0);
+    await f.call('items', 'addItem', { listId: 'L1', name: 'Later collaborator', createdAt: 2 }, f.collaborator);
+    const later = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds });
+    assert.equal(await store.cacheListSnapshot(f.session.accountId, 'L1', later.items, later.acknowledgments), true);
+    assert.ok((await store.getCachedItemsByList(f.session.accountId, 'L1')).some(i => i.name === 'Later collaborator'));
+  });
+}
+
+test('receipt frontier grows atomically and an older partial frontier cannot erase a later accepted deletion', async () => {
+  const f = await replayFixture(modules);
+  await queue(f, 'addItem', { listId: 'L1', name: 'New', createdAt: 1, createdByDid: f.owner.user.did });
+  await new SyncManager().sync(f.client, f.session);
+  const [create] = await all(f);
+  const older = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [create.operationId] });
+  await store.cacheListSnapshot(f.session.accountId, 'L1', older.items, older.acknowledgments);
+  await queue(f, 'removeItem', { itemId: create.ack.result });
+  await new SyncManager().sync(f.client, f.session);
+  const latest = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: (await all(f)).map(m => m.operationId) });
+  // Start both writer transactions without waiting: IDB serial isolation must
+  // evaluate the second writer against the frontier committed by the first.
+  const writes = await Promise.all([
+    store.cacheListSnapshot(f.session.accountId, 'L1', latest.items, latest.acknowledgments),
+    store.cacheListSnapshot(f.session.accountId, 'L1', older.items, older.acknowledgments),
+  ]);
+  assert.deepEqual(writes, [true, false]);
+  assert.ok(!(await store.getCachedItemsByList(f.session.accountId, 'L1')).some(i => i._id === create.ack.result));
+});
