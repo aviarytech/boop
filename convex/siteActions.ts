@@ -218,6 +218,7 @@ export const { public: createSiteFromUpload, internal: createSiteFromUploadInter
   },
   handler: async (ctx, args): Promise<{ siteId: string; hostname: string; url: string; did: string; scid: string }> => {
     if (!isDirectChildKey(args.bucketKey, `siteFiles/${encodeURIComponent(ctx.actor.did)}`)) throw new Error("Invalid site upload key");
+    await ctx.runQuery(internal.sites.checkSitePlan, { ownerDid: ctx.actor.did, operation: "create" });
     configureEd25519Sha512();
 
     const baseDomain = process.env.SITE_BASE_DOMAIN || process.env.WEBVH_DOMAIN || "boop.ad";
@@ -281,6 +282,7 @@ export const { public: createSiteFromUpload, internal: createSiteFromUploadInter
 
     const createdAt = Date.now();
     const record = await ctx.runMutation(internal.siteInternals.createSiteRecord, {
+      ...ctx.credentials,
       ownerDid: ctx.actor.did,
       bucketKey: args.bucketKey,
       contentType: "text/html; charset=utf-8",
@@ -318,11 +320,14 @@ export const { public: createSite, internal: createSiteInternal } = actorAction(
 
 export const migrateCustomDomainInternal = internalAction({
   args: {
+    authToken: v.optional(v.string()),
+    apiKey: v.optional(v.string()),
     ownerDid: v.string(),
     siteId: v.id("sites"),
     hostname: v.string(),
   },
   handler: async (ctx, args): Promise<{ siteId: string; hostname: string; did: string; scid: string }> => {
+    await ctx.runQuery(internal.sites.checkSitePlan, { ownerDid: args.ownerDid, operation: "customDomain" });
     configureEd25519Sha512();
 
     const encryptionSecret = process.env.SITE_KEY_ENCRYPTION_SECRET;
@@ -381,6 +386,8 @@ export const migrateCustomDomainInternal = internalAction({
 
     const updatedAt = Date.now();
     await ctx.runMutation(internal.siteInternals.applyDomainMigration, {
+      authToken: args.authToken,
+      apiKey: args.apiKey,
       siteId: args.siteId,
       hostname,
       did: migrated.did,
@@ -427,11 +434,14 @@ export const { public: requestCustomHostname, internal: requestCustomHostnameInt
       throw new Error("Site not found");
     }
 
+    await ctx.runQuery(internal.sites.checkSitePlan, { ownerDid: ctx.actor.did, operation: "customDomain" });
+
     const cfRecord = await createCustomHostname(hostname);
 
     const hostnameId: Id<"siteHostnames"> = await ctx.runMutation(
       internal.siteInternals.recordCustomHostnameRequest,
       {
+        ...ctx.credentials,
         siteId: args.siteId,
         hostname,
         cfHostnameId: cfRecord.id,
@@ -575,6 +585,7 @@ export const { public: replaceSiteFile, internal: replaceSiteFileInternal } = ac
     const result: { fileId: string } = await ctx.runMutation(
       internal.siteInternals.replaceSiteFileRecord,
       {
+        ...ctx.credentials,
         siteId: args.siteId,
         bucketKey: args.bucketKey,
         contentType,
@@ -629,6 +640,6 @@ export const { public: migrateVerifiedCustomDomain, internal: migrateVerifiedCus
     if (!record) throw new Error("Not authorized");
     const verified = await ctx.runQuery(internal.siteInternals.isVerifiedCustomHostname, { siteId: args.siteId, hostname });
     if (!verified) throw new Error("Custom hostname is not verified");
-    return ctx.runAction(internal.siteActions.migrateCustomDomainInternal, { siteId: args.siteId, hostname, ownerDid: ctx.actor.did });
+    return ctx.runAction(internal.siteActions.migrateCustomDomainInternal, { ...ctx.credentials, siteId: args.siteId, hostname, ownerDid: ctx.actor.did });
   },
 });

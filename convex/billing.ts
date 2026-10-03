@@ -1,4 +1,5 @@
 import { actorQuery } from "./lib/authenticated";
+import { PlanError } from "./lib/planError";
 /**
  * Billing module — Stripe subscription management.
  *
@@ -10,6 +11,7 @@ import { actorQuery } from "./lib/authenticated";
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 // ---------------------------------------------------------------------------
@@ -17,9 +19,9 @@ import type { Id } from "./_generated/dataModel";
 // ---------------------------------------------------------------------------
 
 export const PLANS = {
-  free: { name: "Free", maxLists: 5, maxCollaborators: 3, vcIssuance: false, templates: false, export: false },
-  pro: { name: "Pro", maxLists: Infinity, maxCollaborators: Infinity, vcIssuance: true, templates: true, export: true },
-  team: { name: "Team", maxLists: Infinity, maxCollaborators: Infinity, vcIssuance: true, templates: true, export: true },
+  free: { name: "Free", maxSites: 1, customDomains: false, maxLists: 5, maxCollaborators: 3, vcIssuance: false, templates: false, export: false },
+  pro: { name: "Pro", maxSites: 5, customDomains: true, maxLists: Infinity, maxCollaborators: Infinity, vcIssuance: true, templates: true, export: true },
+  team: { name: "Team", maxSites: 5, customDomains: true, maxLists: Infinity, maxCollaborators: Infinity, vcIssuance: true, templates: true, export: true },
 } as const;
 
 export type Plan = keyof typeof PLANS;
@@ -52,17 +54,7 @@ export const { public: getUserPlan, internal: getUserPlanAuthenticatedInternal }
   scope: "*",
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }): Promise<Plan> => {
-    const sub = await ctx.db
-      .query("subscriptions")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-    if (!sub || sub.status === "canceled" || sub.status === "past_due") {
-      // Check referral Pro credit
-      const user = await ctx.db.get(userId);
-      if (user?.referralProUntil && user.referralProUntil > Date.now()) return "pro";
-      return "free";
-    }
-    return sub.plan as Plan;
+    return getEffectivePlan(ctx, userId);
   },
 });
 
@@ -131,31 +123,24 @@ export const upsertSubscription = internalMutation({
 // Plan enforcement helper (imported by other Convex modules)
 // ---------------------------------------------------------------------------
 
-type DbCtx = {
-  db: {
-    query(table: "subscriptions"): {
-      withIndex(
-        name: "by_user",
-        fn: (q: { eq(field: "userId", val: Id<"users">): unknown }) => unknown
-      ): { first(): Promise<{ plan: string; status: string } | null> };
-    };
-  };
-};
+type DbCtx = Pick<QueryCtx, "db">;
 
 const PLAN_ORDER: Plan[] = ["free", "pro", "team"];
 
+/** One entitlement calculation for the UI and write boundaries, including referral credits. */
+export async function getEffectivePlan(ctx: DbCtx, userId: Id<"users">): Promise<Plan> {
+  const sub = await ctx.db.query("subscriptions")
+    .withIndex("by_user", q => q.eq("userId", userId)).first();
+  if (sub && (sub.status === "active" || sub.status === "trialing") && sub.plan !== "free") {
+    return sub.plan;
+  }
+  const user = await ctx.db.get(userId);
+  return user?.referralProUntil && user.referralProUntil > Date.now() ? "pro" : "free";
+}
+
 export async function requirePlan(ctx: DbCtx, userId: Id<"users">, minPlan: Plan): Promise<void> {
-  const sub = await ctx.db
-    .query("subscriptions")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .first();
-
-  const currentPlan: Plan =
-    sub && (sub.status === "active" || sub.status === "trialing")
-      ? (sub.plan as Plan)
-      : "free";
-
+  const currentPlan = await getEffectivePlan(ctx, userId);
   if (PLAN_ORDER.indexOf(currentPlan) < PLAN_ORDER.indexOf(minPlan)) {
-    throw new Error(`This feature requires the ${PLANS[minPlan].name} plan. Please upgrade at /pricing.`);
+    throw new PlanError("PLAN_REQUIRED", `This feature requires the ${PLANS[minPlan].name} plan. Please upgrade at /pricing.`);
   }
 }

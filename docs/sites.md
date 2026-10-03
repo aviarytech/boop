@@ -1,5 +1,9 @@
 # Sites
 
+Free accounts see a Pro upgrade link for custom domains on the site detail page.
+Plan errors carry structured, user-readable data, including when an entitlement
+changes during an in-flight create or domain request.
+
 Sites adds a second product surface to boop: a signed-in user can publish a single HTML file to a memorable `*.boop.ad` URL, then optionally connect their own domain without losing the site's portable identity.
 
 The feature is deliberately separate from collaborative todo lists. Lists remain private or shared app data; Sites are public, host-routed HTML documents with their own `did:webvh` log and hostname lifecycle.
@@ -12,6 +16,15 @@ The feature is deliberately separate from collaborative todo lists. Lists remain
 - Preview and copy the public site URL from the site detail page.
 - Replace the site's HTML file while preserving the same site record, hostname, DID, and SCID.
 - Start a custom-domain connection flow that registers and polls Cloudflare Custom Hostnames.
+
+## Plans and limits
+
+- Free includes 1 site on `*.boop.ad`.
+- Pro includes 5 sites and custom domains; checkout defaults to $48/year (20% off the $5 monthly price).
+- Team inherits Pro's 5 sites and custom domains **per account**, following the business plan's “Pro + team” convention. Sites are owned by accounts, so seats do not multiply or pool this quota.
+- Active/trialing subscriptions and unexpired referral Pro credits determine entitlements. Incomplete, past-due, and canceled subscriptions fall back to Free unless a referral credit applies.
+- Current and legacy owner DIDs share one quota. Creation checks the indexed owner ranges inside the site insert mutation, so concurrent creates cannot exceed the limit. Actions preflight before expensive work; internal creation and custom-domain writes recheck current entitlements. User-triggered creation, replacement, domain registration, and migration also reauthenticate at the final write, so revocation during an action cannot finalize it. Scheduled domain verification keeps its trusted internal path.
+- Downgrades never delete sites or change their HTML, DID, SCID, or hostname redirects. Existing sites (including connected domains) remain readable and replaceable even above the new quota. New sites and new domain connections/migrations require the current entitlement; a pending domain migration pauses if the owner loses Pro.
 
 ## Why Sites exist
 
@@ -76,6 +89,8 @@ See `docs/deployment-runbook.md` for deployment details and Cloudflare setup.
 Use these focused checks when changing Sites code:
 
 ```bash
+node scripts/site-plans.test.mjs
+node scripts/sites-pricing-ui.test.mjs
 node scripts/sites.test.mjs
 node scripts/cloudflare.test.mjs
 node scripts/webvh-portability-proof.mjs

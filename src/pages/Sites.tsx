@@ -5,6 +5,7 @@ import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { useToast } from "../hooks/useToast";
+import { planErrorData } from "../../convex/lib/planError";
 
 export function Sites() {
   const navigate = useNavigate();
@@ -14,6 +15,9 @@ export function Sites() {
   const generateUploadUrl = useAction(api.sites.generateSiteUploadUrl);
   const createSiteFromUpload = useAction(api.siteActions.createSiteFromUpload);
   const sites = useQuery(api.sites.listSites, did ? {} : "skip");
+
+  const sitePlan = useQuery(api.sites.getSitePlan, did ? {} : "skip");
+  const atLimit = sitePlan?.canCreate === false;
 
   const [html, setHtml] = useState("");
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -41,6 +45,8 @@ export function Sites() {
       return;
     }
 
+    if (!sitePlan || atLimit) return;
+
     setIsCreating(true);
     setError(null);
     haptic("medium");
@@ -62,7 +68,7 @@ export function Sites() {
       haptic("success");
       navigate(`/s/${result.siteId}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not make that link yet.";
+      const message = planErrorData(err)?.message ?? (err instanceof Error ? err.message : "Could not make that link yet.");
       setError(message);
       addToast(message, "error");
       haptic("error");
@@ -94,6 +100,19 @@ export function Sites() {
           </p>
         </div>
       </div>
+
+      {atLimit && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3 text-sm text-stone-800 dark:text-stone-200">
+          {sitePlan.plan === "free" ? (
+            <>
+              Your Free plan includes 1 site. Upgrade to Pro for 5 sites and custom domains — $48/year.
+              {" "}<Link to="/pricing" className="font-bold underline">Upgrade to Pro</Link>
+            </>
+          ) : (
+            <>Your {sitePlan.plan === "team" ? "Team" : "Pro"} plan includes 5 sites per account. You can still update your existing sites.</>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="rounded-2xl border border-stone-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
@@ -127,7 +146,7 @@ export function Sites() {
 
         <button
           type="submit"
-          disabled={isCreating || !html.trim()}
+          disabled={isCreating || !html.trim() || !sitePlan || atLimit}
           className="inline-flex items-center justify-center rounded-xl bg-amber-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-amber-500/25 disabled:opacity-50"
         >
           {isCreating ? "Making your link..." : "Make my link"}

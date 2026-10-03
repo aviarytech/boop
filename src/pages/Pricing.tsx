@@ -23,7 +23,7 @@ export function Pricing() {
   const { isAuthenticated, token } = useAuth();
   useCurrentUser();
   const { plan, subscription, isLoading } = useBilling();
-  const [interval, setInterval] = useState<BillingInterval>("monthly");
+  const [interval, setInterval] = useState<BillingInterval>("yearly");
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +111,7 @@ export function Pricing() {
         <div className="flex items-center justify-center gap-3 mt-6">
           <button
             onClick={() => setInterval("monthly")}
+            aria-pressed={interval === "monthly"}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
               interval === "monthly"
                 ? "bg-amber-500 text-white"
@@ -121,6 +122,7 @@ export function Pricing() {
           </button>
           <button
             onClick={() => setInterval("yearly")}
+            aria-pressed={interval === "yearly"}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
               interval === "yearly"
                 ? "bg-amber-500 text-white"
@@ -152,6 +154,7 @@ export function Pricing() {
           current={plan === "free"}
           features={[
             "Up to 5 lists",
+            "1 site on *.boop.ad",
             "Up to 3 collaborators per list",
             "Real-time sync",
             "Offline support",
@@ -180,6 +183,7 @@ export function Pricing() {
           current={plan === "pro"}
           features={[
             "Unlimited lists",
+            "5 sites + custom domains",
             "Unlimited collaborators",
             "Verifiable credentials (VC)",
             "List templates",

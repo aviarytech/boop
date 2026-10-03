@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useAction, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -27,6 +27,7 @@ export function SiteDetail() {
     api.sites.getSite,
     did && siteId ? {  siteId: siteId as Id<"sites"> } : "skip"
   );
+  const sitePlan = useQuery(api.sites.getSitePlan, did ? {} : "skip");
 
   const hostname = site?.primaryHostname?.hostname ?? "";
   const url = hostname ? `https://${hostname}` : "";
@@ -142,12 +143,18 @@ export function SiteDetail() {
               if (file) handleReplaceFile(file);
             }}
           />
-          <button
-            onClick={() => setShowDomainModal(true)}
+          {sitePlan && !sitePlan.customDomains ? <Link
+            to="/pricing"
             className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white"
           >
+            Custom domains require Pro — upgrade
+          </Link> : <button
+            onClick={() => setShowDomainModal(true)}
+            disabled={!sitePlan}
+            className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
             Connect a domain you own
-          </button>
+          </button>}
         </div>
       </div>
 
