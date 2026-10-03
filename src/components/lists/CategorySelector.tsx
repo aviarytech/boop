@@ -65,7 +65,7 @@ export function CategorySelector({
   if (isCreating) {
     return (
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           New Category
         </label>
         <input
@@ -73,7 +73,7 @@ export function CategorySelector({
           value={newCategoryName}
           onChange={(e) => setNewCategoryName(e.target.value)}
           placeholder="Category name"
-          className="w-full px-3 py-2 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="w-full px-3 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
           autoFocus
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -84,19 +84,19 @@ export function CategorySelector({
             }
           }}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         <div className="flex gap-2">
           <button
             type="button"
             onClick={handleCancelCreate}
-            className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+            className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleCreateCategory}
-            className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
+            className="px-3 py-1.5 text-sm text-white bg-amber-500 rounded-md hover:bg-amber-600"
           >
             Create
           </button>
@@ -109,7 +109,7 @@ export function CategorySelector({
     <div>
       <label
         htmlFor="category-select"
-        className="block text-sm font-medium text-gray-700 mb-1"
+        className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
       >
         Category
       </label>
@@ -118,7 +118,7 @@ export function CategorySelector({
         value={value ?? ""}
         onChange={handleSelectChange}
         disabled={disabled}
-        className="w-full px-3 py-2 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+        className="w-full px-3 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
       >
         <option value="">Uncategorized</option>
         {categories.map((category) => (

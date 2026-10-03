@@ -31,7 +31,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
       {/* Badge button */}
       <button
         onClick={() => setShowDetails(!showDetails)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-600 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
         aria-expanded={showDetails}
         aria-label="Verification details"
       >
@@ -68,18 +68,18 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
 
       {/* Details dropdown */}
       {showDetails && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-10">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">
+        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4 z-10">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
             Verification Details
           </h3>
 
           <div className="space-y-3">
             {/* DID */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                 Decentralized Identifier (DID)
               </label>
-              <code className="block text-xs bg-gray-100 p-2 rounded break-all text-gray-700">
+              <code className="block text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded break-all text-gray-700 dark:text-gray-300">
                 {did}
               </code>
             </div>
@@ -87,18 +87,18 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
             {/* Verification Method */}
             {parsedDocument && Array.isArray(parsedDocument.verificationMethod) && (
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                   Verification Method
                 </label>
-                <code className="block text-xs bg-gray-100 p-2 rounded break-all text-gray-700">
+                <code className="block text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded break-all text-gray-700 dark:text-gray-300">
                   {String((parsedDocument.verificationMethod[0] as Record<string, unknown>)?.id ?? "Unknown")}
                 </code>
               </div>
             )}
 
             {/* Explanation */}
-            <div className="pt-2 border-t border-gray-100">
-              <p className="text-xs text-gray-600">
+            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+              <p className="text-xs text-gray-600 dark:text-gray-300">
                 This list is published to a decentralized identifier (did:webvh).
                 The DID document cryptographically proves the list's authenticity
                 and ownership.
@@ -115,7 +115,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
                     // Ignore clipboard errors
                   }
                 }}
-                className="flex-1 text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                className="flex-1 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Copy DID
               </button>
@@ -132,7 +132,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                  className="flex-1 text-xs px-3 py-1.5 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  className="flex-1 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
                 >
                   Download Doc
                 </button>

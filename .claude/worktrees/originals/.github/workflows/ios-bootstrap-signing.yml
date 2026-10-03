@@ -1,0 +1,45 @@
+name: iOS Bootstrap Signing
+
+# Manually triggered. Creates or renews the App Store distribution cert and
+# provisioning profile for the current bundle id defined in ios/fastlane/Appfile,
+# encrypts them into the match certs repo, and pushes.
+#
+# Run this:
+#   - Once after changing the bundle id (or setting up a new certs repo).
+#   - Any time the existing profile/cert needs regenerating.
+#
+# Prereqs:
+#   - App ID exists in Apple Developer Portal with required capabilities
+#     (Push Notifications, Associated Domains) enabled.
+#   - Secrets configured: MATCH_PASSWORD, MATCH_GIT_URL, MATCH_GIT_BASIC_AUTHORIZATION,
+#     APP_STORE_CONNECT_API_PRIVATE_KEY, APP_STORE_CONNECT_KEY_ID,
+#     APP_STORE_CONNECT_ISSUER_ID, APPLE_TEAM_ID.
+#   - The App Store Connect API key role is Admin or App Manager.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    name: Bootstrap match signing
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Fastlane bootstrap_signing
+        working-directory: ios
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bundle exec fastlane bootstrap_signing

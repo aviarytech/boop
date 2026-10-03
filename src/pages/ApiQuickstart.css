@@ -1,14 +1,14 @@
 /* Mission Control API quickstart — shares the landing page's visual language. */
 
 .boop-quickstart {
-  --bg: #fafaf7;
-  --card: #ffffff;
-  --panel: #f4f3ee;
-  --ink: #111014;
-  --muted: #6b6a74;
-  --line: #ecebe6;
+  --bg: var(--boop-bg);
+  --card: var(--boop-card);
+  --panel: var(--boop-panel);
+  --ink: var(--boop-ink);
+  --muted: var(--boop-muted);
+  --line: var(--boop-line);
   --accent: #6b3cff;
-  --accentSoft: #ece4ff;
+  --accentSoft: var(--boop-accent-soft);
   --sans: 'Geist', 'Inter', system-ui, sans-serif;
   --rounded: 'Nunito', system-ui, sans-serif;
   --mono: 'Geist Mono', ui-monospace, monospace;
@@ -25,7 +25,7 @@
 
 .boop-quickstart .qs-wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
 
-.boop-quickstart .qs-nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: rgba(250,250,247,0.85); border-bottom: 1px solid var(--line); }
+.boop-quickstart .qs-nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 85%, transparent); border-bottom: 1px solid var(--line); }
 .boop-quickstart .qs-nav-inner { display: flex; align-items: center; justify-content: space-between; height: 60px; }
 .boop-quickstart .qs-wordmark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--rounded); font-weight: 800; font-size: 19px; letter-spacing: -0.6px; color: var(--ink); }
 .boop-quickstart .qs-wordmark:hover { text-decoration: none; }
@@ -64,3 +64,5 @@
 
 .boop-quickstart .qs-foot { border-top: 1px solid var(--line); padding: 28px 0 48px; }
 .boop-quickstart .qs-foot .qs-wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 13px; color: var(--muted); font-family: var(--mono); }
+
+.dark .boop-quickstart a:not(.qs-btn):not(.qs-wordmark) { color: var(--color-amber-300); }

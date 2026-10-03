@@ -28,7 +28,7 @@ export function SyncStatus() {
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center gap-2 text-sm"
+      className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
     >
       {/* Connection indicator dot */}
       <span
@@ -53,7 +53,7 @@ export function SyncStatus() {
               type="button"
               onClick={manualSync}
               disabled={isSyncing}
-              className="text-blue-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+              className="text-amber-600 dark:text-amber-400 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSyncing ? "Syncing..." : "Sync now"}
             </button>
@@ -67,7 +67,7 @@ export function SyncStatus() {
           <span className="text-gray-400" aria-hidden="true">
             |
           </span>
-          <span className="text-red-600" title={syncStatus.message}>
+          <span className="text-red-600 dark:text-red-400" title={syncStatus.message}>
             Sync error
           </span>
         </>

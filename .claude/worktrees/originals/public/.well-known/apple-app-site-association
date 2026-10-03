@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["8DHAG5YC38.ad.boop.app"],
+        "components": [
+          { "/": "/list/*", "comment": "Individual list view" },
+          { "/": "/join/*/*", "comment": "Join list via invite" },
+          { "/": "/public/*", "comment": "Public list view" }
+        ]
+      }
+    ]
+  }
+}

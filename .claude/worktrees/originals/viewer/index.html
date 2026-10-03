@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lisa & Ralph — Agent Conversation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #09090b;
+      --bg-panel: #0f0f12;
+      --bg-card: #18181b;
+      --border: #27272a;
+      --border-subtle: #1f1f23;
+      --text: #fafafa;
+      --text-dim: #71717a;
+      --text-muted: #52525b;
+      
+      /* Lisa - ethereal pink/violet */
+      --lisa-primary: #e879f9;
+      --lisa-secondary: #d946ef;
+      --lisa-bg: rgba(232, 121, 249, 0.08);
+      --lisa-glow: rgba(232, 121, 249, 0.2);
+      --lisa-avatar-1: #f0abfc;
+      --lisa-avatar-2: #a855f7;
+      
+      /* Ralph - warm amber/gold */
+      --ralph-primary: #fbbf24;
+      --ralph-secondary: #f59e0b;
+      --ralph-bg: rgba(251, 191, 36, 0.06);
+      --ralph-glow: rgba(251, 191, 36, 0.15);
+      --ralph-avatar-1: #fde68a;
+      --ralph-avatar-2: #d97706;
+      
+      --system: #3b82f6;
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-dark) 100%);
+    }
+    
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .avatars-header {
+      display: flex;
+      align-items: center;
+    }
+    
+    .avatar-mini {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      border: 2px solid var(--bg-dark);
+      position: relative;
+    }
+    
+    .avatar-mini.lisa {
+      background: linear-gradient(135deg, var(--lisa-avatar-1), var(--lisa-avatar-2));
+      z-index: 2;
+    }
+    
+    .avatar-mini.ralph {
+      background: linear-gradient(135deg, var(--ralph-avatar-1), var(--ralph-avatar-2));
+      margin-left: -12px;
+      z-index: 1;
+    }
+    
+    .header-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    
+    h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    h1 span.lisa { color: var(--lisa-primary); }
+    h1 span.ralph { color: var(--ralph-primary); }
+    h1 span.amp { color: var(--text-dim); font-weight: 400; }
+    
+    .header-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--error);
+      box-shadow: 0 0 8px var(--error);
+    }
+    
+    .status-dot.connected {
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: glow 2s ease-in-out infinite;
+    }
+    
+    @keyframes glow {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--success); }
+      50% { opacity: 0.7; box-shadow: 0 0 16px var(--success); }
+    }
+    
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+    
+    button {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    button:hover {
+      background: var(--border);
+      color: var(--text);
+    }
+    
+    /* Main chat area */
+    main {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      background: 
+        radial-gradient(ellipse at 20% 20%, rgba(232, 121, 249, 0.03) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(251, 191, 36, 0.03) 0%, transparent 50%),
+        var(--bg-dark);
+    }
+    
+    .chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      scroll-behavior: smooth;
+    }
+    
+    .chat::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .chat::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    .chat::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+    
+    /* Message styles */
+    .message {
+      display: flex;
+      gap: 12px;
+      max-width: 85%;
+      animation: messageIn 0.2s ease-out;
+    }
+    
+    @keyframes messageIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .message.lisa {
+      align-self: flex-start;
+    }
+    
+    .message.ralph {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    
+    .message.system {
+      align-self: center;
+      max-width: 100%;
+    }
+    
+    /* Avatars */
+    .avatar {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .avatar.lisa {
+      background: linear-gradient(135deg, var(--lisa-avatar-1), var(--lisa-avatar-2));
+      box-shadow: 0 4px 20px var(--lisa-glow);
+    }
+    
+    .avatar.ralph {
+      background: linear-gradient(135deg, var(--ralph-avatar-1), var(--ralph-avatar-2));
+      box-shadow: 0 4px 20px var(--ralph-glow);
+    }
+    
+    /* Avatar inner designs */
+    .avatar::before {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      opacity: 0.3;
+    }
+    
+    .avatar.lisa::before {
+      background: 
+        radial-gradient(circle at 30% 30%, white 0%, transparent 50%),
+        radial-gradient(circle at 70% 70%, var(--lisa-secondary) 0%, transparent 40%);
+    }
+    
+    .avatar.ralph::before {
+      background: 
+        radial-gradient(circle at 30% 30%, white 0%, transparent 50%),
+        radial-gradient(circle at 70% 70%, var(--ralph-secondary) 0%, transparent 40%);
+    }
+    
+    .avatar-letter {
+      font-weight: 700;
+      color: white;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+      position: relative;
+      z-index: 1;
+    }
+    
+    /* Message bubbles */
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 18px;
+      line-height: 1.5;
+      font-size: 14px;
+      position: relative;
+    }
+    
+    .message.lisa .bubble {
+      background: var(--lisa-bg);
+      border: 1px solid rgba(232, 121, 249, 0.15);
+      border-radius: 18px 18px 18px 4px;
+    }
+    
+    .message.ralph .bubble {
+      background: var(--ralph-bg);
+      border: 1px solid rgba(251, 191, 36, 0.12);
+      border-radius: 18px 18px 4px 18px;
+    }
+    
+    .bubble-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    
+    .bubble-name {
+      font-weight: 600;
+      font-size: 13px;
+    }
+    
+    .message.lisa .bubble-name { color: var(--lisa-primary); }
+    .message.ralph .bubble-name { color: var(--ralph-primary); }
+    
+    .bubble-content {
+      color: var(--text);
+      word-break: break-word;
+    }
+    
+    /* Tool use styling */
+    .tool-use {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 8px;
+      margin-top: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+    
+    .tool-icon {
+      font-size: 14px;
+    }
+    
+    .tool-name {
+      color: var(--text);
+      font-weight: 500;
+    }
+    
+    .tool-detail {
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 300px;
+    }
+    
+    /* System messages */
+    .system-message {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 12px 20px;
+      color: var(--text-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    
+    .system-message::before,
+    .system-message::after {
+      content: '';
+      flex: 1;
+      max-width: 100px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+    }
+    
+    .separator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      margin: 12px 0;
+    }
+    
+    .separator-line {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    
+    .separator-line::before,
+    .separator-line::after {
+      content: '';
+      width: 60px;
+      height: 1px;
+      background: linear-gradient(90deg, 
+        transparent, 
+        var(--lisa-primary) 30%, 
+        var(--ralph-primary) 70%, 
+        transparent
+      );
+      opacity: 0.3;
+    }
+    
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-dim);
+      text-align: center;
+      gap: 20px;
+    }
+    
+    .empty-avatars {
+      display: flex;
+      gap: 16px;
+    }
+    
+    .empty-avatars .avatar {
+      width: 64px;
+      height: 64px;
+      font-size: 28px;
+    }
+    
+    .empty-state h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    
+    .empty-state p {
+      max-width: 300px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    
+    code {
+      background: var(--bg-card);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: var(--text);
+    }
+    
+    /* Markdown styles in bubbles */
+    .bubble-content code {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+    }
+    
+    .bubble-content pre {
+      background: rgba(0, 0, 0, 0.35);
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin: 10px 0;
+      overflow-x: auto;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .bubble-content pre code {
+      background: none;
+      padding: 0;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    
+    .bubble-content strong {
+      font-weight: 600;
+      color: var(--text);
+    }
+    
+    .bubble-content em {
+      font-style: italic;
+      color: var(--text);
+    }
+    
+    .bubble-content h1,
+    .bubble-content h2,
+    .bubble-content h3,
+    .bubble-content h4 {
+      margin: 14px 0 8px 0;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    
+    .bubble-content h1 { font-size: 18px; }
+    .bubble-content h2 { font-size: 16px; }
+    .bubble-content h3 { font-size: 14px; }
+    .bubble-content h4 { font-size: 13px; color: var(--text-dim); }
+    
+    .bubble-content ul,
+    .bubble-content ol {
+      margin: 8px 0;
+      padding-left: 20px;
+    }
+    
+    .bubble-content li {
+      margin: 4px 0;
+      line-height: 1.5;
+    }
+    
+    .bubble-content blockquote {
+      border-left: 3px solid var(--text-muted);
+      margin: 10px 0;
+      padding: 4px 0 4px 14px;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+    
+    .bubble-content a {
+      color: var(--lisa-primary);
+      text-decoration: none;
+    }
+    
+    .bubble-content a:hover {
+      text-decoration: underline;
+    }
+    
+    .message.ralph .bubble-content a {
+      color: var(--ralph-primary);
+    }
+    
+    .bubble-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 12px 0;
+    }
+    
+    .bubble-content p {
+      margin: 8px 0;
+    }
+    
+    .bubble-content p:first-child {
+      margin-top: 0;
+    }
+    
+    .bubble-content p:last-child {
+      margin-bottom: 0;
+    }
+    
+    /* Stats bar */
+    .stats {
+      display: flex;
+      gap: 24px;
+      padding: 14px 24px;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .stat-value {
+      color: var(--text);
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .stat.lisa .stat-value { color: var(--lisa-primary); }
+    .stat.ralph .stat-value { color: var(--ralph-primary); }
+    
+    .stat-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+    }
+    
+    /* Grouped messages (consecutive from same agent) */
+    .message.grouped {
+      margin-top: -2px;
+    }
+    
+    .message.grouped .avatar {
+      visibility: hidden;
+    }
+    
+    .message.grouped.lisa .bubble {
+      border-radius: 4px 18px 18px 4px;
+    }
+    
+    .message.grouped.ralph .bubble {
+      border-radius: 18px 4px 4px 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <div class="avatars-header">
+          <div class="avatar-mini lisa">
+            <span class="avatar-letter">L</span>
+          </div>
+          <div class="avatar-mini ralph">
+            <span class="avatar-letter">R</span>
+          </div>
+        </div>
+        <div class="header-title">
+          <h1>
+            <span class="lisa">Lisa</span>
+            <span class="amp">&</span>
+            <span class="ralph">Ralph</span>
+          </h1>
+          <div class="header-subtitle">Agent Conversation Loop</div>
+        </div>
+      </div>
+      <div class="status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Connecting...</span>
+      </div>
+      <div class="controls">
+        <button onclick="toggleAutoScroll()" id="scrollBtn">Auto-scroll: ON</button>
+        <button onclick="clearOutput()">Clear</button>
+      </div>
+    </header>
+    
+    <main>
+      <div class="chat" id="output">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-avatars">
+            <div class="avatar lisa">
+              <span class="avatar-letter">L</span>
+            </div>
+            <div class="avatar ralph">
+              <span class="avatar-letter">R</span>
+            </div>
+          </div>
+          <h2>Waiting for conversation...</h2>
+          <p>Run <code>./loop.sh</code> to start the agent dialogue.</p>
+        </div>
+      </div>
+    </main>
+    
+    <div class="stats">
+      <div class="stat">
+        <span>Messages</span>
+        <span class="stat-value" id="lineCount">0</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat lisa">
+        <span>Lisa</span>
+        <span class="stat-value" id="lisaCount">0</span>
+      </div>
+      <div class="stat ralph">
+        <span>Ralph</span>
+        <span class="stat-value" id="ralphCount">0</span>
+      </div>
+      <div style="flex: 1;"></div>
+      <div class="stat lisa">
+        <span>Lisa ctx</span>
+        <span class="stat-value" id="lisaContext">—</span>
+      </div>
+      <div class="stat ralph">
+        <span>Ralph ctx</span>
+        <span class="stat-value" id="ralphContext">—</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const output = document.getElementById('output');
+    const emptyState = document.getElementById('emptyState');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const scrollBtn = document.getElementById('scrollBtn');
+    
+    let autoScroll = true;
+    let lineCount = 0;
+    let lisaCount = 0;
+    let ralphCount = 0;
+    let lastAgent = null;
+    
+    // Per-loop context tracking
+    let lisaLoop = 0;
+    let ralphLoop = 0;
+    let lisaPeakContext = 0;
+    let ralphPeakContext = 0;
+    
+    function toggleAutoScroll() {
+      autoScroll = !autoScroll;
+      scrollBtn.textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+    }
+    
+    function setAutoScroll(enabled) {
+      autoScroll = enabled;
+      scrollBtn.textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+    }
+    
+    // Disable autoscroll when user scrolls up, re-enable when they scroll to bottom
+    output.addEventListener('scroll', () => {
+      const atBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 50;
+      if (!atBottom && autoScroll) {
+        setAutoScroll(false);
+      } else if (atBottom && !autoScroll) {
+        setAutoScroll(true);
+      }
+    });
+    
+    function formatTokens(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return Math.round(n / 1000) + 'k';
+      return n.toString();
+    }
+    
+    function updateStats() {
+      document.getElementById('lineCount').textContent = lineCount;
+      document.getElementById('lisaCount').textContent = lisaCount;
+      document.getElementById('ralphCount').textContent = ralphCount;
+      document.getElementById('lisaContext').textContent = lisaLoop > 0 ? `#${lisaLoop}: ${formatTokens(lisaPeakContext)}` : '—';
+      document.getElementById('ralphContext').textContent = ralphLoop > 0 ? `#${ralphLoop}: ${formatTokens(ralphPeakContext)}` : '—';
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    function parseMarkdown(text) {
+      // Escape HTML first but preserve structure for markdown processing
+      let html = text;
+      
+      // Escape special HTML chars except in code blocks
+      const codeBlocks = [];
+      const inlineCode = [];
+      
+      // Extract code blocks (```)
+      html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`);
+        return `__CODEBLOCK_${idx}__`;
+      });
+      
+      // Extract inline code (`)
+      html = html.replace(/`([^`\n]+)`/g, (match, code) => {
+        const idx = inlineCode.length;
+        inlineCode.push(`<code>${escapeHtml(code)}</code>`);
+        return `__INLINECODE_${idx}__`;
+      });
+      
+      // Now escape HTML in the remaining text
+      html = escapeHtml(html);
+      
+      // Restore code blocks and inline code
+      codeBlocks.forEach((block, idx) => {
+        html = html.replace(`__CODEBLOCK_${idx}__`, block);
+      });
+      inlineCode.forEach((code, idx) => {
+        html = html.replace(`__INLINECODE_${idx}__`, code);
+      });
+      
+      // Headers (must be at start of line)
+      html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+      html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+      html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+      
+      // Bold and italic (order matters)
+      html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+      
+      // Links [text](url)
+      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      
+      // Blockquotes
+      html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+      
+      // Horizontal rules
+      html = html.replace(/^---$/gm, '<hr>');
+      html = html.replace(/^\*\*\*$/gm, '<hr>');
+      
+      // Unordered lists
+      html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
+      
+      // Ordered lists
+      html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+      
+      // Paragraphs - wrap lines not already in block elements
+      const lines = html.split('\n');
+      const result = [];
+      let inParagraph = false;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        
+        // Skip empty lines
+        if (!trimmed) {
+          if (inParagraph) {
+            result.push('</p>');
+            inParagraph = false;
+          }
+          continue;
+        }
+        
+        // Check if line is already a block element
+        const isBlock = /^<(h[1-4]|pre|ul|ol|li|blockquote|hr)/.test(trimmed) || 
+                        /<\/(h[1-4]|pre|ul|ol|blockquote)>$/.test(trimmed);
+        
+        if (isBlock) {
+          if (inParagraph) {
+            result.push('</p>');
+            inParagraph = false;
+          }
+          result.push(line);
+        } else {
+          if (!inParagraph) {
+            result.push('<p>' + line);
+            inParagraph = true;
+          } else {
+            result.push('<br>' + line);
+          }
+        }
+      }
+      
+      if (inParagraph) {
+        result.push('</p>');
+      }
+      
+      return result.join('\n');
+    }
+    
+    function createAvatar(agent) {
+      const avatar = document.createElement('div');
+      avatar.className = `avatar ${agent}`;
+      const letter = document.createElement('span');
+      letter.className = 'avatar-letter';
+      letter.textContent = agent === 'lisa' ? 'L' : 'R';
+      avatar.appendChild(letter);
+      return avatar;
+    }
+    
+    function createMessage(agent, content, isGrouped = false) {
+      const message = document.createElement('div');
+      message.className = `message ${agent}${isGrouped ? ' grouped' : ''}`;
+      
+      const avatar = createAvatar(agent);
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      
+      if (!isGrouped) {
+        const header = document.createElement('div');
+        header.className = 'bubble-header';
+        const name = document.createElement('span');
+        name.className = 'bubble-name';
+        name.textContent = agent === 'lisa' ? 'Lisa' : 'Ralph';
+        header.appendChild(name);
+        bubble.appendChild(header);
+      }
+      
+      const contentDiv = document.createElement('div');
+      contentDiv.className = 'bubble-content';
+      contentDiv.innerHTML = content;
+      bubble.appendChild(contentDiv);
+      
+      message.appendChild(avatar);
+      message.appendChild(bubble);
+      
+      return message;
+    }
+    
+    function createToolUse(agent, toolName, detail) {
+      const toolDiv = document.createElement('div');
+      toolDiv.className = 'tool-use';
+      toolDiv.innerHTML = `
+        <span class="tool-icon">🔧</span>
+        <span class="tool-name">${escapeHtml(toolName)}</span>
+        <span class="tool-detail">${escapeHtml(String(detail).slice(0, 80))}</span>
+      `;
+      return toolDiv;
+    }
+    
+    function createSeparator(text) {
+      const sep = document.createElement('div');
+      sep.className = 'separator';
+      sep.innerHTML = `<div class="separator-line">${escapeHtml(text)}</div>`;
+      return sep;
+    }
+    
+    function createSystemMessage(text) {
+      const msg = document.createElement('div');
+      msg.className = 'message system';
+      msg.innerHTML = `<div class="system-message">${escapeHtml(text)}</div>`;
+      return msg;
+    }
+    
+    // Parse a JSONL line and return display elements
+    function parseLine(text) {
+      if (!text.trim()) return null;
+      
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return null;
+      }
+      
+      const agent = data.agent || 'system';
+      const agentLower = agent.toLowerCase();
+      
+      // Track agent counts
+      if (agent === 'LISA') lisaCount++;
+      else if (agent === 'RALPH') ralphCount++;
+      
+      // System log messages
+      if (data.type === 'log') {
+        const msg = data.message || '';
+        if (!msg) return null;
+        
+        // Detect new loop start
+        const loopMatch = msg.match(/\[(\w+)\].*LOOP\s+(\d+)/);
+        if (loopMatch) {
+          const loopAgent = loopMatch[1].toUpperCase();
+          const loopNum = parseInt(loopMatch[2], 10);
+          if (loopAgent === 'LISA') {
+            lisaLoop = loopNum;
+            lisaPeakContext = 0;
+          } else if (loopAgent === 'RALPH') {
+            ralphLoop = loopNum;
+            ralphPeakContext = 0;
+          }
+          lastAgent = null;
+          lineCount++;
+          return createSeparator(`Loop ${loopNum} — ${loopAgent}`);
+        }
+        
+        // Skip other banner lines
+        if (msg.includes('━━━') || msg.includes('═══')) {
+          return null;
+        }
+        
+        lineCount++;
+        return createSystemMessage(msg);
+      }
+      
+      // Track peak context from assistant messages
+      if (data.type === 'assistant' && data.message?.usage) {
+        const usage = data.message.usage;
+        const contextTokens = (usage.cache_read_input_tokens || 0) + (usage.input_tokens || 0);
+        
+        if (agent === 'LISA') {
+          lisaPeakContext = Math.max(lisaPeakContext, contextTokens);
+        } else if (agent === 'RALPH') {
+          ralphPeakContext = Math.max(ralphPeakContext, contextTokens);
+        }
+        updateStats();
+      }
+      
+      // Assistant messages with text or tool_use
+      if (data.type === 'assistant' && data.message?.content) {
+        const fragment = document.createDocumentFragment();
+        let textContent = [];
+        let toolUses = [];
+        
+        for (const item of data.message.content) {
+          if (item.type === 'text' && item.text) {
+            textContent.push(item.text.trim());
+          } else if (item.type === 'tool_use' && item.name) {
+            const detail = item.input?.file_path || item.input?.command || item.input?.pattern || item.input?.description || '';
+            toolUses.push({ name: item.name, detail });
+          }
+        }
+        
+        // Combine all text content into one message
+        if (textContent.length > 0) {
+          const fullText = textContent.join('\n\n');
+          const isGrouped = lastAgent === agentLower;
+          const message = createMessage(agentLower, parseMarkdown(fullText), isGrouped);
+          
+          // Append tool uses to the bubble
+          if (toolUses.length > 0) {
+            const bubble = message.querySelector('.bubble');
+            for (const tool of toolUses) {
+              bubble.appendChild(createToolUse(agentLower, tool.name, tool.detail));
+            }
+          }
+          
+          fragment.appendChild(message);
+          lastAgent = agentLower;
+          lineCount++;
+        } else if (toolUses.length > 0) {
+          // Only tool uses, no text
+          const isGrouped = lastAgent === agentLower;
+          const toolSummary = toolUses.map(t => `${t.name}`).join(', ');
+          const message = createMessage(agentLower, `<span style="color:var(--text-muted)">Using tools...</span>`, isGrouped);
+          const bubble = message.querySelector('.bubble');
+          for (const tool of toolUses) {
+            bubble.appendChild(createToolUse(agentLower, tool.name, tool.detail));
+          }
+          fragment.appendChild(message);
+          lastAgent = agentLower;
+          lineCount++;
+        }
+        
+        return fragment.childNodes.length > 0 ? fragment : null;
+      }
+      
+      // Skip tool results and other verbose output
+      return null;
+    }
+    
+    function appendContent(content) {
+      if (emptyState.parentNode) {
+        emptyState.remove();
+      }
+      
+      const lines = content.split('\n');
+      const fragment = document.createDocumentFragment();
+      
+      for (const line of lines) {
+        if (line.trim()) {
+          const parsed = parseLine(line);
+          if (parsed) {
+            fragment.appendChild(parsed);
+          }
+        }
+      }
+      
+      output.appendChild(fragment);
+      updateStats();
+      
+      if (autoScroll) {
+        output.scrollTop = output.scrollHeight;
+      }
+    }
+    
+    async function clearOutput() {
+      await fetch('/clear');
+      output.innerHTML = '';
+      output.appendChild(emptyState);
+      lineCount = 0;
+      lisaCount = 0;
+      ralphCount = 0;
+      lisaLoop = 0;
+      ralphLoop = 0;
+      lisaPeakContext = 0;
+      ralphPeakContext = 0;
+      lastAgent = null;
+      updateStats();
+    }
+    
+    function connect() {
+      const evtSource = new EventSource('/stream');
+      
+      evtSource.onopen = () => {
+        statusDot.classList.add('connected');
+        statusText.textContent = 'Listening';
+      };
+      
+      evtSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.initial) {
+          output.innerHTML = '';
+          lineCount = 0;
+          lisaCount = 0;
+          ralphCount = 0;
+          lisaLoop = 0;
+          ralphLoop = 0;
+          lisaPeakContext = 0;
+          ralphPeakContext = 0;
+          lastAgent = null;
+        }
+        if (data.content) {
+          appendContent(data.content);
+        }
+      };
+      
+      evtSource.onerror = () => {
+        statusDot.classList.remove('connected');
+        statusText.textContent = 'Reconnecting...';
+        evtSource.close();
+        setTimeout(connect, 2000);
+      };
+    }
+    
+    connect();
+  </script>
+</body>
+</html>

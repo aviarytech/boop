@@ -32,16 +32,16 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-md p-6 max-w-md w-full text-center">
-            <h1 className="text-xl font-bold text-gray-900 mb-2">
+        <div className="min-h-screen bg-stone-50 dark:bg-gray-950 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-md w-full text-center">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
               Something went wrong
             </h1>
-            <p className="text-gray-600 mb-4">
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
               An unexpected error occurred. Please try again.
             </p>
             {this.state.error && (
-              <p className="text-sm text-red-600 bg-red-50 p-2 rounded mb-4 font-mono">
+              <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded mb-4 font-mono">
                 {this.state.error.message}
               </p>
             )}
@@ -54,7 +54,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <Link
                 to="/"
-                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300"
+                className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
                 onClick={() => this.setState({ hasError: false, error: null, eventId: null })}
               >
                 Go Home

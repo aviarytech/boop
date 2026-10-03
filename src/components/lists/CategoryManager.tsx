@@ -138,13 +138,13 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="category-dialog-title"
-        className="bg-white rounded-lg shadow-xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
+        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 id="category-dialog-title" className="text-xl font-bold text-gray-900">Manage Categories</h2>
+          <h2 id="category-dialog-title" className="text-xl font-bold text-gray-900 dark:text-gray-100">Manage Categories</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
           >
             <svg
               className="w-6 h-6"
@@ -163,14 +163,14 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-sm text-red-600 dark:text-red-400">
             {error}
           </div>
         )}
 
         {/* Create new category */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             New Category
           </label>
           <div className="flex gap-2">
@@ -179,7 +179,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
               placeholder="Category name"
-              className="flex-1 px-3 py-2 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="flex-1 px-3 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -191,7 +191,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
             <button
               onClick={handleCreateCategory}
               disabled={isCreating || !newCategoryName.trim()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add
             </button>
@@ -200,14 +200,14 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
 
         {/* Category list */}
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-gray-700">Your Categories</h3>
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Your Categories</h3>
 
           {categories.length === 0 ? (
-            <p className="text-sm text-gray-500 py-4 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
               No categories yet. Create one above.
             </p>
           ) : (
-            <ul className="divide-y divide-gray-200">
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
               {categories.map((category) => (
                 <li key={category._id} className="py-3">
                   {editingId === category._id ? (
@@ -216,7 +216,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
                         type="text"
                         value={editingName}
                         onChange={(e) => setEditingName(e.target.value)}
-                        className="flex-1 px-3 py-1.5 text-gray-900 bg-white border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 px-3 py-1.5 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
@@ -229,13 +229,13 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
                       />
                       <button
                         onClick={handleSaveEdit}
-                        className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                        className="px-3 py-1.5 text-sm text-white bg-amber-500 rounded-md hover:bg-amber-600"
                       >
                         Save
                       </button>
                       <button
                         onClick={handleCancelEdit}
-                        className="px-3 py-1.5 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+                        className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
                       >
                         Cancel
                       </button>
@@ -243,10 +243,10 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
                   ) : (
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="font-medium text-gray-900">
+                        <span className="font-medium text-gray-900 dark:text-gray-100">
                           {category.name}
                         </span>
-                        <span className="ml-2 text-sm text-gray-500">
+                        <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
                           ({getListCountForCategory(category._id)} list
                           {getListCountForCategory(category._id) === 1
                             ? ""
@@ -257,7 +257,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
                       <div className="flex gap-1">
                         <button
                           onClick={() => handleStartEdit(category)}
-                          className="p-1.5 text-gray-400 hover:text-gray-600 rounded"
+                          className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded"
                           title="Rename"
                         >
                           <svg
@@ -276,7 +276,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
                         </button>
                         <button
                           onClick={() => handleDeleteCategory(category._id)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 rounded"
+                          className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded"
                           title="Delete"
                         >
                           <svg
@@ -302,8 +302,8 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
           )}
 
           {/* Uncategorized info */}
-          <div className="pt-4 mt-4 border-t border-gray-200">
-            <div className="flex items-center justify-between text-sm text-gray-500">
+          <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
               <span>Uncategorized</span>
               <span>
                 {getUncategorizedCount()} list

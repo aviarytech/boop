@@ -1,0 +1,5 @@
+git_url(ENV["MATCH_GIT_URL"] || "https://github.com/aviarytech/certs.git")
+storage_mode("git")
+type("appstore")
+app_identifier("ad.boop.app")
+team_id("8DHAG5YC38")

@@ -1,0 +1,66 @@
+/* Mission Control API quickstart — shares the landing page's visual language. */
+
+.boop-quickstart {
+  --bg: #fafaf7;
+  --card: #ffffff;
+  --panel: #f4f3ee;
+  --ink: #111014;
+  --muted: #6b6a74;
+  --line: #ecebe6;
+  --accent: #6b3cff;
+  --accentSoft: #ece4ff;
+  --sans: 'Geist', 'Inter', system-ui, sans-serif;
+  --rounded: 'Nunito', system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+.boop-quickstart * { box-sizing: border-box; }
+.boop-quickstart a { color: var(--accent); text-decoration: none; }
+.boop-quickstart a:hover { text-decoration: underline; }
+
+.boop-quickstart .qs-wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+
+.boop-quickstart .qs-nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: rgba(250,250,247,0.85); border-bottom: 1px solid var(--line); }
+.boop-quickstart .qs-nav-inner { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.boop-quickstart .qs-wordmark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--rounded); font-weight: 800; font-size: 19px; letter-spacing: -0.6px; color: var(--ink); }
+.boop-quickstart .qs-wordmark:hover { text-decoration: none; }
+.boop-quickstart .qs-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); }
+.boop-quickstart .qs-btn { display: inline-flex; align-items: center; border-radius: 999px; padding: 9px 16px; font-size: 14px; font-weight: 600; background: var(--accent); color: #fff; }
+.boop-quickstart .qs-btn:hover { text-decoration: none; filter: brightness(1.05); }
+.boop-quickstart .qs-btn-lg { padding: 14px 26px; font-size: 15px; }
+
+.boop-quickstart .qs-main { padding: 56px 24px 40px; }
+.boop-quickstart .qs-label { font-family: var(--mono); font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 14px; }
+.boop-quickstart h1 { font-family: var(--rounded); font-weight: 800; font-size: clamp(30px, 5vw, 44px); letter-spacing: -1.2px; line-height: 1.08; margin: 0 0 18px; text-wrap: balance; }
+.boop-quickstart .qs-lede { font-size: 17px; color: var(--muted); line-height: 1.55; margin: 0 0 44px; }
+
+.boop-quickstart section { margin-bottom: 44px; }
+.boop-quickstart h2 { font-family: var(--rounded); font-weight: 700; font-size: 22px; letter-spacing: -0.4px; margin: 0 0 12px; }
+.boop-quickstart p { font-size: 15px; line-height: 1.6; color: var(--ink); margin: 0 0 14px; }
+.boop-quickstart .qs-note { font-size: 14px; color: var(--muted); }
+
+.boop-quickstart .qs-code { background: #0c0b10; color: #e8e5f2; border-radius: 14px; padding: 18px 20px; overflow-x: auto; margin: 0 0 14px; }
+.boop-quickstart .qs-code code { font-family: var(--mono); font-size: 13px; line-height: 1.6; white-space: pre; }
+
+.boop-quickstart code { font-family: var(--mono); font-size: 0.9em; }
+.boop-quickstart p code, .boop-quickstart .qs-note code, .boop-quickstart td code { background: var(--panel); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; color: var(--ink); }
+
+.boop-quickstart .qs-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.boop-quickstart .qs-table th { text-align: left; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); font-weight: 600; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
+.boop-quickstart .qs-table td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+@media (max-width: 640px) {
+  .boop-quickstart .qs-table { display: block; overflow-x: auto; }
+}
+
+.boop-quickstart .qs-cta { background: var(--accent); color: #fff; border-radius: 20px; padding: 44px 32px; text-align: center; margin: 56px 0 24px; }
+.boop-quickstart .qs-cta h2 { color: #fff; margin-bottom: 8px; }
+.boop-quickstart .qs-cta p { color: rgba(255,255,255,0.85); margin-bottom: 24px; }
+.boop-quickstart .qs-cta .qs-btn { background: #fff; color: var(--accent); }
+
+.boop-quickstart .qs-foot { border-top: 1px solid var(--line); padding: 28px 0 48px; }
+.boop-quickstart .qs-foot .qs-wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 13px; color: var(--muted); font-family: var(--mono); }

@@ -31,13 +31,13 @@ export function PublicList() {
   // Loading state
   if (publicList === undefined) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-stone-50 dark:bg-gray-950">
         <div className="container mx-auto p-4">
           <div className="animate-pulse">
-            <div className="h-8 bg-gray-200 rounded w-1/3 mb-4"></div>
+            <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3 mb-4"></div>
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-12 bg-gray-200 rounded"></div>
+                <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded"></div>
               ))}
             </div>
           </div>
@@ -49,16 +49,16 @@ export function PublicList() {
   // Not found or unpublished
   if (!publicList) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-stone-50 dark:bg-gray-950">
         <div className="container mx-auto p-4">
           <div className="text-center py-12">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
               List not found
             </h2>
-            <p className="text-gray-500 mb-4">
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
               This list may have been unpublished or doesn't exist.
             </p>
-            <Link to="/" className="text-blue-600 hover:text-blue-700">
+            <Link to="/" className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300">
               Go to home
             </Link>
           </div>
@@ -70,16 +70,16 @@ export function PublicList() {
   const { list, items, publication } = publicList;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-stone-50 dark:bg-gray-950">
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="container mx-auto p-4">
           <div className="flex items-center justify-between">
             <Link to="/" className="boop-wordmark text-[20px] hover:opacity-80 transition-opacity" aria-label="boop">
               <span className="boop-dot" aria-hidden="true" />
               <span>boop</span>
             </Link>
-            <span className="text-sm text-gray-500">Public List</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">Public List</span>
           </div>
         </div>
       </header>
@@ -89,10 +89,10 @@ export function PublicList() {
         <div className="mb-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-1">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">
                 {list.name}
               </h1>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Created by {list.ownerName}
               </p>
             </div>
@@ -104,9 +104,9 @@ export function PublicList() {
         </div>
 
         {/* Items */}
-        <div className="bg-white rounded-lg shadow divide-y divide-gray-100">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow divide-y divide-gray-100 dark:divide-gray-700">
           {items.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">
               This list is empty.
             </div>
           ) : (
@@ -119,7 +119,7 @@ export function PublicList() {
                 <div className="flex-shrink-0 pt-0.5">
                   {item.checked ? (
                     <svg
-                      className="w-5 h-5 text-green-600"
+                      className="w-5 h-5 text-green-600 dark:text-green-400"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -132,20 +132,21 @@ export function PublicList() {
                       />
                     </svg>
                   ) : (
-                    <div className="w-5 h-5 border-2 border-gray-300 rounded" />
+                    <div className="w-5 h-5 border-2 border-gray-300 dark:border-gray-600 rounded" />
                   )}
                 </div>
 
                 {/* Item content */}
                 <div className="flex-1 min-w-0">
                   <p
-                    className={`text-gray-900 ${
-                      item.checked ? "line-through text-gray-500" : ""
-                    }`}
+                    className={item.checked
+                      ? "line-through text-gray-500 dark:text-gray-400"
+                      : "text-gray-900 dark:text-gray-100"
+                    }
                   >
                     {item.name}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Added by {item.createdByName}{" "}
                     {formatRelativeTime(item.createdAt)}
                     {item.checked && item.checkedAt && (
@@ -159,11 +160,11 @@ export function PublicList() {
         </div>
 
         {/* Footer info */}
-        <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-          <h3 className="text-sm font-medium text-gray-900 mb-2">
+        <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
             About this list
           </h3>
-          <div className="text-sm text-gray-600 space-y-1">
+          <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
             <p>
               <span className="font-medium">Published:</span>{" "}
               {new Date(publication.publishedAt).toLocaleDateString()}
@@ -180,12 +181,12 @@ export function PublicList() {
 
         {/* CTA */}
         <div className="mt-6 text-center">
-          <p className="text-gray-600 mb-3">
+          <p className="text-gray-600 dark:text-gray-300 mb-3">
             Want to collaborate on shared lists?
           </p>
           <Link
             to="/login"
-            className="inline-block px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+            className="inline-block px-6 py-2 bg-amber-500 text-white rounded-lg font-medium hover:bg-amber-600"
           >
             Sign up for boop
           </Link>

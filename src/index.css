@@ -27,6 +27,7 @@
 
 /* Safe area insets for native mobile */
 :root {
+  color-scheme: light;
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
@@ -81,8 +82,24 @@
   --accent-hover: var(--amber-500);
 }
 
+/* Shared surfaces also cover pages that consume brand tokens directly. */
+:root.dark {
+  color-scheme: dark;
+  --boop-bg: #0c0b10;
+  --boop-card: #19171f;
+  --boop-panel: #24212d;
+  --boop-ink: #f1eef9;
+  --boop-muted: #b2adbf;
+  --boop-dim: #898293;
+  --boop-line: #383240;
+  --boop-accent-soft: #2a1570;
+  --boop-accent-ink: #dcceff;
+}
+
 /* Apply to the main layout */
 body {
+  background: var(--boop-bg);
+  color: var(--boop-ink);
   /* Safe area top is applied by the sticky header, not here */
   padding-bottom: var(--safe-area-bottom);
   /* Prevent overscroll bounce on iOS — keeps app feeling native */

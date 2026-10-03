@@ -123,11 +123,11 @@ export function Login({ embedded = false }: LoginProps) {
         </Link>
       )}
 
-      <div className="bg-white rounded-2xl border border-stone-200 max-w-md w-full p-8">
-        <h1 className="text-2xl font-bold text-stone-900 mb-2 text-center">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-stone-200 dark:border-gray-700 max-w-md w-full p-8">
+        <h1 className="text-2xl font-bold text-stone-900 dark:text-gray-100 mb-2 text-center">
           {step === "email" ? getGreeting() : "Check your email"}
         </h1>
-        <p className="text-stone-500 mb-6 text-center text-sm">
+        <p className="text-stone-500 dark:text-gray-400 mb-6 text-center text-sm">
           {step === "email"
             ? "Sign in with your email to get started"
             : `We sent a code to ${email}`}
@@ -137,7 +137,7 @@ export function Login({ embedded = false }: LoginProps) {
           <form onSubmit={handleEmailSubmit}>
             <label
               htmlFor="email"
-              className="block text-sm font-medium text-stone-700 mb-1"
+              className="block text-sm font-medium text-stone-700 dark:text-gray-300 mb-1"
             >
               Email address
             </label>
@@ -147,18 +147,18 @@ export function Login({ embedded = false }: LoginProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full px-4 py-3 border border-stone-200 rounded-xl text-stone-900 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              className="w-full px-4 py-3 border border-stone-200 dark:border-gray-700 rounded-xl text-stone-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
               disabled={isLoading}
               autoFocus
               autoComplete="email"
             />
 
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+            {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
             <button
               type="submit"
               disabled={isLoading || !email.trim()}
-              className="mt-4 w-full bg-amber-500 text-white py-3 px-4 rounded-full font-semibold hover:bg-amber-600 active:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="mt-4 w-full bg-amber-500 text-white py-3 px-4 rounded-full font-semibold hover:bg-amber-600 active:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isSendingCode ? "Sending code..." : "Send Code"}
             </button>
@@ -176,14 +176,14 @@ export function Login({ embedded = false }: LoginProps) {
               type="button"
               onClick={handleBackToEmail}
               disabled={isLoading}
-              className="mt-4 w-full text-stone-600 py-2 px-4 rounded-xl font-medium hover:text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
+              className="mt-4 w-full text-stone-600 dark:text-gray-300 py-2 px-4 rounded-xl font-medium hover:text-stone-900 dark:hover:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50"
             >
               Use a different email
             </button>
           </div>
         )}
 
-        <p className="mt-6 text-xs text-stone-400 text-center">
+        <p className="mt-6 text-xs text-stone-500 dark:text-gray-400 text-center">
           Your keys are securely managed by Turnkey
         </p>
       </div>

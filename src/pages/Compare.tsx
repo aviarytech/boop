@@ -113,7 +113,7 @@ const COMPETITORS: Record<string, CompetitorData> = {
 
 function CheckIcon() {
   return (
-    <svg className="w-5 h-5 text-amber-600 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-5 h-5 text-amber-600 dark:text-amber-300 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
     </svg>
   )
@@ -130,7 +130,7 @@ function XIcon() {
 function FeatureCell({ value }: { value: string | boolean }) {
   if (value === true) return <span><CheckIcon /></span>
   if (value === false) return <span><XIcon /></span>
-  return <span className="text-sm text-gray-700">{value}</span>
+  return <span className="text-sm text-gray-700 dark:text-gray-300">{value}</span>
 }
 
 export function Compare() {
@@ -170,22 +170,22 @@ export function Compare() {
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-amber-50 flex items-center justify-center">
+      <div className="min-h-screen bg-stone-50 dark:bg-gray-950 flex items-center justify-center">
         <div className="text-center">
           <div
             className="mx-auto mb-5 rounded-full"
             style={{ width: 48, height: 48, background: 'var(--boop-accent)' }}
             aria-hidden="true"
           />
-          <h1 className="text-2xl font-bold text-amber-900 mb-2">Comparison not found</h1>
-          <a href="/" className="text-amber-600 underline">Back to boop</a>
+          <h1 className="text-2xl font-bold text-stone-900 dark:text-gray-100 mb-2">Comparison not found</h1>
+          <a href="/" className="text-amber-600 dark:text-amber-300 underline">Back to boop</a>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-amber-50">
+    <div className="min-h-screen bg-stone-50 dark:bg-gray-950">
       {/* Header */}
       <header className="bg-amber-900 text-amber-50 py-8 px-4">
         <div className="max-w-4xl mx-auto">
@@ -207,13 +207,13 @@ export function Compare() {
       <main className="max-w-4xl mx-auto px-4 py-10">
         {/* Intro blurb */}
         <section className="mb-10">
-          <p className="text-amber-800 text-lg leading-relaxed mb-2">{data.competitorWeakness}</p>
-          <p className="text-amber-700 font-semibold">{data.competitorHeadline}</p>
+          <p className="text-stone-700 dark:text-gray-300 text-lg leading-relaxed mb-2">{data.competitorWeakness}</p>
+          <p className="text-amber-700 dark:text-amber-300 font-semibold">{data.competitorHeadline}</p>
         </section>
 
         {/* Comparison table */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-amber-900 mb-4">Feature Comparison</h2>
+          <h2 className="text-2xl font-bold text-stone-900 dark:text-gray-100 mb-4">Feature Comparison</h2>
           <div className="overflow-x-auto rounded-xl border border-amber-200 shadow-sm">
             <table className="w-full text-sm">
               <thead>
@@ -236,9 +236,9 @@ export function Compare() {
                 {data.features.map((feature, i) => (
                   <tr
                     key={feature.name}
-                    className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50'}
+                    className={i % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-stone-50 dark:bg-gray-900'}
                   >
-                    <td className="px-4 py-3 text-gray-800 font-medium">{feature.name}</td>
+                    <td className="px-4 py-3 text-gray-800 dark:text-gray-100 font-medium">{feature.name}</td>
                     <td className="px-4 py-3 text-center">
                       <FeatureCell value={feature.poo} />
                     </td>
@@ -278,7 +278,7 @@ export function Compare() {
 
         {/* Other comparisons */}
         <section className="mt-12">
-          <h3 className="text-lg font-bold text-amber-900 mb-4">More comparisons</h3>
+          <h3 className="text-lg font-bold text-stone-900 dark:text-gray-100 mb-4">More comparisons</h3>
           <div className="flex flex-wrap gap-3">
             {Object.values(COMPETITORS)
               .filter(c => c.slug !== data.slug)
@@ -286,7 +286,7 @@ export function Compare() {
                 <a
                   key={c.slug}
                   href={`/compare/${c.slug}`}
-                  className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 font-medium rounded-lg transition-colors text-sm border border-amber-200"
+                  className="px-4 py-2 bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-medium rounded-lg transition-colors text-sm border border-amber-200"
                 >
                   boop vs {c.name} &rarr;
                 </a>
@@ -295,18 +295,18 @@ export function Compare() {
         </section>
       </main>
 
-      <footer className="border-t border-amber-200 py-6 px-4 text-center text-amber-600 text-sm mt-4">
+      <footer className="border-t border-amber-200 py-6 px-4 text-center text-amber-600 dark:text-amber-300 text-sm mt-4">
         <p>
           <a href="/" className="boop-wordmark hover:opacity-80 transition-opacity" aria-label="boop">
             <span className="boop-dot" aria-hidden="true" style={{ width: 10, height: 10 }} />
             <span>boop</span>
           </a>
           {' · '}
-          <a href="/pricing" className="hover:text-amber-900 transition-colors">Pricing</a>
+          <a href="/pricing" className="hover:text-amber-900 dark:hover:text-amber-100 transition-colors">Pricing</a>
           {' · '}
-          <a href="/privacy" className="hover:text-amber-900 transition-colors">Privacy</a>
+          <a href="/privacy" className="hover:text-amber-900 dark:hover:text-amber-100 transition-colors">Privacy</a>
           {' · '}
-          <a href="/terms" className="hover:text-amber-900 transition-colors">Terms</a>
+          <a href="/terms" className="hover:text-amber-900 dark:hover:text-amber-100 transition-colors">Terms</a>
         </p>
       </footer>
     </div>

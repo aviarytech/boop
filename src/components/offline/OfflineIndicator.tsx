@@ -31,7 +31,7 @@ export function OfflineIndicator() {
   if (isOnline && syncStatus.status === 'syncing') {
     return (
       <div className="fixed top-0 left-0 right-0 z-50 safe-area-top">
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-4 py-2.5 text-center text-sm font-medium shadow-lg">
+        <div className="bg-amber-500 text-white px-4 py-2.5 text-center text-sm font-medium shadow-lg">
           <div className="flex items-center justify-center gap-2">
             <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

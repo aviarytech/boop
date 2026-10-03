@@ -138,7 +138,7 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-3 text-center">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">
         Verification code
       </label>
 
@@ -157,24 +157,24 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
             onKeyDown={(e) => handleKeyDown(index, e)}
             onPaste={handlePaste}
             disabled={isLoading}
-            className="w-12 h-14 text-center text-2xl font-semibold text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-12 h-14 text-center text-2xl font-semibold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={`Digit ${index + 1}`}
           />
         ))}
       </div>
 
       {error && (
-        <p className="mt-3 text-sm text-red-600 text-center">{error}</p>
+        <p className="mt-3 text-sm text-red-600 dark:text-red-400 text-center">{error}</p>
       )}
 
       {isLoading && (
-        <p className="mt-3 text-sm text-gray-500 text-center">Verifying...</p>
+        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400 text-center">Verifying...</p>
       )}
 
       {onResend && (
         <div className="mt-4 text-center">
           {resendCooldown > 0 ? (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Resend code in {resendCooldown}s
             </p>
           ) : (
@@ -182,7 +182,7 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
               type="button"
               onClick={handleResend}
               disabled={isLoading}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+              className="text-sm text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-medium disabled:opacity-50"
             >
               Resend code
             </button>
