@@ -57,6 +57,8 @@ export const authenticatedOperations = new Set([
   api.items.getItemForSync,
   api.items.getItemsWithDueDates,
   api.items.getListItems,
+  api.items.getListItemsForReplay,
+  api.items.getOfflineAccount,
   api.items.getSubItems,
   api.items.promoteItem,
   api.items.removeItem,

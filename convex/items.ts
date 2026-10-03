@@ -1,3 +1,4 @@
+import { getReplaySequence } from "./lib/replay";
 import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
@@ -119,7 +120,8 @@ function createItemCompletionVC(
  * Add an item to a list.
  * Supports legacy DID for migrated users.
  */
-export const { public: addItem, internal: addItemInternal } = actorMutation({
+export const { public: addItem, internal: addItemInternal, replay: addItemReplay } = actorMutation({
+  offlineOperation: "addItem",
   resources: args => ({ lists: [args.listId], items: [args.parentId] }),
   scope: "items:write",
   args: {
@@ -237,7 +239,8 @@ export const { public: addItem, internal: addItemInternal } = actorMutation({
  * Update an item's details (name, description, due date, url, recurrence, priority).
  * Supports legacy DID for migrated users.
  */
-export const { public: updateItem, internal: updateItemInternal } = actorMutation({
+export const { public: updateItem, internal: updateItemInternal, replay: updateItemReplay } = actorMutation({
+  offlineOperation: "updateItem",
   resources: args => ({ items: [args.itemId] }),
   scope: "items:write",
   args: {
@@ -339,7 +342,8 @@ function calculateNextDueDate(
  * Supports legacy DID for migrated users.
  * If the item has recurrence settings, creates a new unchecked copy with the next due date.
  */
-export const { public: checkItem, internal: checkItemInternal } = actorMutation({
+export const { public: checkItem, internal: checkItemInternal, replay: checkItemReplay } = actorMutation({
+  offlineOperation: "checkItem",
   resources: args => ({ items: [args.itemId] }),
   scope: "items:write",
   args: {
@@ -448,7 +452,8 @@ export const { public: checkItem, internal: checkItemInternal } = actorMutation(
  * Uncheck an item.
  * Supports legacy DID for migrated users.
  */
-export const { public: uncheckItem, internal: uncheckItemInternal } = actorMutation({
+export const { public: uncheckItem, internal: uncheckItemInternal, replay: uncheckItemReplay } = actorMutation({
+  offlineOperation: "uncheckItem",
   resources: args => ({ items: [args.itemId] }),
   scope: "items:write",
   args: {
@@ -484,7 +489,8 @@ export const { public: uncheckItem, internal: uncheckItemInternal } = actorMutat
  * Remove an item from a list.
  * Supports legacy DID for migrated users.
  */
-export const { public: removeItem, internal: removeItemInternal } = actorMutation({
+export const { public: removeItem, internal: removeItemInternal, replay: removeItemReplay } = actorMutation({
+  offlineOperation: "removeItem",
   resources: args => ({ items: [args.itemId] }),
   scope: "items:write",
   args: {
@@ -538,7 +544,8 @@ export const { public: getListItems, internal: getListItemsInternal } = actorQue
  * Takes the full ordered list of item IDs and updates their order values.
  * Supports legacy DID for migrated users.
  */
-export const { public: reorderItems, internal: reorderItemsInternal } = actorMutation({
+export const { public: reorderItems, internal: reorderItemsInternal, replay: reorderItemsReplay } = actorMutation({
+  offlineOperation: "reorderItem",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -651,7 +658,8 @@ export const { public: getSubItems, internal: getSubItemsInternal } = actorQuery
  * Batch check multiple items at once.
  * Handles recurring items by creating new copies with next due dates.
  */
-export const { public: batchCheckItems, internal: batchCheckItemsInternal } = actorMutation({
+export const { public: batchCheckItems, internal: batchCheckItemsInternal, replay: batchCheckItemsReplay } = actorMutation({
+  offlineOperation: "batchCheckItems",
   resources: args => ({ items: [...args.itemIds] }),
   scope: "items:write",
   args: {
@@ -730,7 +738,8 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal } = ac
 /**
  * Batch uncheck multiple items at once.
  */
-export const { public: batchUncheckItems, internal: batchUncheckItemsInternal } = actorMutation({
+export const { public: batchUncheckItems, internal: batchUncheckItemsInternal, replay: batchUncheckItemsReplay } = actorMutation({
+  offlineOperation: "batchUncheckItems",
   resources: args => ({ items: [...args.itemIds] }),
   scope: "items:write",
   args: {
@@ -765,7 +774,8 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal } 
 /**
  * Batch delete multiple items at once.
  */
-export const { public: batchDeleteItems, internal: batchDeleteItemsInternal } = actorMutation({
+export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, replay: batchDeleteItemsReplay } = actorMutation({
+  offlineOperation: "batchDeleteItems",
   resources: args => ({ items: [...args.itemIds] }),
   scope: "items:write",
   args: {
@@ -996,4 +1006,28 @@ export const { public: demoteItem, internal: demoteItemInternal } = actorMutatio
       updatedAt: Date.now(),
     });
   },
+});
+
+/** Items and receipts share one reactive snapshot. Seeing a receipt here proves
+ * the snapshot includes its write (or a later collaborator edit), so the client
+ * can retire exactly that overlay without comparing values or timestamps. */
+export const { public: getListItemsForReplay } = actorQuery({
+  resources: args => ({ lists: [args.listId] }), scope: "items:read",
+  args: { listId: v.id("lists"), operationIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const items = await ctx.db.query("items").withIndex("by_list", q => q.eq("listId", args.listId)).collect();
+    const acknowledgments = [];
+    if (args.operationIds.length > 128) throw new Error("Too many replay receipts requested");
+    for (const operationId of args.operationIds) {
+      const receipt = await ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", ctx.actor.userId).eq("operationId", operationId)).unique();
+      if (receipt) acknowledgments.push({ operationId, result: receipt.result, revisions: receipt.revisions, ...(receipt.sequence !== undefined ? { sequence: receipt.sequence } : {}) });
+    }
+    return { items: items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)), acknowledgments, sequence: (await getReplaySequence(ctx, ctx.actor.userId)).sequence };
+  },
+});
+
+/** Verified identity for a deliberate export of identifiable legacy local work. */
+export const { public: getOfflineAccount } = actorQuery({
+  resources: () => ({}), scope: "items:read", args: {},
+  handler: async ctx => ({ accountId: ctx.actor.turnkeySubOrgId, did: ctx.actor.did, legacyDid: ctx.actor.legacyDid }),
 });

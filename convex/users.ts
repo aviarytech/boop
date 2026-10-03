@@ -1,3 +1,4 @@
+import { publicDisplayName } from "./lib/publicDisplayName";
 import { canUserViewList } from "./lib/permissions";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
@@ -108,20 +109,23 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     if (await drain(ctx.db.query(table).withIndex("by_user", q => q.eq("userId", userId)).take(DELETE_BATCH_SIZE))) return false;
   }
   if (user.email && await drain(ctx.db.query("authSessions").withIndex("by_email", q => q.eq("email", user.email!)).take(DELETE_BATCH_SIZE))) return false;
+  // Receipts live for the account lifetime so old lost-response retries remain safe.
+  if (await drain(ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("replaySequences").withIndex("by_account", q => q.eq("accountId", userId)).take(DELETE_BATCH_SIZE))) return false;
   await ctx.db.delete(userId);
   return true;
 }
 
 /**
  * Look up display names for a list of DIDs.
- * Returns a map of DID -> { displayName, email }.
+ * Returns public attribution names only; never derive names from private email.
  */
 export const getUsersByDids = query({
   args: {
     dids: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const result: Record<string, { displayName: string | null; email: string | null }> = {};
+    const result: Record<string, { displayName: string | null }> = {};
 
     for (const did of args.dids) {
       // Look up user by their DID
@@ -132,8 +136,7 @@ export const getUsersByDids = query({
 
       if (user) {
         result[did] = {
-          displayName: user.displayName ?? user.email?.split('@')[0] ?? null,
-          email: user.email ?? null,
+          displayName: publicDisplayName(user),
         };
       } else {
         // Extract a short name from DID for display
@@ -142,7 +145,6 @@ export const getUsersByDids = query({
           : did.slice(0, 8);
         result[did] = {
           displayName: shortName,
-          email: null,
         };
       }
     }

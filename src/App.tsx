@@ -5,6 +5,7 @@ import { useSettings } from './hooks/useSettings'
 import { AuthGuard } from './components/auth/AuthGuard'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ProfileBadge } from './components/ProfileBadge'
+import { OfflineRecovery } from './components/offline/OfflineRecovery'
 import { OfflineIndicator } from './components/offline/OfflineIndicator'
 import { ToastContainer } from './components/notifications/Toast'
 import { Settings } from './components/Settings'
@@ -262,6 +263,7 @@ function App() {
             element={
               <AppLockGuard>
                 <OfflineIndicator />
+                <OfflineRecovery />
                 <Outlet />
                 <ToastContainer />
               </AppLockGuard>

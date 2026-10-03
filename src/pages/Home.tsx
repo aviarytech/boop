@@ -54,7 +54,7 @@ export function Home() {
   const { isPro } = useBilling();
   const { streak } = useStreaks(did ?? undefined);
   const { categories, isLoading: categoriesLoading } = useCategories();
-  const { isOnline } = useOffline();
+  const { isOnline, accountId } = useOffline();
   const { listSort, haptic } = useSettings();
   const [searchParams] = useSearchParams();
   
@@ -67,7 +67,8 @@ export function Home() {
   const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(isOnboardingDone);
-  const [cachedLists, setCachedLists] = useState<OfflineList[]>([]);
+  const [cache, setCache] = useState<{ accountId: string; lists: OfflineList[] }>({ accountId: "", lists: [] });
+  const cachedLists = cache.accountId === accountId ? cache.lists : [];
   const [searchQuery, setSearchQuery] = useState("");
 
   // 2-step onboarding state
@@ -91,28 +92,16 @@ export function Home() {
     did ? {} : "skip"
   );
 
-  // Cache lists when online and data is available
   useEffect(() => {
-    if (serverLists && isOnline) {
-      const listsToCache = serverLists.map((list) => ({
-        _id: list._id,
-        assetDid: list.assetDid,
-        name: list.name,
-        ownerDid: list.ownerDid,
-        categoryId: list.categoryId,
-        createdAt: list.createdAt,
-        kind: list.kind,
-      }));
-      cacheAllLists(listsToCache);
-    }
-  }, [serverLists, isOnline]);
-
-  // Load cached lists when offline
+    if (serverLists && isOnline && accountId) void cacheAllLists(accountId, serverLists);
+  }, [serverLists, isOnline, accountId]);
   useEffect(() => {
-    if (!isOnline && !serverLists) {
-      getAllCachedLists().then(setCachedLists);
-    }
-  }, [isOnline, serverLists]);
+    let active = true;
+    if (!isOnline && !serverLists) void getAllCachedLists(accountId).then(lists => {
+      if (active) setCache({ accountId, lists });
+    });
+    return () => { active = false; };
+  }, [isOnline, serverLists, accountId]);
 
   // Step 1: auto-create "Getting Started" demo list for new users
   useEffect(() => {

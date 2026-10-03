@@ -3,10 +3,10 @@
  *
  * Phase 9.2: Rate limiting for /auth/initiate and /auth/verify endpoints.
  *
- * Uses a sliding window approach with Convex database storage (serverless-compatible).
+ * Uses a fixed window approach with Convex database storage (serverless-compatible).
  */
 
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 // Rate limit configuration
@@ -29,7 +29,7 @@ export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
  * Returns { allowed: true } if within limits, or { allowed: false, retryAfterMs }
  * if rate limited.
  */
-export const checkAndIncrement = mutation({
+export const checkAndIncrementInternal = internalMutation({
   args: {
     key: v.string(),
     endpoint: v.union(v.literal("initiate"), v.literal("verify")),
@@ -108,7 +108,7 @@ export const checkAndIncrement = mutation({
  *
  * Useful for checking limits before expensive operations.
  */
-export const checkStatus = query({
+export const checkStatusInternal = internalQuery({
   args: {
     key: v.string(),
     endpoint: v.union(v.literal("initiate"), v.literal("verify")),
@@ -178,7 +178,7 @@ export const clearAll = internalMutation({
  *
  * Run periodically to prevent table bloat.
  */
-export const cleanupExpired = mutation({
+export const cleanupExpiredInternal = internalMutation({
   args: {},
   returns: v.number(),
   handler: async (ctx) => {
@@ -199,3 +199,16 @@ export const cleanupExpired = mutation({
     return deleted;
   },
 });
+
+// Retain compatibility names during rollout, but never let direct clients read
+// or mutate auth budgets. Only trusted HTTP dispatch chooses the budget key.
+const budgetArgs = {
+  key: v.string(),
+  endpoint: v.union(v.literal("initiate"), v.literal("verify")),
+};
+const rejectDirectAccess = async (): Promise<never> => {
+  throw new Error("Authentication required: use the HTTP login endpoints");
+};
+export const checkAndIncrement = mutation({ args: budgetArgs, handler: rejectDirectAccess });
+export const checkStatus = query({ args: budgetArgs, handler: rejectDirectAccess });
+export const cleanupExpired = mutation({ args: {}, handler: rejectDirectAccess });

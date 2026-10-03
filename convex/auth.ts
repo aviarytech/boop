@@ -74,7 +74,7 @@ export const upsertUserInternal = internalMutation({
     }
 
     // Create new user (DID will be set client-side via /api/user/updateDID)
-    const displayName = args.displayName ?? args.email.split("@")[0];
+    const displayName = args.displayName ?? "boop user";
     const newUserId = await ctx.db.insert("users", {
       turnkeySubOrgId: args.turnkeySubOrgId,
       email: args.email,
@@ -87,7 +87,7 @@ export const upsertUserInternal = internalMutation({
     // Send welcome email on signup (fire-and-forget, silently skips if no RESEND_API_KEY)
     await ctx.scheduler.runAfter(0, internal.feedback.sendWelcomeEmail, {
       email: args.email,
-      displayName,
+      displayName: args.displayName ?? args.email.split("@")[0],
     });
 
     return newUserId;

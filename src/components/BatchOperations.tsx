@@ -3,12 +3,9 @@
  */
 
 import { useState } from "react";
-import { useMutation } from "../lib/authenticatedConvex";
-import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
 import { useOffline } from "../hooks/useOffline";
-import { queueMutation } from "../lib/offline";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface BatchOperationsProps {
@@ -25,13 +22,9 @@ export function BatchOperations({
   legacyDid,
 }: BatchOperationsProps) {
   const { haptic } = useSettings();
-  const { isOnline } = useOffline();
+  const { queueMutation } = useOffline();
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  const batchCheck = useMutation(api.items.batchCheckItems);
-  const batchUncheck = useMutation(api.items.batchUncheckItems);
-  const batchDelete = useMutation(api.items.batchDeleteItems);
 
   const count = selectedIds.size;
 
@@ -46,16 +39,12 @@ export function BatchOperations({
         legacyDid,
       };
       
-      if (isOnline) {
-        await batchCheck(payload);
-      } else {
-        await queueMutation({
-          type: "batchCheckItems",
-          payload,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
-      }
+      await queueMutation({
+        type: "batchCheckItems",
+        payload,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
       
       haptic("success");
       onClearSelection();
@@ -78,16 +67,12 @@ export function BatchOperations({
         legacyDid,
       };
       
-      if (isOnline) {
-        await batchUncheck(payload);
-      } else {
-        await queueMutation({
-          type: "batchUncheckItems",
-          payload,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
-      }
+      await queueMutation({
+        type: "batchUncheckItems",
+        payload,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
       
       haptic("success");
       onClearSelection();
@@ -110,16 +95,12 @@ export function BatchOperations({
         legacyDid,
       };
       
-      if (isOnline) {
-        await batchDelete(payload);
-      } else {
-        await queueMutation({
-          type: "batchDeleteItems",
-          payload,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
-      }
+      await queueMutation({
+        type: "batchDeleteItems",
+        payload,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
       
       haptic("success");
       onClearSelection();

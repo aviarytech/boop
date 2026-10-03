@@ -9,6 +9,14 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  replaySequences: defineTable({
+    accountId: v.id("users"), sequence: v.number(),
+  }).index("by_account", ["accountId"]),
+  offlineReceipts: defineTable({
+    accountId: v.id("users"), operationId: v.string(), fingerprint: v.string(),
+    sequence: v.optional(v.number()),
+    result: v.any(), revisions: v.record(v.string(), v.string()),
+  }).index("by_account_operation", ["accountId", "operationId"]),
   accessSessions: defineTable({
     tokenHash: v.string(),
     subject: v.string(),
@@ -54,6 +62,7 @@ export default defineSchema({
 
   // Users table - for display name lookup by DID
   users: defineTable({
+    replaySequence: v.optional(v.number()), // Legacy read-only migration floor; new counters live in replaySequences
     deletionRequestedAt: v.optional(v.number()),
     deletionDids: v.optional(v.array(v.string())),
     did: v.optional(v.string()), // did:webvh:... created client-side (null until first login completes)
