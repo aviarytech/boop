@@ -4,8 +4,9 @@
  * Supports notes, due dates, URLs/links, and recurrence settings.
  */
 
+import { useItemDetailsDraft } from "../hooks/useItemDetailsDraft";
 import { useState, useEffect, useMemo } from "react";
-import { useMutation, useQuery } from "../lib/authenticatedConvex";
+import { useQuery } from "../lib/authenticatedConvex";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -14,7 +15,6 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
 import { useOffline } from "../hooks/useOffline";
 import { useCategories } from "../hooks/useCategories";
-import { queueMutation } from "../lib/offline";
 import { AISLES, classifyItem } from "../lib/groceryAisles";
 import type { GroceryAisle } from "../lib/groceryAisles";
 import { TagSelector } from "./TagSelector";
@@ -51,30 +51,15 @@ export function ItemDetailsModal({
   onClose,
 }: ItemDetailsModalProps) {
   const { haptic } = useSettings();
-  const { isOnline } = useOffline();
-  const updateItem = useMutation(api.items.updateItem);
+  const { queueMutation } = useOffline();
   const navigate = useNavigate();
+  // Queued creates have no server document yet, even during reconnect.
+  const hasServerItem = !item._id.startsWith("temp-");
 
-  const [name, setName] = useState(item.name);
-  const [description, setDescription] = useState(item.description ?? "");
-  const [url, setUrl] = useState(item.url ?? "");
-  const [dueDate, setDueDate] = useState(
-    item.dueDate ? new Date(item.dueDate).toISOString().split("T")[0] : ""
-  );
-  const [hasRecurrence, setHasRecurrence] = useState(!!item.recurrence);
-  const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>(
-    item.recurrence?.frequency ?? "daily"
-  );
-  const [recurrenceInterval, setRecurrenceInterval] = useState(
-    item.recurrence?.interval ?? 1
-  );
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState(
-    item.recurrence?.endDate ? new Date(item.recurrence.endDate).toISOString().split("T")[0] : ""
-  );
-  const [priority, setPriority] = useState<Priority>(item.priority ?? "");
-  const [selectedCategory, setSelectedCategory] = useState(item.groceryAisle ?? "");
-  const itemAssigneeDid = (item as Doc<"items"> & { assigneeDid?: string }).assigneeDid;
-  const [assigneeDid, setAssigneeDid] = useState(itemAssigneeDid ?? "");
+  const { draft, set: setDraft, source: draftSource } = useItemDetailsDraft(item);
+  const { name, description, url, dueDate, hasRecurrence, recurrenceFrequency,
+    recurrenceInterval, recurrenceEndDate, priority, selectedCategory, assigneeDid } = draft;
+  const itemAssigneeDid = item.assigneeDid;
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -91,10 +76,7 @@ export function ItemDetailsModal({
   const list = useQuery(api.lists.getList, { listId: item.listId });
   const { categories } = useCategories();
 
-  const comments = useQuery(api.comments.getItemComments, {
-    itemId: item._id,
-
-  });
+  const comments = useQuery(api.comments.getItemComments, hasServerItem ? { itemId: item._id } : "skip");
 
   const participantDids = useMemo(() => {
     const dids = new Set<string>([userDid, item.createdByDid]);
@@ -135,19 +117,7 @@ export function ItemDetailsModal({
   const effectiveCategory = selectedCategory || autoCategory;
 
   // Reset state when item changes
-  useEffect(() => {
-    setName(item.name);
-    setDescription(item.description ?? "");
-    setUrl(item.url ?? "");
-    setDueDate(item.dueDate ? new Date(item.dueDate).toISOString().split("T")[0] : "");
-    setHasRecurrence(!!item.recurrence);
-    setRecurrenceFrequency(item.recurrence?.frequency ?? "daily");
-    setRecurrenceInterval(item.recurrence?.interval ?? 1);
-    setRecurrenceEndDate(item.recurrence?.endDate ? new Date(item.recurrence.endDate).toISOString().split("T")[0] : "");
-    setPriority(item.priority ?? "");
-    setSelectedCategory(item.groceryAisle ?? "");
-    setAssigneeDid(itemAssigneeDid ?? "");
-  }, [item]);
+
 
   const handleSave = async () => {
     if (!canEdit) return;
@@ -182,16 +152,12 @@ export function ItemDetailsModal({
         clearGroceryAisle: !selectedCategory && !!item.groceryAisle,
       };
       
-      if (isOnline) {
-        await updateItem(payload as any);
-      } else {
-        await queueMutation({
-          type: "updateItem",
-          payload,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
-      }
+      await queueMutation({
+        type: "updateItem",
+        payload,
+        timestamp: Date.now(),
+        retryCount: 0,
+      }, [draftSource.current]);
       
       haptic("success");
       onClose();
@@ -256,7 +222,7 @@ export function ItemDetailsModal({
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setDraft("name", e.target.value)}
             disabled={!canEdit}
             className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           />
@@ -270,6 +236,7 @@ export function ItemDetailsModal({
           {canEdit ? (
             <button
               type="button"
+              disabled={!hasServerItem}
               onClick={() => { haptic("light"); navigate(`/note/${item._id}`); }}
               className="w-full text-left px-3 py-2 min-h-[3.5rem] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
@@ -298,7 +265,7 @@ export function ItemDetailsModal({
           <input
             type="url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => setDraft("url", e.target.value)}
             disabled={!canEdit}
             placeholder={canEdit ? "https://..." : "No link"}
             className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
@@ -312,7 +279,7 @@ export function ItemDetailsModal({
           </label>
           <select
             value={assigneeDid}
-            onChange={(e) => setAssigneeDid(e.target.value)}
+            onChange={(e) => setDraft("assigneeDid", e.target.value)}
             disabled={!canEdit}
             className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           >
@@ -374,7 +341,7 @@ export function ItemDetailsModal({
               <button
                 key={p || "none"}
                 type="button"
-                onClick={() => canEdit && setPriority(p)}
+                onClick={() => canEdit && setDraft("priority", p)}
                 disabled={!canEdit}
                 className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
                   priority === p
@@ -399,7 +366,7 @@ export function ItemDetailsModal({
             {/* "Auto" chip - clears override */}
             <button
               type="button"
-              onClick={() => canEdit && setSelectedCategory("")}
+              onClick={() => canEdit && setDraft("selectedCategory", "")}
               disabled={!canEdit}
               className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
                 !selectedCategory
@@ -413,7 +380,7 @@ export function ItemDetailsModal({
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => canEdit && setSelectedCategory(cat.id)}
+                onClick={() => canEdit && setDraft("selectedCategory", cat.id)}
                 disabled={!canEdit}
                 className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
                   selectedCategory === cat.id
@@ -436,7 +403,7 @@ export function ItemDetailsModal({
           </label>
           <NaturalDateInput
             value={dueDate}
-            onChange={setDueDate}
+            onChange={value => setDraft("dueDate", value)}
             disabled={!canEdit}
           />
         </div>
@@ -447,7 +414,7 @@ export function ItemDetailsModal({
             <input
               type="checkbox"
               checked={hasRecurrence}
-              onChange={(e) => setHasRecurrence(e.target.checked)}
+              onChange={(e) => setDraft("hasRecurrence", e.target.checked)}
               disabled={!canEdit}
               className="rounded border-gray-300 dark:border-gray-600 text-amber-500 focus:ring-amber-500"
             />
@@ -463,13 +430,13 @@ export function ItemDetailsModal({
                   min={1}
                   max={99}
                   value={recurrenceInterval}
-                  onChange={(e) => setRecurrenceInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={(e) => setDraft("recurrenceInterval", Math.max(1, parseInt(e.target.value) || 1))}
                   disabled={!canEdit}
                   className="w-16 px-2 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-center text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 />
                 <select
                   value={recurrenceFrequency}
-                  onChange={(e) => setRecurrenceFrequency(e.target.value as RecurrenceFrequency)}
+                  onChange={(e) => setDraft("recurrenceFrequency", e.target.value as RecurrenceFrequency)}
                   disabled={!canEdit}
                   className="flex-1 px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 >
@@ -486,7 +453,7 @@ export function ItemDetailsModal({
                 <input
                   type="date"
                   value={recurrenceEndDate}
-                  onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                  onChange={(e) => setDraft("recurrenceEndDate", e.target.value)}
                   disabled={!canEdit}
                   className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 />
@@ -495,6 +462,7 @@ export function ItemDetailsModal({
           )}
         </div>
 
+        {hasServerItem && <>
         {/* Tags */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
@@ -537,6 +505,8 @@ export function ItemDetailsModal({
           />
         </div>
 
+        </>}
+
         {/* Activity */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
@@ -568,6 +538,7 @@ export function ItemDetailsModal({
           </div>
         </div>
 
+        {hasServerItem && <>
         {/* Comments */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
@@ -581,10 +552,12 @@ export function ItemDetailsModal({
           />
         </div>
 
+        </>}
+
         {/* Originals Provenance Info */}
-        <div>
+        {hasServerItem && <div>
           <ItemProvenanceInfo item={item} />
-        </div>
+        </div>}
       </div>
     </Panel>
   );

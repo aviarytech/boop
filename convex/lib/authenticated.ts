@@ -1,3 +1,4 @@
+import { replayMetadata, replayOperation } from "./replay";
 import { identityAssertionFields } from "./clientAuth";
 /** Public adapters authenticate before invoking private business handlers.
  * HTTP adapters use the internal registration of the same operation. Credentials
@@ -21,6 +22,7 @@ type Assertions = ObjectType<typeof assertions>;
 export type ActorCtx<C> = C & { actor: ResolvedActor; credentials: Credentials };
 type Definition<C, A extends PropertyValidators, R> = {
   args: A;
+  offlineOperation?: string;
   allowDeletingAccount?: boolean;
   scope: import("./apiKeyHelpers").Scope;
   resources: (args: ObjectType<A>) => ListResources;
@@ -65,7 +67,21 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
 export function actorMutation<A extends PropertyValidators, R>(definition: Definition<MutationCtx, A, R>) {
   const config = prepare(definition, (ctx: MutationCtx, args) =>
     authenticate(ctx, args, definition.allowDeletingAccount));
-  return { public: mutation(config), internal: internalMutation(config) };
+  const replay = mutation({
+    args: { ...assertions, ...definition.args, ...credentials, replay: replayMetadata },
+    handler: async (ctx, args) => {
+      const actor = await authenticate(ctx, args, definition.allowDeletingAccount);
+      requireScope(actor, definition.scope);
+      checkAssertions(actor, args);
+      if (!definition.offlineOperation) throw new Error("Offline replay is unsupported");
+      const payload = Object.fromEntries(Object.keys(definition.args).map(key => [key, (args as Record<string, unknown>)[key]]));
+      // Authenticate before receipt lookup, but allow acknowledgment of a delete
+      // whose resource no longer exists. Fresh writes still run all authorization.
+      return replayOperation(ctx, actor, definition.offlineOperation, payload, args.replay,
+        () => config.handler(ctx, args as ObjectType<A> & Assertions & Credentials));
+    },
+  });
+  return { public: mutation(config), internal: internalMutation(config), replay };
 }
 export function actorQuery<A extends PropertyValidators, R>(definition: Definition<QueryCtx, A, R>) {
   const config = prepare(definition, authenticate);
