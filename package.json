@@ -17,7 +17,8 @@
     "cap:sync": "npx cap sync",
     "cap:build": "npm run build && npx cap sync",
     "generate:assets": "node scripts/generate-icons.mjs && npx capacitor-assets generate --iconBackgroundColor '#fafaf7' --iconBackgroundColorDark '#fafaf7' --splashBackgroundColor '#fafaf7' --splashBackgroundColorDark '#0c0b10' --ios --android && node scripts/generate-icons.mjs --android-native-only",
-    "mission-control:readiness-drill": "node scripts/mission-control-readiness-drill.mjs"
+    "mission-control:readiness-drill": "node scripts/mission-control-readiness-drill.mjs",
+    "test:e2e": "e2e run"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",
@@ -55,6 +56,7 @@
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
+    "@e2e-dev/web": "^0.11.2",
     "@eslint/js": "^9.39.1",
     "@happy-dom/global-registrator": "^20.9.0",
     "@napi-rs/canvas": "^0.1.90",
@@ -66,16 +68,20 @@
     "@types/react-dom": "^19.2.3",
     "@types/web-push": "^3.6.4",
     "@vitejs/plugin-react": "^5.1.1",
+    "ai": "^7.0.0",
     "autoprefixer": "^10.4.23",
+    "e2e": "^0.16.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "playwright": "^1.63.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vite-plugin-node-polyfills": "^0.25.0"
+    "vite-plugin-node-polyfills": "^0.25.0",
+    "zod": "^4.1.8"
   }
 }
