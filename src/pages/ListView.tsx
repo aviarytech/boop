@@ -6,6 +6,7 @@
  * Supports list view and calendar view modes.
  */
 
+import { matchesItemId } from "../lib/optimisticItems";
 import React, { useState, useCallback, useRef, lazy, Suspense, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useLocation, Link, Navigate } from "react-router-dom";
 import { useQuery, useMutation } from "../lib/authenticatedConvex";
@@ -255,7 +256,7 @@ export function ListView() {
   // This ensures tags and other fields update in real-time
   const editingItem = useMemo(() => {
     if (!editingItemId) return null;
-    return items.find(item => item._id === editingItemId) as Doc<"items"> | undefined ?? null;
+    return items.find(item => matchesItemId(item, editingItemId)) as Doc<"items"> | undefined ?? null;
   }, [items, editingItemId]);
 
   const selectedCalendarItem = useMemo(() => {

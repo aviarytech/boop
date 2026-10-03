@@ -159,13 +159,14 @@ export async function getCachedItemsByList(accountId: string, listId: string) {
 /** Read the cache and its receipt frontier together, so a mounted hook cannot
  * combine old in-memory items with newly observed acknowledgments from a tab. */
 export async function getCachedListSnapshot(accountId: string, listId: string) {
-  if (!accountId) return { items: [] as OfflineItem[], operationIds: [] as string[] };
+  if (!accountId) return { items: [] as OfflineItem[], operationIds: [] as string[], acknowledgments: [] as ReplayAck[] };
   const tx = (await getOfflineDB(accountId)).transaction(['items', 'mutations']);
   const items = await tx.objectStore('items').index('byList').getAll(listId);
-  const operationIds = (await tx.objectStore('mutations').getAll())
-    .filter(m => m.observedListIds?.includes(listId)).map(m => m.operationId);
+  const observed = (await tx.objectStore('mutations').getAll()).filter(m => m.observedListIds?.includes(listId));
+  const operationIds = observed.map(m => m.operationId);
+  const acknowledgments = observed.flatMap(m => m.ack ? [m.ack] : []);
   await tx.done;
-  return { items, operationIds };
+  return { items, operationIds, acknowledgments };
 }
 /** Explicit recovery after a definite server conflict. A fresh operation is
  * created; changing content under an already-sent operation ID is forbidden. */

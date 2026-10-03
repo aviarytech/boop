@@ -53,6 +53,8 @@ export function ItemDetailsModal({
   const { haptic } = useSettings();
   const { queueMutation } = useOffline();
   const navigate = useNavigate();
+  // Queued creates have no server document yet, even during reconnect.
+  const hasServerItem = !item._id.startsWith("temp-");
 
   const { draft, set: setDraft, source: draftSource } = useItemDetailsDraft(item);
   const { name, description, url, dueDate, hasRecurrence, recurrenceFrequency,
@@ -74,7 +76,7 @@ export function ItemDetailsModal({
   const list = useQuery(api.lists.getList, { listId: item.listId });
   const { categories } = useCategories();
 
-  const comments = useQuery(api.comments.getItemComments, item._id.startsWith("temp-") ? "skip" : { itemId: item._id });
+  const comments = useQuery(api.comments.getItemComments, hasServerItem ? { itemId: item._id } : "skip");
 
   const participantDids = useMemo(() => {
     const dids = new Set<string>([userDid, item.createdByDid]);
@@ -234,7 +236,7 @@ export function ItemDetailsModal({
           {canEdit ? (
             <button
               type="button"
-              disabled={item._id.startsWith("temp-")}
+              disabled={!hasServerItem}
               onClick={() => { haptic("light"); navigate(`/note/${item._id}`); }}
               className="w-full text-left px-3 py-2 min-h-[3.5rem] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
@@ -460,7 +462,7 @@ export function ItemDetailsModal({
           )}
         </div>
 
-        {!item._id.startsWith("temp-") && <>
+        {hasServerItem && <>
         {/* Tags */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
@@ -536,7 +538,7 @@ export function ItemDetailsModal({
           </div>
         </div>
 
-        {!item._id.startsWith("temp-") && <>
+        {hasServerItem && <>
         {/* Comments */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
@@ -553,9 +555,9 @@ export function ItemDetailsModal({
         </>}
 
         {/* Originals Provenance Info */}
-        <div>
+        {hasServerItem && <div>
           <ItemProvenanceInfo item={item} />
-        </div>
+        </div>}
       </div>
     </Panel>
   );

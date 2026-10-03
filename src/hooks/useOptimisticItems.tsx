@@ -1,4 +1,4 @@
-import { canonical } from '../../shared/replay';
+import { canonical, type ReplayAck } from '../../shared/replay';
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useQuery } from '../lib/authenticatedConvex';
 import { api } from '../../convex/_generated/api';
@@ -7,6 +7,7 @@ import { useOffline } from './useOffline';
 import { cacheListSnapshot, getCachedListSnapshot, type OfflineItem } from '../lib/offline';
 import { projectItems } from '../lib/optimisticItems';
 const EMPTY_ITEMS: OfflineItem[] = [];
+const EMPTY_ACKNOWLEDGMENTS: ReplayAck[] = [];
 const EMPTY_OPERATION_IDS: string[] = [];
 export interface OptimisticItem extends Doc<'items'> { _isOptimistic?: boolean; _syncError?: string; _localKey?: string; _operationId?: string }
 
@@ -18,8 +19,8 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   // observed operations. A delayed tab must prove it saw all accepted writes.
   const snapshot = useQuery(api.items.getListItemsForReplay, { listId, operationIds: operations.filter(m => m.listIds.includes(listId)).map(m => m.operationId) });
   const scope = `${accountId}:${listId}`;
-  type CachedSnapshot = { scope: string; items: OfflineItem[]; operationIds: string[] };
-  const [cached, setCached] = useState<CachedSnapshot>({ scope: '', items: [], operationIds: [] });
+  type CachedSnapshot = { scope: string; items: OfflineItem[]; operationIds: string[]; acknowledgments: ReplayAck[] };
+  const [cached, setCached] = useState<CachedSnapshot>({ scope: '', items: [], operationIds: [], acknowledgments: [] });
   const last = useRef<CachedSnapshot | undefined>(undefined);
   const frontier = new Set([
     ...operations.filter(m => m.observedListIds?.includes(listId)).map(m => m.operationId),
@@ -29,7 +30,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   const snapshotIds = useMemo(() => snapshot?.acknowledgments.map(a => a.operationId) ?? EMPTY_OPERATION_IDS, [snapshot]);
   const serverItems = snapshot && coversFrontier(snapshotIds) ? snapshot.items : undefined;
   if (last.current?.scope !== scope) last.current = undefined;
-  if (serverItems && accountId) last.current = { scope, items: serverItems, operationIds: snapshotIds };
+  if (serverItems && accountId) last.current = { scope, items: serverItems, operationIds: snapshotIds, acknowledgments: snapshot!.acknowledgments };
   useEffect(() => {
     let active = true;
     const persist = async () => {
@@ -49,9 +50,11 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   // operation queue may still be stale when another tab advances the cache.
   const baseOperationIds = !accountId ? EMPTY_OPERATION_IDS : serverItems ? snapshotIds
     : lastItems ? last.current!.operationIds : cachedItems !== EMPTY_ITEMS ? cached.operationIds : EMPTY_OPERATION_IDS;
+  const baseAcknowledgments = !accountId ? EMPTY_ACKNOWLEDGMENTS : serverItems ? snapshot!.acknowledgments
+    : lastItems ? last.current!.acknowledgments : cachedItems !== EMPTY_ITEMS ? cached.acknowledgments : EMPTY_ACKNOWLEDGMENTS;
   const previousProjection = useRef<{ scope: string; items: OptimisticItem[] }>({ scope, items: [] });
   const items = useMemo(() => {
-    const projected = projectItems(base, operations, listId, new Set(baseOperationIds));
+    const projected = projectItems(base, operations, listId, new Set(baseOperationIds), baseAcknowledgments);
     const previous = new Map((previousProjection.current.scope === scope ? previousProjection.current.items : []).map(i => [i._id, i]));
     const stable = projected.map(item => {
       const old = previous.get(item._id);
@@ -59,7 +62,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
     });
     previousProjection.current = { scope, items: stable };
     return stable;
-  }, [base, operations, listId, baseOperationIds, scope]);
+  }, [base, operations, listId, baseOperationIds, baseAcknowledgments, scope]);
   const snapshots = useRef(base);
   snapshots.current = base;
   const enqueue = useCallback((type: Parameters<typeof queueMutation>[0]['type'], payload: unknown) => queueMutation({ type, payload }, snapshots.current).then(() => undefined), [queueMutation]);

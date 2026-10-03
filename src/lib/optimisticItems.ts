@@ -1,16 +1,21 @@
+import type { ReplayAck } from '../../shared/replay';
 import type { Id } from '../../convex/_generated/dataModel';
 import type { OptimisticItem } from '../hooks/useOptimisticItems';
 import type { OfflineItem, QueuedMutation } from './offline';
 
-export function projectItems(base: OfflineItem[], operations: QueuedMutation[], listId: Id<'lists'>, observed?: Set<string>): OptimisticItem[] {
-  const localKeys = new Map(operations.filter(m => m.type === 'addItem' && typeof m.ack?.result === 'string').map(m => [m.ack!.result as string, m.operationId]));
+export function projectItems(base: OfflineItem[], operations: QueuedMutation[], listId: Id<'lists'>, observed?: Set<string>, acknowledgments: ReplayAck[] = []): OptimisticItem[] {
+  // Reactive receipts can arrive before the mutation response / queue observer.
+  // Use their create results immediately for row identity and pending targets.
+  const receipts = new Map(operations.flatMap(m => m.ack ? [[m.operationId, m.ack] as const] : []));
+  for (const ack of acknowledgments) receipts.set(ack.operationId, ack);
+  const localKeys = new Map(operations.filter(m => m.type === 'addItem' && typeof receipts.get(m.operationId)?.result === 'string').map(m => [receipts.get(m.operationId)!.result as string, m.operationId]));
   const items = new Map<string, OptimisticItem>(base.map(i => [i._id, localKeys.has(i._id) ? { ...i, _localKey: localKeys.get(i._id) } : i]));
-  const ids = new Map(operations.filter(m => m.ack && typeof m.ack.result === 'string').map(m => [`temp-${m.operationId}`, m.ack!.result as string]));
+  const ids = new Map(operations.filter(m => typeof receipts.get(m.operationId)?.result === 'string').map(m => [`temp-${m.operationId}`, receipts.get(m.operationId)!.result as string]));
   for (const m of operations) {
     if (!m.listIds.includes(listId) || m.observedListIds?.includes(listId) || observed?.has(m.operationId)) continue;
     const p = m.payload;
     if (m.type === 'addItem' && p.listId === listId) {
-      const id = (typeof m.ack?.result === 'string' ? m.ack.result : `temp-${m.operationId}`) as Id<'items'>;
+      const id = (typeof receipts.get(m.operationId)?.result === 'string' ? receipts.get(m.operationId)!.result : `temp-${m.operationId}`) as Id<'items'>;
       items.set(id, { ...p, _id: id, _creationTime: m.timestamp, listId, name: String(p.name), createdAt: Number(p.createdAt), createdByDid: String(p.createdByDid), checked: false, order: -m.timestamp, _isOptimistic: true, _syncError: m.error, _localKey: m.operationId, _operationId: m.operationId } as OptimisticItem);
       continue;
     }
@@ -37,4 +42,9 @@ export function projectItems(base: OfflineItem[], operations: QueuedMutation[], 
     }
   }
   return [...items.values()];
+}
+
+/** Resolve selection captured before a queued create acquired its server ID. */
+export function matchesItemId(item: OptimisticItem, id: string): boolean {
+  return item._id === id || (item._localKey !== undefined && `temp-${item._localKey}` === id);
 }
