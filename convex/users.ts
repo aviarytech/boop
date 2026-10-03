@@ -132,7 +132,11 @@ export const getUsersByDids = query({
 
       if (user) {
         result[did] = {
-          displayName: user.displayName ?? null,
+          // Older signups persisted this private email-derived default. Mask it
+          // at read time without changing authenticated self profiles.
+          displayName: user.displayName === user.email?.split("@")[0]
+            ? null
+            : user.displayName ?? null,
         };
       } else {
         // Extract a short name from DID for display

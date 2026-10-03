@@ -8,8 +8,8 @@ import { ConvexError, convexToJson, jsonToConvex } from 'convex/values';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'boundary-test-secret-not-a-deployed-credential';
-const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','didCreation','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses'];
-await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/auth-boundary-test', bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*','@originals/*','@turnkey/*','didwebvh-ts','@noble/*'] });
+const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','didCreation','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits'];
+await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/auth-boundary-test', define: { 'process.env.NODE_ENV': '"production"' }, bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*','@originals/*','@turnkey/*','didwebvh-ts','@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/auth-boundary-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
 async function token(subject = 'owner', options = {}) {
@@ -465,5 +465,60 @@ test('public DID attribution exposes only display names to anonymous and unrelat
       'did:unknown-person': { displayName: 'unknown-' },
     });
     assert.ok(!JSON.stringify(result).includes('example.test'));
+  }
+});
+
+test('historical email-derived names are masked publicly but preserved for authenticated self', async () => {
+  const ctx = fixture();
+  ctx.rows.users[0].displayName = 'owner';
+  ctx.rows.users[1].displayName = 'Public author';
+  const before = structuredClone(ctx.rows.users);
+  for (const identity of [null, { subject: 'stranger' }]) {
+    ctx.auth = { getUserIdentity: async () => identity };
+    assert.deepEqual(await call('users', 'getUsersByDids', ctx, { dids: ['did:owner', 'did:stranger'] }), {
+      'did:owner': { displayName: null },
+      'did:stranger': { displayName: 'Public author' },
+    });
+  }
+  const self = await call('auth', 'getUserByTurnkeyId', ctx, { turnkeySubOrgId: 'owner', authToken: ownerToken });
+  assert.equal(self.email, 'owner@example.test');
+  assert.equal(self.displayName, 'owner');
+  assert.deepEqual(ctx.rows.users, before);
+});
+
+test('OTP HTTP signup stores neutral attribution and returning login preserves self names and email', async () => {
+  for (const existingName of [undefined, 'owner', 'Public author']) {
+    const ctx = fixture();
+    if (existingName === undefined) ctx.rows.users = ctx.rows.users.filter(u => u.turnkeySubOrgId !== 'owner');
+    else ctx.rows.users[0].displayName = existingName;
+    ctx.rows.authSessions = [{
+      _id: 'otp', sessionId: 'signup-session', email: 'owner@example.test',
+      subOrgId: 'owner', otpId: 'verified-otp', timestamp: Date.now(),
+      verified: false, expiresAt: Date.now() + 60000,
+    }];
+    ctx.runAction = async (ref) => {
+      switch (getFunctionName(ref)) {
+        case 'authInternal:verifyAuth': return { verified: true, email: 'owner@example.test', subOrgId: 'owner' };
+        case 'authInternal:createAuthToken': return { token: ownerToken, cookieValue: 'fixture' };
+        default: assert.fail(`Unexpected action ${getFunctionName(ref)}`);
+      }
+    };
+    const [verify] = modules.http.default.lookup('/auth/verify', 'POST');
+    const response = await verify._handler(ctx, new Request('https://test/auth/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'signup-session', code: '123456' }),
+    }));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    const user = ctx.rows.users.find(u => u.turnkeySubOrgId === 'owner');
+    assert.equal(user.displayName, existingName ?? 'boop user');
+    assert.equal(user.email, 'owner@example.test');
+    assert.equal(body.user.email, user.email);
+    assert.equal(body.user.displayName, user.displayName);
+    // New accounts receive their DID after OTP login; exercise lookup on that row.
+    if (!user.did) await ctx.db.patch(user._id, { did: 'did:new-account' });
+    assert.deepEqual(await call('users', 'getUsersByDids', ctx, { dids: [user.did] }), {
+      [user.did]: { displayName: existingName === 'owner' ? null : user.displayName },
+    });
   }
 });

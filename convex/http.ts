@@ -246,7 +246,6 @@ const verify = httpAction(async (ctx, request) => {
       turnkeySubOrgId: result.subOrgId,
       email: result.email,
       did: undefined,
-      displayName: result.email.split("@")[0],
     });
 
     // Return the DID we actually hold. This used to be hardcoded null, so every

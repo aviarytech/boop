@@ -90,12 +90,18 @@ Deploy the schema and backend before distributing updated native builds. Existin
 ## Bounded #236 follow-up: public attribution and auth budgets
 
 `users.getUsersByDids` intentionally remains public for attribution. Its response
-contains only `displayName`: stored public names are preserved, unnamed accounts
-return `null`, and unknown DIDs retain the existing shortened-DID label. The query
+contains only `displayName`: names equal to the account email local part and
+unnamed accounts return `null`; other stored public names are preserved. Unknown
+DIDs retain the existing shortened-DID label. The query
 never returns email or derives a fallback from email. ItemAttribution,
 ItemDetailsModal, and both ProvenanceInfo consumers read only `displayName`.
-Existing stored display names (including names historically set during signup)
-are not rewritten by this change.
+New OTP signups no longer pass an email-derived name, and new-account storage
+uses the neutral default `boop user`. The welcome email may still use a private
+local-part greeting. Historical email-derived names are masked at public read
+time without a production data migration. Exact local-part matches are masked
+even if deliberately chosen; other public attribution names remain unchanged.
+Authenticated self-profile email and stored names remain intact, including on
+returning logins.
 
 Auth HTTP initiation and verification dispatch to
 `rateLimits.checkAndIncrementInternal`. Counter inspection and expired-record
@@ -107,7 +113,9 @@ Compatibility retirement still requires the deployed-client inventory above.
 The existing production-only limiting policy and fixed windows remain unchanged:
 10 initiate attempts per IP and 5 verify attempts per session per minute.
 
-Local regressions cover anonymous/unrelated public DID lookups, rejecting direct
+Local regressions cover the HTTP new-signup path, neutral storage defaults,
+historical name masking, authenticated self-profile preservation,
+anonymous/unrelated public DID lookups, rejecting direct
 counter access, internal registration visibility, HTTP dispatch, the final allowed
 attempt, 429/Retry-After responses, and exact window expiry. HTTP tests run the
 production router branch with in-memory budget storage and stubbed OTP providers;
@@ -124,3 +132,11 @@ full `bun test` 311 passed; `tsc -b`, `tsc -p convex/tsconfig.json`,
 build used checked-in Convex declarations and local tooling without deployment
 codegen or live credentials. Vite reported large chunks; the explorer-filter test
 reported a React `act(...)` warning. Generated image test artifacts were reverted.
+
+Review correction for PR #251 comment 4172648564: the original fallback removal
+still exposed signup-derived stored names. The new-account default and historical
+read-time masking above address that gap. Revalidation: 54 focused auth boundary,
+rate-limit boundary, and login-account tests passed; full `bun test` passed 314
+tests; frontend/backend TypeScript and the generated auth registry check passed.
+The existing React `act(...)` warning remains. Test-generated icon/splash changes
+were reverted. No live signup, production data migration, or deployment was run.
