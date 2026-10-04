@@ -20,6 +20,7 @@ import { initPushNotifications } from './lib/pushNotifications'
 import { incrementMetric } from './lib/observability'
 
 // Lazy-loaded routes for better code splitting
+const SharedWithMe = lazy(() => import('./pages/SharedWithMe').then(m => ({ default: m.SharedWithMe })))
 const Invitations = lazy(() => import('./pages/Invitations').then(m => ({ default: m.Invitations })))
 const InvitationSignIn = lazy(() => import('./pages/Invitations').then(m => ({ default: m.InvitationSignIn })))
 const Home = lazy(() => import('./pages/Home').then(m => ({ default: m.Home })))
@@ -142,7 +143,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main id="main-content" className="container mx-auto px-4 py-6 safe-area-inset-bottom flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain" style={{ touchAction: "pan-y pinch-zoom" }}>
-        <div className="mb-5 text-right"><Link to="/invitations" className="inline-block py-2 text-sm font-semibold text-stone-700 dark:text-gray-300 underline underline-offset-4">Invitations</Link></div>
+        <div className="mb-5 flex justify-end gap-5"><Link to="/shared" className="inline-block py-2 text-sm font-semibold underline underline-offset-4">Shared with me</Link><Link to="/invitations" className="inline-block py-2 text-sm font-semibold text-stone-700 dark:text-gray-300 underline underline-offset-4">Invitations</Link></div>
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 
@@ -281,6 +282,7 @@ function App() {
             <Route path="/public/:did" element={<PublicList />} />
             <Route path="/:userPath/resources/:resourceId" element={<SharedListResource />} />
 
+            <Route path="/shared" element={<ProtectedRoute><SharedWithMe /></ProtectedRoute>} />
             <Route path="/invitations" element={isAuthenticated ? <ProtectedRoute><Invitations /></ProtectedRoute> : <InvitationSignIn />} />
             <Route path="/invitations/:invitationId/:version" element={isAuthenticated ? <ProtectedRoute><Invitations /></ProtectedRoute> : <InvitationSignIn />} />
 

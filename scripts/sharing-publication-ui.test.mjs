@@ -13,8 +13,10 @@ await build({
   outdir: "tmp/publication-ui", bundle: true, jsx: "automatic", platform: "node", format: "esm", outExtension: { ".js": ".mjs" },
   external: ["react", "react/jsx-runtime", "react-router-dom", "convex/server"],
   plugins: [{ name: "publication-ui-fixtures", setup(b) {
+    b.onResolve({ filter: /SharingControls$/ }, () => ({ path: "SharingControls", namespace: "fixture" }));
     b.onResolve({ filter: /(?:lib\/(authenticatedConvex|webvh|share|analytics|originals)|hooks\/(useCurrentUser|useSettings)|ui\/Panel|ProvenanceInfo)$/ }, ({ path }) => ({ path: path.split("/").pop(), namespace: "fixture" }));
     b.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ contents: {
+      SharingControls: 'import React from "react"; export const OwnerInvitations=({listId})=>React.createElement("div", {"data-testid":"owner-controls"}, listId);',
       authenticatedConvex: `import {getFunctionName} from "convex/server";
         export const useQuery=ref=>getFunctionName(ref)==="publication:getPublicationStatus"?globalThis.__publicationUi.publication:null;
         export const useMutation=ref=>async args=>{globalThis.__publicationUi.calls.push([getFunctionName(ref),args]);};`,
@@ -34,11 +36,11 @@ const { PublishModal } = await import(pathToFileURL(`${process.cwd()}/tmp/public
 const mount = Component => render(React.createElement(MemoryRouter, null, React.createElement(Component, { list: { _id: "L", name: "Groceries" }, onClose() {} })));
 afterEach(() => { cleanup(); state.calls = []; state.publication = null; });
 
-test("Share with people links to the selected owner invitation flow without publishing", () => {
+test("Share with people embeds the selected owner invitation controls without publishing", () => {
   mount(ShareModal);
   assert.ok(screen.getByRole("heading", { name: "Share with people" }));
   assert.ok(screen.getByRole("heading", { name: "Publish publicly" }));
-  assert.equal(screen.getByRole("link", { name: "Invite people and manage access" }).getAttribute("href"), "/invitations?listId=L");
+  assert.equal(screen.getByTestId("owner-controls").textContent, "L");
   assert.match(screen.getByText(/Invite someone by email/).textContent, /must accept/);
   assert.deepEqual(state.calls, []);
 });

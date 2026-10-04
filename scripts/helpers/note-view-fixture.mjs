@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 
 // Real NoteView, autosave, durable drafts, conflict/recovery UI; only application
 // context and server transport are replaced. Also usable in a local preview.
-export async function buildNoteViewFixture(outfile, browser = false, item = false) {
+export async function buildNoteViewFixture(outfile, browser = false, item = false, realMenu = false) {
   await build({ stdin: { contents: `
     import React, { useState } from 'react';
     import { ${item ? 'NoteEditor' : 'NoteView'} as Editor } from './src/pages/${item ? 'NoteEditor' : 'NoteView'}';
@@ -28,7 +28,7 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
     platform: browser ? 'browser' : 'node', format: 'esm',
     external: browser ? [] : ['react', 'react/jsx-runtime', 'react-dom/client'],
     plugins: [{ name: 'note-app-context', setup(b) {
-      b.onResolve({ filter: /\/useCurrentUser$|\/useSettings$|\/useOffline$|\/useCategories$|\/authenticatedConvex$|\/HeaderActionsMenu$|\/VerificationBadge$|\/(DeleteListDialog|RenameListDialog|ChangeCategoryDialog)$|^react-router-dom$/ }, args => ({ path: args.path, namespace: 'fixture' }));
+      b.onResolve({ filter: /\/useCurrentUser$|\/useSettings$|\/useOffline$|\/useCategories$|\/authenticatedConvex$|\/HeaderActionsMenu$|\/VerificationBadge$|\/(DeleteListDialog|RenameListDialog|ChangeCategoryDialog)$|^react-router-dom$/ }, args => realMenu && args.path.endsWith('/HeaderActionsMenu') ? undefined : ({ path: args.path, namespace: 'fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => {
         const prelude = 'const state = () => globalThis.__noteViewFixture;';
         let contents;
