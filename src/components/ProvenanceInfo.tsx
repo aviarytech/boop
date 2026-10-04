@@ -1,3 +1,4 @@
+import { legacyActionEvidence } from "../../shared/legacyActionEvidence";
 /**
  * ProvenanceInfo - Shows Originals DID/provenance chain information
  * 
@@ -485,7 +486,7 @@ function VcProofRow({
     <div className="py-3">
       <div className="flex items-center gap-2 mb-2">
         <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M6 3h9l3 3v15H6z" />
         </svg>
         <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
           {label}
@@ -604,7 +605,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
   if (list.vcProof) {
     timelineEvents.push({
       type: "vc_issued",
-      label: "Ownership VC issued",
+      label: "Historical ownership record",
       timestamp: list.vcProof.issuanceDate,
       actor: list.vcProof.issuer,
     });
@@ -655,7 +656,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
       {/* Ownership VC */}
       {list.vcProof && (
         <VcProofRow
-          label="Ownership Verifiable Credential"
+          label={`Historical ownership record (${legacyActionEvidence(list.vcProof.proof)})`}
           issuer={list.vcProof.issuer}
           issuanceDate={list.vcProof.issuanceDate}
           haptic={haptic}
@@ -761,10 +762,10 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
   // Add VC events
   item.vcProofs?.forEach((vc) => {
     const actorName = userInfo?.[vc.actorDid]?.displayName ?? null;
-    let label = "VC issued";
-    if (vc.action === "created") label = "Creation VC issued";
-    else if (vc.action === "completed") label = "Completion VC issued";
-    else if (vc.action === "modified") label = "Modification VC issued";
+    let label = "Historical action record";
+    if (vc.action === "created") label = "Historical creation record";
+    else if (vc.action === "completed") label = "Historical completion record";
+    else if (vc.action === "modified") label = "Historical modification record";
     
     timelineEvents.push({
       type: "vc_issued",
@@ -844,20 +845,20 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
       {item.vcProofs && item.vcProofs.length > 0 && (
         <div className="py-2">
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            📜 Verifiable Credentials ({item.vcProofs.length})
+            📜 Action records ({item.vcProofs.length})
           </div>
           <div className="space-y-2">
             {item.vcProofs.map((vc, idx) => {
               const issuerName = userInfo?.[vc.issuer]?.displayName ?? null;
-              let actionLabel = "Action VC";
-              if (vc.action === "created") actionLabel = "Creation VC";
-              else if (vc.action === "completed") actionLabel = "Completion VC";
-              else if (vc.action === "modified") actionLabel = "Modification VC";
+              let actionLabel = "Action record";
+              if (vc.action === "created") actionLabel = "Creation record";
+              else if (vc.action === "completed") actionLabel = "Completion record";
+              else if (vc.action === "modified") actionLabel = "Modification record";
               
               return (
                 <VcProofRow
                   key={idx}
-                  label={actionLabel}
+                  label={`${actionLabel} (${legacyActionEvidence(vc.proof)})`}
                   issuer={vc.issuer}
                   issuanceDate={vc.issuanceDate}
                   displayName={issuerName}
@@ -894,7 +895,7 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
           Item actions are attributed to decentralized identifiers (DIDs) for transparency and accountability.
           {item.vcProofs && item.vcProofs.length > 0 && (
             <span>
-              {" "}Each action is backed by a Verifiable Credential for cryptographic proof.
+              {" "}Historical action records may be unsigned. Attribution alone does not prove personal authorship.
             </span>
           )}
           {anchors && anchors.length > 0 && (

@@ -14,5 +14,5 @@ export async function requireSession(ctx: QueryCtx | MutationCtx, token?: string
   if (!record || record.revokedAt !== undefined || (record.expiresAt !== undefined && record.expiresAt <= Date.now()) || record.subject !== session.turnkeySubOrgId) {
     throw new AuthError("Authentication required: restore your session", "UNAUTHORIZED");
   }
-  return session;
+  return { ...session, accessSessionId: record._id };
 }

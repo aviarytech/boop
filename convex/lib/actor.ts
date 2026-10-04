@@ -14,6 +14,8 @@ export type ResolvedActor = {
   turnkeySubOrgId?: string;
   scopes: string[];
   viaApiKey: boolean;
+  /** Authenticated credential identity, separate from the account authorizing it. */
+  credential: { kind: "session" | "apiKey"; id: string };
 };
 
 export function requestCredentials(request: Request): Credentials {
@@ -37,13 +39,13 @@ export async function authenticate(
     const user = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", key.ownerDid)).first()
       ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", key.ownerDid)).first();
     if (!user?.did || (!allowDeletingAccount && user.deletionRequestedAt !== undefined)) throw new AuthError("User unavailable", "UNAUTHORIZED");
-    return { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes: key.scopes, viaApiKey: true };
+    return { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes: key.scopes, viaApiKey: true, credential: { kind: "apiKey", id: key._id } };
   }
   const session = await requireSession(ctx, credentials.authToken);
   const user = await ctx.db.query("users")
     .withIndex("by_turnkey_id", q => q.eq("turnkeySubOrgId", session.turnkeySubOrgId)).first();
   if (!user?.did || (!allowDeletingAccount && user.deletionRequestedAt !== undefined)) throw new AuthError("User unavailable", "UNAUTHORIZED");
-  return { userId: user._id, did: user.did, legacyDid: user.legacyDid, turnkeySubOrgId: session.turnkeySubOrgId, scopes: ["*"], viaApiKey: false };
+  return { userId: user._id, did: user.did, legacyDid: user.legacyDid, turnkeySubOrgId: session.turnkeySubOrgId, scopes: ["*"], viaApiKey: false, credential: { kind: "session", id: session.accessSessionId } };
 }
 
 export async function resolveActor(ctx: ActionCtx, request: Request): Promise<ResolvedActor> {
