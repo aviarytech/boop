@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -9,6 +9,14 @@ import { requireSession } from "./lib/session";
 import { listRole } from "./lib/permissions";
 import { recordAcceptedListGrant } from "./lib/listGrants";
 import { hashApiKey } from "./lib/apiKeyHelpers";
+
+import { chosenPublicDisplayName } from "./lib/publicDisplayName";
+
+async function requireInviterName(ctx: MutationCtx, ownerId: Id<"users">) {
+  if (!chosenPublicDisplayName(await ctx.db.get(ownerId))) {
+    throw new ConvexError("Choose and save a recognizable public display name before sending invitations. Your email stays private.");
+  }
+}
 
 const role = v.union(v.literal("viewer"), v.literal("editor"));
 const handle = { invitationId: v.id("listInvitations"), version: v.number() };
@@ -30,7 +38,7 @@ async function verifiedEmail(ctx: ActorCtx<QueryCtx | MutationCtx>) {
 }
 async function live(ctx: QueryCtx | MutationCtx, invite: Doc<"listInvitations">) {
   const owner = await ctx.db.get(invite.ownerId);
-  return !!owner?.did && owner.deletionRequestedAt === undefined
+  return !!owner?.did && !!chosenPublicDisplayName(owner) && owner.deletionRequestedAt === undefined
     && await listRole(ctx, invite.listId, owner.did, owner.legacyDid) === "owner";
 }
 async function predatesRevocation(ctx: QueryCtx | MutationCtx, invite: Doc<"listInvitations">, recipientId: Id<"users">) {
@@ -84,6 +92,7 @@ export const { public: createInvitation, internal: createInvitationInternal } = 
   authority: "owner", scope: "*", resources: ownerResources,
   args: { listId: v.id("lists"), email: v.string(), role: v.optional(role), requestId: v.string() },
   handler: async (ctx, args) => {
+    await requireInviterName(ctx, ctx.actor.userId);
     const email = normalizeEmail(args.email);
     const intendedRole = args.role ?? "viewer";
     const fingerprint = await hashApiKey(JSON.stringify(["create", args.listId, email, intendedRole]));
@@ -108,6 +117,7 @@ export const { public: resendInvitation, internal: resendInvitationInternal } = 
   authority: "owner", scope: "*", resources: ownerResources,
   args: { ...ownerHandle, requestId: v.string() },
   handler: async (ctx, args) => {
+    await requireInviterName(ctx, ctx.actor.userId);
     const fingerprint = await hashApiKey(JSON.stringify(["resend", args.listId, args.invitationId, args.version]));
     const previous = await receipt(ctx, ctx.actor.userId, args.requestId, fingerprint);
     if (previous) return previous;
@@ -150,7 +160,7 @@ export const { public: getListInvitations, internal: getListInvitationsInternal 
 });
 async function preview(ctx: QueryCtx, invite: Doc<"listInvitations">) {
   const owner = await ctx.db.get(invite.ownerId);
-  return { ...result(invite), inviter: owner!.displayName, role: invite.role, expiresAt: invite.expiresAt };
+  return { ...result(invite), inviter: chosenPublicDisplayName(owner)!, role: invite.role, expiresAt: invite.expiresAt };
 }
 export const { public: getPendingInvitations, internal: getPendingInvitationsInternal } = actorQuery({
   scope: "lists:read", resources: noResources, args: {},
@@ -201,7 +211,7 @@ export const deliveryPayload = internalQuery({
     const invite = await ctx.db.get(args.invitationId);
     if (!invite || invite.version !== args.version || !pending(invite) || !await live(ctx, invite) || invite.delivery !== "queued") return null;
     const owner = await ctx.db.get(invite.ownerId);
-    return { email: invite.email, inviter: owner!.displayName };
+    return { email: invite.email, inviter: chosenPublicDisplayName(owner)! };
   },
 });
 export const deliveryResult = internalMutation({

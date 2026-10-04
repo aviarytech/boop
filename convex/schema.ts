@@ -95,6 +95,7 @@ export default defineSchema({
     deletionDids: v.optional(v.array(v.string())),
     did: v.optional(v.string()), // did:webvh:... created client-side (null until first login completes)
     displayName: v.string(),
+    displayNameChosenAt: v.optional(v.number()), // Explicit public-name choice; never inferred from old profiles
     createdAt: v.number(),
     // Turnkey auth fields (added in Phase 1.3)
     turnkeySubOrgId: v.optional(v.string()), // Turnkey sub-organization ID

@@ -1,4 +1,4 @@
-import { publicDisplayName } from "./lib/publicDisplayName";
+import { publicDisplayName, chosenPublicDisplayName, displayNameError } from "./lib/publicDisplayName";
 import { canUserViewList } from "./lib/permissions";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
@@ -6,7 +6,9 @@ import { actorMutation, actorQuery } from "./lib/authenticated";
  * Provides user statistics and profile information.
  */
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
+import { requireSession } from "./lib/session";
+import { resourceUnavailable } from "./lib/authError";
 import { query, internalMutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
@@ -230,5 +232,26 @@ export const { public: getUserStats, internal: getUserStatsInternal } = actorQue
       completedItems,
       pendingItems: totalItems - completedItems,
     };
+  },
+});
+
+
+/** Only the authenticated account can explicitly choose its public attribution. */
+export const { public: getMyPublicDisplayName, internal: getMyPublicDisplayNameInternal } = actorQuery({
+  resources: () => ({}), scope: "lists:read", args: {},
+  handler: async ctx => ({ displayName: chosenPublicDisplayName(await ctx.db.get(ctx.actor.userId)) }),
+});
+
+export const { public: setPublicDisplayName, internal: setPublicDisplayNameInternal } = actorMutation({
+  resources: () => ({}), scope: "*", args: { displayName: v.string() },
+  handler: async (ctx, args) => {
+    if (ctx.actor.viaApiKey) throw resourceUnavailable();
+    const session = await requireSession(ctx, ctx.credentials.authToken);
+    const user = await ctx.db.get(ctx.actor.userId);
+    const displayName = args.displayName.trim().normalize("NFKC");
+    const error = displayNameError(displayName, session.email) ?? displayNameError(displayName, user?.email);
+    if (error) throw new ConvexError(error);
+    await ctx.db.patch(ctx.actor.userId, { displayName, displayNameChosenAt: Date.now() });
+    return { displayName };
   },
 });

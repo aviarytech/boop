@@ -27,6 +27,34 @@ switches are local presentation changes. Role changes update open details and me
 Public-link access remains independent; an invitation does not unpublish content.
 Broader sharing discovery and Shared with me remain #258.
 
+## Inviter identity and privacy
+
+Sending or resending requires an explicitly chosen, valid public display name.
+The shared editor on Invitations and Profile uses `users.setPublicDisplayName`,
+a session-only, self-account mutation. It records `displayNameChosenAt`; neither
+historical names nor signup defaults imply consent. `users.getMyPublicDisplayName`
+returns only the eligible name or null, never prefilling a historical private name.
+The client waits for this query before enabling send/resend. Saving a name never
+sends an invitation automatically. Revoke and accepted-access management remain
+available before name setup.
+
+The editor explains that the name appears publicly in invitations, invitation emails
+and shared activity, while the account email stays private. Names are trimmed and
+Unicode-normalized, must contain a letter and be 2–80 characters, and cannot contain
+email addresses, control/hidden characters or generic defaults (`boop user`, `user`,
+`anonymous`, `unknown`). The first part of the stored or signed-session email is also
+rejected case-insensitively. This is an explicit recognizable-name choice, not legal
+identity verification. Nicknames and non-Latin names are supported.
+
+Preview, inbox, background mail payload and acceptance use `chosenPublicDisplayName`,
+which applies the existing `publicDisplayName` masking policy plus explicit-choice
+and validation checks. Old pending invitations stay unavailable and queued mail is
+suppressed until the sender saves a valid name; owners can then explicitly resend.
+Existing accepted grants are not revoked by name eligibility changes. No inviter
+email is returned to recipients or added to mail content or reply-to headers. This
+requires the optional schema field and backend deployment before the new UI; no
+historical-name migration or automatic consent backfill is performed.
+
 ## Client API
 
 Browser/native hooks use `src/lib/authenticatedConvex` and its regenerated local

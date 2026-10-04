@@ -48,6 +48,7 @@ afterEach(cleanup);
 
 async function setup({ role = 'viewer', published = false, actor = 'pending', acceptFirst = false } = {}) {
   const ctx = fixture(modules, { published });
+  Object.assign(ctx.rows.users.find(user => user._id === "U-owner"), { displayName: "Alex Rivera", displayNameChosenAt: 1 });
   ctx.rows.comments[0].userDid = 'did:pending';
   const state = globalThis.__invitationDestination = { ctx, did: `did:${actor}`, calls: [], revision: 0, listeners: new Set() };
   state.subscribe = listener => { state.listeners.add(listener); return () => state.listeners.delete(listener); };

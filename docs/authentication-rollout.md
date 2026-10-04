@@ -329,3 +329,13 @@ frontend/backend TypeScript checks, generated auth registry check, changed-file
 lint and an isolated Vite build when changing these boundaries. Keep per-commit
 results and review status in the pull request; local fixtures do not satisfy the
 integration and release gates above.
+
+
+Private invitations require the stronger `chosenPublicDisplayName` policy: a valid
+name explicitly saved through the session-only `users.setPublicDisplayName` control
+on Profile or Invitations. `displayNameChosenAt` records that choice; old stored
+names never count as consent. The control explains public visibility and rejects
+email addresses, normalized/case-insensitive local-part matches, generic defaults
+and hidden characters. Preview, inbox, queued mail and acceptance all enforce this
+policy, including historical pending invitations. The account email remains private.
+The existing general attribution masking contract above is unchanged.

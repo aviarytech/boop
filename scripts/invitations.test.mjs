@@ -13,6 +13,7 @@ await build({ entryPoints: names.map(name => `convex/${name}.ts`), outdir: "tmp/
 const modules = Object.fromEntries(await Promise.all(names.map(async name => [name, await import(pathToFileURL(`${process.cwd()}/tmp/invitation-test/${name}.mjs`))])));
 const make = () => {
   const ctx = fixture(modules);
+  for (const user of ctx.rows.users) Object.assign(user, { displayName: `${user.displayName} Friend`, displayNameChosenAt: 1 });
   ctx.db.normalizeId = (_table, id) => id.startsWith("listInvitations-") ? id : null;
   return ctx;
 };
@@ -165,8 +166,8 @@ test("generic mail, stable provider idempotency, failure visibility, and obsolet
     assert.equal((await call("getListInvitations", ctx, { ...owner, listId: "L" }))[0].delivery, "failed");
     const sent = JSON.parse(calls[0].options.body);
     assert.equal(sent.to, "recipient@example.test");
-    assert.match(sent.text, /owner invited/);
-    for (const secret of ["Private list", "Secret item", "Private note", "attachments", '"listId"']) assert.equal(JSON.stringify(sent).includes(secret), false);
+    assert.match(sent.text, /owner Friend invited/);
+    for (const secret of ["Private list", "Secret item", "Private note", "attachments", "owner@example.test", '"listId"']) assert.equal(JSON.stringify(sent).includes(secret), false);
     assert.equal(calls[0].options.headers["Idempotency-Key"], `private-invitation/${invite.invitationId}/1`);
     const fresh = await call("resendInvitation", ctx, { ...manage(invite), requestId: "delivery_retry" });
     await modules.invitationMail.deliver._handler(ctx.action, invite);
@@ -263,5 +264,85 @@ test("cached sharing sessions and recipient tokens are isolated from other suite
   } finally {
     if (previous === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = previous;
+  }
+});
+
+
+const setName = (ctx, displayName, auth = owner, suffix = "") => modules.users[`setPublicDisplayName${suffix}`]._handler(ctx, { ...auth, displayName });
+
+test("inviter must explicitly save a valid public name; create and resend fail without side effects", async () => {
+  for (const suffix of ["", "Internal"]) {
+    for (const profile of [
+      { displayName: "Alex Rivera", displayNameChosenAt: undefined },
+      { displayName: "owner", displayNameChosenAt: undefined },
+      { displayName: "owner", displayNameChosenAt: 1 },
+      { displayName: " OWNER ", displayNameChosenAt: 1 },
+      { displayName: "boop user", displayNameChosenAt: 1 },
+      { displayName: "owner@example.test", displayNameChosenAt: 1 },
+      { displayName: "", displayNameChosenAt: 1 },
+    ]) {
+      const ctx = make(), invite = await create(ctx);
+      Object.assign(ctx.rows.users.find(u => u._id === "U-owner"), profile);
+      const before = JSON.stringify([ctx.rows, ctx.scheduled]);
+      await assert.rejects(() => call(`createInvitation${suffix}`, ctx, { ...owner, listId: "L", email: "next@example.test", requestId: "invalid_name_create" }), /Choose and save a recognizable public display name/);
+      await assert.rejects(() => call(`resendInvitation${suffix}`, ctx, { ...manage(invite), requestId: "invalid_name_resend" }), /Choose and save a recognizable public display name/);
+      assert.equal(JSON.stringify([ctx.rows, ctx.scheduled]), before);
+    }
+  }
+});
+
+test("public name setup validates privacy, updates only the signed-in account, and cannot be delegated to an API key", async () => {
+  const ctx = make();
+  const user = ctx.rows.users.find(u => u._id === "U-owner");
+  delete user.displayNameChosenAt; user.displayName = "owner";
+  assert.deepEqual(await modules.users.getMyPublicDisplayName._handler(ctx, owner), { displayName: null });
+  for (const name of ["", " ", "A", "boop user", "BOOPUSER", "Anonymous", "12345", "fixture", "owner", " OWNER ", "owner@example.test", "Alex\nRivera", "Alex\u200bRivera", "x".repeat(81), "Alex＠example.test"]) {
+    await assert.rejects(() => setName(ctx, name), /Choose a/);
+    assert.equal(user.displayNameChosenAt, undefined);
+  }
+  ctx.rows.agentApiKeys.find(k => k._id === "KEY-owner").scopes = ["*"];
+  for (const suffix of ["", "Internal"]) {
+    await assert.rejects(() => setName(ctx, "Alex Rivera", {}, suffix));
+    await assert.rejects(() => setName(ctx, "Alex Rivera", { apiKey: "key-owner" }, suffix), unavailable);
+    await assert.rejects(() => setName(ctx, "Alex Rivera", { ...owner, userDid: "did:outsider" }, suffix), /Identity assertion/);
+  }
+  await setName(ctx, "  Álex Rivera  ");
+  assert.equal(user.displayName, "Álex Rivera");
+  assert.equal(typeof user.displayNameChosenAt, "number");
+  assert.equal(ctx.rows.users.find(u => u._id === "U-outsider").displayName, "outsider Friend");
+  assert.deepEqual(await modules.users.getMyPublicDisplayName._handler(ctx, owner), { displayName: "Álex Rivera" });
+  assert.deepEqual(await modules.users.getUsersByDids._handler(ctx, { dids: ["did:owner"] }), { "did:owner": { displayName: "Álex Rivera" } });
+  const invite = await create(ctx), auth = await login(ctx);
+  assert.equal((await call("getInvitation", ctx, { ...invite, ...auth })).inviter, "Álex Rivera");
+  assert.deepEqual(await call("deliveryPayload", ctx, invite), { email: "recipient@example.test", inviter: "Álex Rivera" });
+});
+
+test("pending historical identities never leak through preview or queued mail and cannot be accepted until explicitly chosen", async () => {
+  for (const profile of [
+    { displayName: "owner", displayNameChosenAt: undefined },
+    { displayName: "Alex Rivera", displayNameChosenAt: undefined },
+    { displayName: "boop user", displayNameChosenAt: undefined },
+    { displayName: "owner@example.test", displayNameChosenAt: 1 },
+    { displayName: "owner", displayNameChosenAt: 1 },
+  ]) {
+    const ctx = make(), invite = await create(ctx), auth = await login(ctx);
+    Object.assign(ctx.rows.users.find(u => u._id === "U-owner"), profile);
+    assert.equal(await call("getInvitation", ctx, { ...invite, ...auth }), null);
+    assert.deepEqual(await call("getPendingInvitations", ctx, auth), []);
+    assert.equal(await call("deliveryPayload", ctx, invite), null);
+    const fetchBefore = globalThis.fetch;
+    let mailCalls = 0;
+    globalThis.fetch = async () => { mailCalls++; return { ok: true }; };
+    try { await modules.invitationMail.deliver._handler(ctx.action, invite); }
+    finally { globalThis.fetch = fetchBefore; }
+    assert.equal(mailCalls, 0);
+    await assert.rejects(() => accept(ctx, invite, auth), unavailable);
+    assert.equal(ctx.rows.listGrants.length, 4);
+    await setName(ctx, "Alex Rivera");
+    const preview = await call("getInvitation", ctx, { ...invite, ...auth });
+    assert.equal(preview.inviter, "Alex Rivera");
+    assert.equal(JSON.stringify(preview).includes("owner@example.test"), false);
+    const resent = await call("resendInvitation", ctx, { ...manage(invite), requestId: "name_fixed_resend" });
+    assert.equal((await accept(ctx, resent, auth)).role, "viewer");
   }
 });

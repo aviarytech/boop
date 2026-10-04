@@ -3,6 +3,7 @@
  * Displays user identity, activity statistics, and account information.
  */
 
+import { PublicDisplayNameEditor } from "../components/PublicDisplayNameEditor";
 import { Link } from "react-router-dom";
 import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
@@ -15,6 +16,8 @@ export function Profile() {
   const { did, legacyDid, email, displayName, isLoading: userLoading, subOrgId } = useCurrentUser();
   const { haptic } = useSettings();
   const { plan, subscription } = useBilling();
+
+  const publicProfile = useQuery(api.users.getMyPublicDisplayName, {});
 
   // Fetch user's lists
   const lists = useQuery(
@@ -104,7 +107,7 @@ export function Profile() {
             }}
             aria-hidden="true"
           >
-            {(displayName || email || 'B').trim().charAt(0).toUpperCase()}
+            {(publicProfile?.displayName || displayName || email || 'B').trim().charAt(0).toUpperCase()}
           </div>
           <h1
             className="text-white mb-1"
@@ -115,12 +118,16 @@ export function Profile() {
               letterSpacing: -0.5,
             }}
           >
-            {displayName || email?.split('@')[0] || 'Anonymous'}
+            {publicProfile?.displayName || displayName || email?.split('@')[0] || 'Anonymous'}
           </h1>
           <p className="text-white/75 text-sm">
             {email || 'No email set'}
           </p>
         </div>
+
+        <section className="px-6 py-6" aria-label="Public display name settings">
+          <PublicDisplayNameEditor profile={publicProfile} />
+        </section>
 
         {/* DID Section */}
         <div className="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">

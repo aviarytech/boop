@@ -8,10 +8,12 @@ const React = await import("react");
 const { render, fireEvent, screen, cleanup, waitFor } = await import("@testing-library/react");
 const { MemoryRouter, Routes, Route } = await import("react-router-dom");
 const id = "a".repeat(32);
-const state = globalThis.__invitationUi = {};
+const state = globalThis.__invitationUi = { revision: 0, listeners: new Set() };
+state.subscribe = listener => { state.listeners.add(listener); return () => state.listeners.delete(listener); };
+state.notify = () => { state.revision++; for (const listener of state.listeners) listener(); };
 const pending = { invitationId: id, version: 1, inviter: "Alex", role: "viewer", expiresAt: Date.now() + 86400000 };
 function reset() {
-  Object.assign(state, { calls: [], queries: [], fail: false, pending: [pending], linked: pending,
+  Object.assign(state, { calls: [], queries: [], fail: false, profile: { displayName: "Alex" }, pending: [pending], linked: pending,
     lists: [{ _id: "L", name: "My list", ownerDid: "did:owner" }, { _id: "N", name: "My note", kind: "note", ownerDid: "did:owner" }, { _id: "X", name: "Someone else's list", ownerDid: "did:other" }],
     invitations: [{ ...pending, email: "friend@example.test", status: "pending", delivery: "failed" }], grants: [],
   });
@@ -26,10 +28,10 @@ await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitati
       user: 'export const useCurrentUser=()=>({did:"did:owner",email:"owner@example.test"});',
       auth: 'export const useAuth=()=>({logout:async()=>{globalThis.__invitationUi.calls.push(["logout"]);}});',
       login: 'import React from "react"; export const Login=({embedded})=>React.createElement("p",null,embedded?"Embedded email sign-in":"Other sign-in");',
-      convex: `import {getFunctionName} from "convex/server";
-        export function useQuery(ref,args){const s=globalThis.__invitationUi;const name=getFunctionName(ref);s.queries.push([name,args]);
-          return {"invitations:getPendingInvitations":s.pending,"invitations:getInvitation":s.linked,"lists:getUserLists":s.lists,"invitations:getListInvitations":s.invitations,"listGrants:getListGrants":s.grants}[name];}
-        export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");return {listId:"accepted-list"};};}`,
+      convex: `import {useSyncExternalStore} from "react"; import {getFunctionName} from "convex/server";
+        export function useQuery(ref,args){const s=globalThis.__invitationUi;useSyncExternalStore(s.subscribe,()=>s.revision);const name=getFunctionName(ref);s.queries.push([name,args]);
+          return {"invitations:getPendingInvitations":s.pending,"invitations:getInvitation":s.linked,"lists:getUserLists":s.lists,"invitations:getListInvitations":s.invitations,"listGrants:getListGrants":s.grants,"users:getMyPublicDisplayName":s.profile}[name];}
+        export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");if(name==="users:setPublicDisplayName"){s.profile={displayName:args.displayName.trim()};s.notify();return s.profile;}return {listId:"accepted-list"};};}`,
     }[path] }));
   } }],
 });
@@ -145,4 +147,51 @@ test("send and resend preserve distinct retry IDs when crypto.randomUUID is unav
     if (descriptor) Object.defineProperty(crypto, "randomUUID", descriptor);
     else delete crypto.randomUUID;
   }
+});
+
+
+test("missing or loading public name blocks send and resend without blocking revocation", async () => {
+  for (const profile of [undefined, { displayName: null }]) {
+    reset(); state.profile = profile; mount();
+    fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "new@example.test" } });
+    assert.equal(screen.getByRole("button", { name: "Send invitation" }).disabled, true);
+    assert.equal(screen.getByRole("button", { name: "Resend" }).disabled, true);
+    assert.equal(screen.getByLabelText("Public display name").value, "");
+    fireEvent.submit(screen.getByRole("button", { name: "Send invitation" }).closest("form"));
+    assert.deepEqual(state.calls, []);
+    fireEvent.click(screen.getByRole("button", { name: "Revoke invitation" }));
+    await screen.findByText("Changes saved.");
+    assert.equal(state.calls[0][0], "invitations:revokeInvitation");
+    cleanup();
+  }
+});
+
+test("inline public-name setup explains disclosure, rejects invalid names and enables explicit sending only after save", async () => {
+  reset(); state.profile = { displayName: null }; mount();
+  fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
+  assert.match(screen.getByText(/Choose a name people you invite/).textContent, /This name is public.*Your account email stays private/);
+  fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "new@example.test" } });
+  for (const name of ["boop user", "alex@example.test"]) {
+    fireEvent.change(screen.getByLabelText("Public display name"), { target: { value: name } });
+    fireEvent.click(screen.getByRole("button", { name: "Save public name" }));
+    await screen.findByRole("alert");
+    assert.deepEqual(state.calls, []);
+  }
+  fireEvent.change(screen.getByLabelText("Public display name"), { target: { value: "Alex Rivera" } });
+  state.fail = true;
+  fireEvent.click(screen.getByRole("button", { name: "Save public name" }));
+  await screen.findByText(/Could not save your name/);
+  assert.equal(screen.getByRole("button", { name: "Send invitation" }).disabled, true);
+  assert.equal(screen.getByRole("button", { name: "Resend" }).disabled, true);
+  state.fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Save public name" }));
+  await screen.findByText(/Public name saved/);
+  assert.equal(screen.getByLabelText("Public display name").value, "Alex Rivera");
+  assert.equal(screen.getByRole("button", { name: "Send invitation" }).disabled, false);
+  assert.equal(screen.getByRole("button", { name: "Resend" }).disabled, false);
+  assert.ok(state.calls.every(([name]) => name === "users:setPublicDisplayName"));
+  fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+  await screen.findByText(/Invitation recorded/);
+  assert.equal(state.calls.at(-1)[0], "invitations:createInvitation");
 });

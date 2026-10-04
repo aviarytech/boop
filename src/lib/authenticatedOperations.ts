@@ -146,5 +146,7 @@ export const authenticatedOperations = new Set([
   api.templates.getUserTemplates,
   api.templates.updateTemplate,
   api.users.deleteUserData,
+  api.users.getMyPublicDisplayName,
   api.users.getUserStats,
+  api.users.setPublicDisplayName,
 ].map(getFunctionName));

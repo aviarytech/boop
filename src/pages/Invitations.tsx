@@ -1,3 +1,5 @@
+import { ConvexError } from "convex/values";
+import { PublicDisplayNameEditor } from "../components/PublicDisplayNameEditor";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FunctionReturnType } from "convex/server";
@@ -55,6 +57,8 @@ function LinkedInvitation({ invitationId, version }: { invitationId: Id<"listInv
 }
 
 function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
+  const profile = useQuery(api.users.getMyPublicDisplayName, {});
+  const canSend = !!profile?.displayName;
   const invitations = useQuery(api.invitations.getListInvitations, { listId });
   const grants = useQuery(api.listGrants.getListGrants, { listId });
   const create = useMutation(api.invitations.createInvitation);
@@ -77,12 +81,15 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
   async function run(operation: () => Promise<unknown>, success = "Changes saved.") {
     setBusy(true); setError(""); setNotice("");
     try { await operation(); setNotice(success); }
-    catch { setError("Could not save. Check your connection and try again. If you’ve sent several invitations, wait before resending."); }
+    catch (cause) { setError(cause instanceof ConvexError && typeof cause.data === "string" ? cause.data : "Could not save. Check your connection and try again. If you’ve sent several invitations, wait before resending."); }
     finally { setBusy(false); }
   }
   return <div className="mt-6">
-    <form className="space-y-4" onSubmit={e => {
+    <PublicDisplayNameEditor profile={profile} />
+    {profile?.displayName && <p className="mt-4 text-sm">Invitations identify you as <strong>{profile.displayName}</strong>.</p>}
+    <form className="mt-6 space-y-4" onSubmit={e => {
       e.preventDefault();
+      if (!canSend || busy) return;
       void run(async () => {
         await create({ listId, email, role, requestId: requestId(`create:${email.trim().toLowerCase()}:${role}`) });
         setEmail("");
@@ -94,7 +101,7 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
         <select id="invitation-role" className={input} value={role} onChange={e => setRole(e.target.value as Role)} disabled={busy}>
           <option value="viewer">Viewer — read only</option><option value="editor">Editor — view and edit</option>
         </select></div>
-      <button className={primary} disabled={busy || !email.trim()}>Send invitation</button>
+      <button className={primary} disabled={busy || !canSend || !email.trim()}>Send invitation</button>
       <p className="text-sm text-stone-600 dark:text-gray-400">Expires in seven days. Emails contain no list or note content.</p>
     </form>
     {error && <p role="alert" className="mt-4 text-red-700 dark:text-red-400">{error}</p>}
@@ -109,7 +116,7 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
           {invite.status === "pending" && <select className={`${input} w-auto`} aria-label={`Role for ${invite.email}`} disabled={busy} value={invite.role} onChange={e => void run(() => update({ listId, invitationId: invite.invitationId, version: invite.version, role: e.target.value as Role }))}>
             <option value="viewer">Viewer</option><option value="editor">Editor</option>
           </select>}
-          {(invite.status !== "accepted" || !grants?.some(g => g._id === invite.grantId)) && <button className={button} disabled={busy || grants === undefined} onClick={() => void run(() => resend({ listId, invitationId: invite.invitationId, version: invite.version, requestId: requestId(`resend:${invite.invitationId}:${invite.version}`) }), "New invitation queued. Earlier links no longer work.")}>Resend</button>}
+          {(invite.status !== "accepted" || !grants?.some(g => g._id === invite.grantId)) && <button className={button} disabled={busy || !canSend || grants === undefined} onClick={() => void run(() => resend({ listId, invitationId: invite.invitationId, version: invite.version, requestId: requestId(`resend:${invite.invitationId}:${invite.version}`) }), "New invitation queued. Earlier links no longer work.")}>Resend</button>}
           {(invite.status === "pending" || invite.status === "expired") && <button className={button} disabled={busy} onClick={() => void run(() => revoke({ listId, invitationId: invite.invitationId, version: invite.version }))}>Revoke invitation</button>}
         </div>
       </li>)}
