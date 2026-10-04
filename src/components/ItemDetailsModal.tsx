@@ -27,7 +27,7 @@ import { NaturalDateInput } from "./ui/NaturalDateInput";
 import { recordLatencyMs } from "../lib/observability";
 
 interface ItemDetailsModalProps {
-  item: Doc<"items">;
+  item: Doc<"items"> & { assigneeDids?: string[] };
   userDid: string;
   legacyDid?: string;
   canEdit: boolean;
@@ -58,8 +58,7 @@ export function ItemDetailsModal({
 
   const { draft, set: setDraft, source: draftSource } = useItemDetailsDraft(item);
   const { name, description, url, dueDate, hasRecurrence, recurrenceFrequency,
-    recurrenceInterval, recurrenceEndDate, priority, selectedCategory, assigneeDid } = draft;
-  const itemAssigneeDid = item.assigneeDid;
+    recurrenceInterval, recurrenceEndDate, priority, selectedCategory, assigneeDids } = draft;
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -81,10 +80,10 @@ export function ItemDetailsModal({
   const participantDids = useMemo(() => {
     const dids = new Set<string>([userDid, item.createdByDid]);
     if (item.checkedByDid) dids.add(item.checkedByDid);
-    if (itemAssigneeDid) dids.add(itemAssigneeDid);
+    for (const did of assigneeDids) dids.add(did);
     (comments ?? []).forEach((comment) => dids.add(comment.userDid));
     return Array.from(dids);
-  }, [comments, itemAssigneeDid, item.checkedByDid, item.createdByDid, userDid]);
+  }, [comments, assigneeDids, item.checkedByDid, item.createdByDid, userDid]);
 
   const participantProfiles = useQuery(
     api.users.getUsersByDids,
@@ -143,12 +142,11 @@ export function ItemDetailsModal({
           : undefined,
         priority: priority || undefined,
         groceryAisle: selectedCategory || undefined,
-        assigneeDid: assigneeDid || undefined,
+        assigneeDids: JSON.stringify([...assigneeDids].sort()) !== JSON.stringify([...(draftSource.current.assigneeDids ?? (draftSource.current.assigneeDid ? [draftSource.current.assigneeDid] : []))].sort()) ? assigneeDids : undefined,
         clearDueDate: !dueDate && !!item.dueDate,
         clearUrl: !url && !!item.url,
         clearRecurrence: !hasRecurrence && !!item.recurrence,
         clearPriority: !priority && !!item.priority,
-        clearAssigneeDid: !assigneeDid && !!itemAssigneeDid,
         clearGroceryAisle: !selectedCategory && !!item.groceryAisle,
       };
       
@@ -275,16 +273,17 @@ export function ItemDetailsModal({
         {/* Assignee */}
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-            👤 Assignee
+            👤 Assignees
           </label>
           <select
-            value={assigneeDid}
-            onChange={(e) => setDraft("assigneeDid", e.target.value)}
+            aria-label="Add assignee"
+            value=""
+            onChange={(e) => { if (e.target.value) setDraft("assigneeDids", [...new Set([...assigneeDids, e.target.value])]); }}
             disabled={!canEdit}
             className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           >
-            <option value="">Unassigned</option>
-            {participantDids.map((did) => {
+            <option value="">Add assignee…</option>
+            {participantDids.filter(did => !assigneeDids.includes(did)).map((did) => {
               const label = participantProfiles?.[did]?.displayName ?? `${did.slice(0, 8)}…`;
               return (
                 <option key={did} value={did}>
@@ -293,6 +292,13 @@ export function ItemDetailsModal({
               );
             })}
           </select>
+          <div className="flex flex-wrap gap-2 mt-2">
+            {assigneeDids.length === 0 && <span className="text-xs text-gray-500">Unassigned</span>}
+            {assigneeDids.map(did => <span key={did} className="inline-flex max-w-full min-w-0 items-center text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-1" title={did}>
+              <span className="min-w-0 truncate" title={participantProfiles?.[did]?.displayName ?? did}>{participantProfiles?.[did]?.displayName ?? (did.length > 28 ? `${did.slice(0, 16)}…${did.slice(-8)}` : did)}</span>
+              {canEdit && <button type="button" aria-label={`Remove assignee ${did}`} className="ml-2 shrink-0" onClick={() => setDraft("assigneeDids", assigneeDids.filter(value => value !== did))}>×</button>}
+            </span>)}
+          </div>
         </div>
 
         {/* Presence */}

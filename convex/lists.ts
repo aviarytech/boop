@@ -1,3 +1,4 @@
+import { inheritAssignments, withAssignments } from "./lib/assignments";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
@@ -248,19 +249,21 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
 
     // Rest-spread rather than an explicit field list, so a column added to items
     // later is carried by a copy without anyone remembering to update this.
-    // Only these four must not cross: two are system-owned, parentId is rewritten
+    // System-owned IDs must not cross; parentId is rewritten
     // in the second pass below, and vcProofs attest actions taken against the
     // SOURCE asset's DID — carrying them would attribute one asset's provenance
-    // to another, the exact claim this copy exists to avoid making.
-    const DROP = ["_id", "_creationTime", "parentId", "vcProofs"] as const;
+    // to another, the exact claim this copy exists to avoid making. Assignment
+    // projections/revisions are rebuilt from the source memberships below.
+    const DROP = ["_id", "_creationTime", "parentId", "vcProofs", "assigneeDid", "assignmentsVersion"] as const;
 
     for (const item of items) {
       const payload: Record<string, unknown> = { ...item };
       for (const field of DROP) delete payload[field];
       const newId = await ctx.db.insert(
         "items",
-        { ...payload, listId } as Omit<Doc<"items">, "_id" | "_creationTime">
+        { ...payload, listId, assignmentsVersion: 1 } as Omit<Doc<"items">, "_id" | "_creationTime">
       );
+      await inheritAssignments(ctx, item, newId, ctx.actor.did, "copy");
       idMap.set(item._id, newId);
     }
 
@@ -422,7 +425,7 @@ const listWithItemsOperation = actorQuery({
       (a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)
     );
 
-    return { list, items };
+    return { list, items: await Promise.all(items.map(item => withAssignments(ctx, item))) };
   },
 });
 
@@ -543,6 +546,9 @@ export const { public: deleteList, internal: deleteListInternal, replay: deleteL
     for (const item of items) {
       await ctx.db.delete(item._id);
     }
+
+    // Includes historical orphan membership rows whose items were already removed.
+    for (const row of await ctx.db.query("itemAssignees").withIndex("by_list", q => q.eq("listId", args.listId)).collect()) await ctx.db.delete(row._id);
 
     // Delete publications
     const pubs = await ctx.db

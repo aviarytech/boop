@@ -37,7 +37,18 @@ export function projectItems(base: OfflineItem[], operations: QueuedMutation[], 
       if (m.type === 'uncheckItem' || m.type === 'batchUncheckItems') Object.assign(item, { checked: false, checkedByDid: undefined, checkedAt: undefined });
       if (m.type === 'reorderItem') item.order = index;
       if (m.type === 'updateItem') {
-        for (const key of ['name', 'description', 'dueDate', 'url', 'recurrence', 'priority', 'groceryAisle', 'assigneeDid']) {
+        if (Array.isArray(p.assigneeDids)) {
+          item.assigneeDids = [...new Set(p.assigneeDids as string[])].sort();
+          item.assigneeDid = item.assigneeDid && item.assigneeDids.includes(item.assigneeDid) ? item.assigneeDid : item.assigneeDids[0];
+        } else if (p.assigneeDid !== undefined || p.clearAssigneeDid) {
+          const dids = new Set(item.assigneeDids ?? (item.assigneeDid ? [item.assigneeDid] : []));
+          if (item.assigneeDid) dids.delete(item.assigneeDid);
+          if (!p.clearAssigneeDid && p.assigneeDid) dids.add(String(p.assigneeDid));
+          item.assigneeDids = [...dids].sort();
+          item.assigneeDid = p.clearAssigneeDid ? item.assigneeDids[0] : String(p.assigneeDid);
+        }
+
+        for (const key of ['name', 'description', 'dueDate', 'url', 'recurrence', 'priority', 'groceryAisle']) {
           if (p[key] !== undefined) Object.assign(item, { [key]: p[key] });
           if (p[`clear${key[0].toUpperCase()}${key.slice(1)}`]) Object.assign(item, { [key]: undefined });
         }

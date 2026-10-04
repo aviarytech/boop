@@ -9,7 +9,7 @@ import { projectItems } from '../lib/optimisticItems';
 const EMPTY_ITEMS: OfflineItem[] = [];
 const EMPTY_ACKNOWLEDGMENTS: ReplayAck[] = [];
 const EMPTY_OPERATION_IDS: string[] = [];
-export interface OptimisticItem extends Doc<'items'> { _isOptimistic?: boolean; _syncError?: string; _localKey?: string; _operationId?: string }
+export interface OptimisticItem extends Doc<'items'> { assigneeDids?: string[]; _isOptimistic?: boolean; _syncError?: string; _localKey?: string; _operationId?: string }
 
 /** Durable queue entries are the optimistic state, including after reload.
  * Acknowledgments identify creates by operation ID; names and clocks never do. */

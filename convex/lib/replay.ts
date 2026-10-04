@@ -1,3 +1,4 @@
+import { withAssignments } from "./assignments";
 import { AuthError } from './authError';
 import { v, ConvexError } from 'convex/values';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
@@ -45,7 +46,15 @@ export async function replayOperation(
       wanted = prior.revisions[expected.id];
     }
     const doc = await ctx.db.get(expected.id as Id<'items'>);
-    if (!doc || await revision(doc) !== wanted) throw conflict('This item changed on the server. Your edit is saved for review.');
+    if (!doc) throw conflict('This item changed on the server. Your edit is saved for review.');
+    const rawMatches = await revision(doc) === wanted;
+    // Already-open older clients hash the new joined read response verbatim.
+    // Accept exactly our current server projection as well as the persisted
+    // document, never arbitrary client-selected fields. Membership changes still
+    // alter assignmentsVersion (and the projection), so both forms conflict.
+    const projectedMatches = !rawMatches && 'listId' in doc && 'checked' in doc
+      && await revision(await withAssignments(ctx, doc)) === wanted;
+    if (!rawMatches && !projectedMatches) throw conflict('This item changed on the server. Your edit is saved for review.');
   }
   const result = await execute() ?? null;
   const revisions: Record<string, string> = {};

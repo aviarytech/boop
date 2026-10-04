@@ -15,6 +15,7 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 /**
@@ -248,6 +249,12 @@ export const applyRemint = internalMutation({
         if (nested) Object.assign(patch, nested);
         if (Object.keys(patch).length > 0) {
           await ctx.db.patch(row._id as never, patch as never);
+          // Row-only/secondary assignment changes must invalidate offline edits.
+          // Keep collision rows: their original attribution is historical evidence.
+          if (table === "itemAssignees" && patch.assigneeDid) {
+            const item = await ctx.db.get(row.itemId as Id<"items">);
+            if (item) await ctx.db.patch(item._id, { updatedAt: Math.max(Date.now(), (item.updatedAt ?? 0) + 1), ...(item.assignmentsVersion !== undefined ? { assignmentsVersion: item.assignmentsVersion + 1 } : {}) });
+          }
           rewritten += 1;
         }
       }
