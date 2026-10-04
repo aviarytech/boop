@@ -322,26 +322,10 @@ logic and dependencies, not live WebSocket behavior. Convex schema validation/OC
 presigned URL revocation, actual bucket/push operations and web/iOS/Android
 cross-platform release behavior still need isolated integration/staging evidence.
 
-Foundation validation in the isolated worktree (checked-in Convex declarations,
-no live codegen): `node --test scripts/private-sharing.test.mjs` **52 passed**;
-`bun test` **446 passed, 0 failed** across 49 files; frontend `tsc -b`, backend
-`tsc -p convex/tsconfig.json`, generated auth registry `--check`, and ESLint on
-29 changed source/test files passed (generated declarations excluded). Vite build
-passed with Sentry uploads/analytics disabled and placeholder client environment.
-Existing large-chunk and React `act(...)` warnings remain. Test-generated icon and
-splash artifacts were restored. Independent review identified read-only anchor
-verification and accepted-share profile statistics; both corrections and their
-handler regressions are included. Formal review of the final commit and the
-integration/platform evidence above remain the coordinator's next steps.
-
-PR #264 review follow-up (Pullfrog inline 4176250913): grant updates/revocations
-now require owner authority plus wildcard scope. Five new public/internal handler
-regressions cover denial without writes for item-write keys, owner wildcard and
-browser success, non-owner wildcard denial, and unchanged roster read scope.
-With frozen dependencies refreshed to the checked-in SDK 4 lockfile using
-`--ignore-scripts`, the focused sharing suite passed 57 tests and full `bun test`
-passed 503 tests (0 failed). Frontend/backend TypeScript, auth registry `--check`,
-changed-file ESLint and the direct Vite build passed. Build uploads were disabled
-and client environment values were placeholders; no live codegen ran. Existing
-React `act(...)` and bundle-size warnings remain; generated images were restored.
-This validation does not resolve the release/merge blockers above.
+Grant-management regressions cover denial without writes for item-write API keys,
+owner wildcard and browser-session success, non-owner wildcard denial, and
+unchanged roster read scope. Run the private-sharing suite, full Bun suite,
+frontend/backend TypeScript checks, generated auth registry check, changed-file
+lint and an isolated Vite build when changing these boundaries. Keep per-commit
+results and review status in the pull request; local fixtures do not satisfy the
+integration and release gates above.
