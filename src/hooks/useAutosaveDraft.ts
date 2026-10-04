@@ -1,9 +1,10 @@
+import { authErrorData } from "../../convex/lib/authError";
 import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
-export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict";
+export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "denied";
 
 /** Callers remount this hook when the account/resource key changes. */
 export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persist }: {
@@ -34,9 +35,10 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
   const inFlightRef = useRef(false);
   const queuedRef = useRef(false);
   const mountedRef = useRef(true);
-  const conflict = dirty && (status === "conflict" ||
+  const conflict = status !== "denied" && dirty && (status === "conflict" ||
     (recoveredRef.current && !inFlightRef.current && baseRef.current !== saved));
   const conflictRef = useRef(conflict);
+  const deniedRef = useRef(false);
 
   useEffect(() => {
     valueRef.current = value;
@@ -48,7 +50,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
   });
 
   const save = useCallback(async function drain(): Promise<void> {
-    if (!dirtyRef.current || !editRef.current || conflictRef.current) return;
+    if (!dirtyRef.current || !editRef.current || conflictRef.current || deniedRef.current) return;
     if (inFlightRef.current) { queuedRef.current = true; return; }
     const base = baseRef.current;
     if (base === undefined) return;
@@ -81,9 +83,11 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
         queuedRef.current = true;
       }
     } catch (error) {
-      const conflicted = isNoteConflict(error);
+      const denied = authErrorData(error)?.code === "FORBIDDEN";
+      deniedRef.current = denied;
+      const conflicted = !denied && isNoteConflict(error);
       conflictRef.current = conflicted;
-      if (mountedRef.current) setStatus(conflicted ? "conflict" : "error");
+      if (mountedRef.current) setStatus(denied ? "denied" : conflicted ? "conflict" : "error");
     } finally {
       inFlightRef.current = false;
       if (succeeded && queuedRef.current) await drain();
@@ -123,7 +127,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
     dirtyRef.current = canEdit && saved !== undefined;
     setDraft(text);
     // Editing a conflicted draft must not silently authorize an overwrite.
-    if (!conflictRef.current) setStatus("idle");
+    if (!conflictRef.current && !deniedRef.current) setStatus("idle");
   };
 
   const useServer = () => {
@@ -140,7 +144,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
     setStatus("idle");
   };
   const saveDraft = () => {
-    if (inFlightRef.current || !editRef.current || savedRef.current === undefined) return;
+    if (inFlightRef.current || !editRef.current || deniedRef.current || savedRef.current === undefined) return;
     baseRef.current = savedRef.current;
     recoveredRef.current = false;
     conflictRef.current = false;

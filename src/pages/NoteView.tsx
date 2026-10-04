@@ -1,4 +1,5 @@
-import { RecoveredNoteDrafts } from "../components/RecoveredNoteDrafts";
+import { useCurrentUser } from "../hooks/useCurrentUser";
+import { RecoveredNoteDrafts, UnsentNoteDrafts } from "../components/RecoveredNoteDrafts";
 import { NoteConflict } from "../components/NoteConflict";
 /**
  * A note's page: the list header's layout with an Edit/Preview toggle where
@@ -34,6 +35,8 @@ type NoteBody = { body: string; updatedAt: number; canEdit: boolean };
 export function NoteView() {
   const { id } = useParams<{ id: string }>();
   const listId = id as Id<"lists">;
+  const { did } = useCurrentUser();
+  const draftKey = did && id ? `${did}:note:${id}` : undefined;
   const list = useQuery(api.lists.getList, { listId });
   const note = useQuery(api.notes.getNoteBody, { listId });
 
@@ -52,6 +55,7 @@ export function NoteView() {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
         <p className="text-stone-600 dark:text-stone-400">This note isn't available.</p>
+        <UnsentNoteDrafts documentKey={draftKey} />
         <Link to="/d" className="rounded-full px-4 py-2 text-sm font-semibold bg-amber-500 text-white">
           Back to lists
         </Link>
@@ -59,11 +63,11 @@ export function NoteView() {
     );
   }
 
-  return <LoadedNote key={`${list.ownerDid}:${list._id}`} list={list} note={note} />;
+  return <LoadedNote key={draftKey} list={list} note={note} draftKey={draftKey} />;
 }
 
 // Split out so the initial mode can be derived once from the first loaded body.
-function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
+function LoadedNote({ list, note, draftKey }: { list: Doc<"lists">; note: NoteBody; draftKey?: string }) {
   const navigate = useNavigate();
   const { haptic } = useSettings();
   const { isOnline } = useOffline();
@@ -71,17 +75,29 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
   const updateNoteBody = useMutation(api.notes.updateNoteBody);
 
   const [chosenMode, setChosenMode] = useState<Mode>(() => (note.body.trim() ? "preview" : "edit"));
-  const mode: Mode = note.canEdit ? chosenMode : "preview";
+
   const [dialog, setDialog] = useState<"rename" | "category" | "delete" | null>(null);
 
   const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
     saved: note.body,
-    draftKey: `${list.ownerDid}:note:${list._id}`,
-    canEdit: note.canEdit,
+    draftKey,
+    canEdit: note.canEdit && !!draftKey,
     persist: async (text, expectedBody) => {
       await updateNoteBody({ listId: list._id, body: text, expectedBody });
     },
   });
+
+  const editingUnavailable = !note.canEdit || !draftKey || status === "denied";
+  const mode: Mode = editingUnavailable ? "preview" : chosenMode;
+  const displayBody = editingUnavailable ? note.body : value;
+
+  if (status === "denied") {
+    return <div className="max-w-3xl mx-auto">
+      <p>This note isn't available for editing.</p>
+      <UnsentNoteDrafts documentKey={draftKey} />
+      <Link to="/d" className="underline">Back to lists</Link>
+    </div>;
+  }
 
   const categoryName = categories.find((c) => c._id === list.categoryId)?.name;
   const words = wordCount(value);
@@ -153,7 +169,7 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
           </div>
 
           <div className="flex items-center gap-2 flex-shrink-0">
-            {note.canEdit && (
+            {!editingUnavailable && (
               <div className="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-0.5">
                 <ModeButton active={mode === "edit"} label="Edit" onClick={() => pickMode("edit")}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -187,8 +203,10 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
         </div>
       </div>
 
-      <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />
-      {status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
+      {editingUnavailable
+        ? <UnsentNoteDrafts documentKey={draftKey} />
+        : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
+      {!editingUnavailable && status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
       {mode === "edit" ? (
         <textarea
           value={value}
@@ -200,8 +218,8 @@ function LoadedNote({ list, note }: { list: Doc<"lists">; note: NoteBody }) {
         />
       ) : (
         <div className="w-full prose prose-stone dark:prose-invert max-w-none">
-          {value.trim() ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+          {displayBody.trim() ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayBody}</ReactMarkdown>
           ) : (
             <p className="text-stone-400">Nothing to preview yet.</p>
           )}

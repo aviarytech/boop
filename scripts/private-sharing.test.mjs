@@ -112,7 +112,7 @@ const contentWrites = [
   ["items", "batchDeleteItems", { itemIds: ["I"] }],
   ["items", "promoteItem", { itemId: "CHILD" }],
   ["items", "demoteItem", { itemId: "IX", newParentId: "I" }, "cross"],
-  ["notes", "updateNoteBody", { listId: "N", body: "Changed note" }],
+  ["notes", "updateNoteBody", { listId: "N", body: "Changed note", expectedBody: "Private note body" }],
   ["didResources", "checkSharedItem", { listId: "L", itemId: "I" }],
   ["didResources", "uncheckSharedItem", { listId: "L", itemId: "I" }],
   ["comments", "addComment", { itemId: "I", text: "New comment" }],
