@@ -59,6 +59,7 @@ test('real Convex subscriptions survive sign-in, batched access, token changes a
     assert.equal(active.size, 4);
     assert.ok([...active.values()].every(q => q.args.authToken === 'renewed-session'));
     state.accountId = 'account-two'; state.token = 'other-session'; view.rerender(tree());
+    assert.equal(active.size, 4, 'account switch resubscribes identity, list, item and draft');
     assert.ok([...active.values()].every(q => q.args.authToken === 'other-session'));
     state.accountId = ''; state.token = null; view.rerender(tree());
     assert.equal(active.size, 0, 'sign-out removes all protected subscriptions');
