@@ -19,6 +19,7 @@ import { isNote } from "./lib/noteBody";
  * Only the owner can publish a list.
  */
 export const { public: publishList, internal: publishListInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "*",
   args: {
@@ -40,7 +41,7 @@ export const { public: publishList, internal: publishListInternal } = actorMutat
     if (![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
       throw new Error("Only the owner can publish a list");
     }
-    // Publishing grants everyone edit; note publishing waits on Pro gating and sealing.
+    // Publication grants public read only. New note publishing is a separate release.
     if (isNote(list)) throw new Error("Notes cannot be published");
 
     // Check if already published
@@ -90,6 +91,7 @@ export const { public: publishList, internal: publishListInternal } = actorMutat
  * Only the owner can unpublish.
  */
 export const { public: unpublishList, internal: unpublishListInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "*",
   args: {
@@ -214,6 +216,7 @@ export const getPublicList = query({
  * Bookmark a published list so it shows in the user's list view.
  */
 export const { public: bookmarkList, internal: bookmarkListInternal } = actorMutation({
+  authority: "read",
   resources: args => ({ lists: [args.listId] }),
   scope: "*",
   args: {
@@ -275,6 +278,7 @@ export const { public: bookmarkList, internal: bookmarkListInternal } = actorMut
       // Notify the list owner: a new collaborator joined
       await ctx.scheduler.runAfter(0, internal.notificationActions.sendPushNotificationInternal, {
         userDid: list.ownerDid,
+        listId: args.listId,
         title: list.name,
         body: "A new collaborator joined your list",
         data: { listId: args.listId },
@@ -282,6 +286,7 @@ export const { public: bookmarkList, internal: bookmarkListInternal } = actorMut
       // Notify the joiner: the list was shared with them (delivers to their other devices)
       await ctx.scheduler.runAfter(0, internal.notificationActions.sendPushNotificationInternal, {
         userDid: ctx.actor.did,
+        listId: args.listId,
         title: list.name,
         body: "Added to your lists",
         data: { listId: args.listId },

@@ -9,7 +9,7 @@ import { mutation, query, action, internalMutation, internalQuery, internalActio
 import type { MutationCtx, QueryCtx, ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { authenticate, requireScope, type ResolvedActor, type Credentials } from "./actor";
-import { authorizeResources, type ListResources } from "./permissions";
+import { authorizeResources, type ListResources, type ListAuthority } from "./permissions";
 import { AuthError } from "./auth";
 
 const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) };
@@ -23,6 +23,9 @@ export type ActorCtx<C> = C & { actor: ResolvedActor; credentials: Credentials }
 type Definition<C, A extends PropertyValidators, R> = {
   args: A;
   offlineOperation?: string;
+  // Queries default to read, mutations/actions to edit. Owner-only and
+  // read-authorized mutations (copy/bookmark) must override deliberately.
+  authority?: ListAuthority;
   allowDeletingAccount?: boolean;
   scope: import("./apiKeyHelpers").Scope;
   resources: (args: ObjectType<A>) => ListResources;
@@ -44,11 +47,13 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
       requireScope(actor, definition.scope);
       checkAssertions(actor, args);
       if (ctx && typeof ctx === "object" && "db" in ctx) {
-        await authorizeResources(ctx as unknown as QueryCtx | MutationCtx, actor, definition.resources(args));
+        await authorizeResources(ctx as unknown as QueryCtx | MutationCtx, actor, definition.resources(args), definition.authority);
       } else {
         const resources = definition.resources(args);
         await (ctx as ActionCtx).runQuery(internal.actorSession.authorize, {
           authToken: args.authToken, apiKey: args.apiKey,
+          authority: definition.authority ?? "read",
+          scope: definition.scope,
           resources: {
             lists: resources.lists?.filter(id => id !== undefined),
             items: resources.items?.filter(id => id !== undefined),
@@ -65,7 +70,7 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
   };
 }
 export function actorMutation<A extends PropertyValidators, R>(definition: Definition<MutationCtx, A, R>) {
-  const config = prepare(definition, (ctx: MutationCtx, args) =>
+  const config = prepare({ ...definition, authority: definition.authority ?? "edit" }, (ctx: MutationCtx, args) =>
     authenticate(ctx, args, definition.allowDeletingAccount));
   const replay = mutation({
     args: { ...assertions, ...definition.args, ...credentials, replay: replayMetadata },
@@ -78,7 +83,8 @@ export function actorMutation<A extends PropertyValidators, R>(definition: Defin
       // Authenticate before receipt lookup, but allow acknowledgment of a delete
       // whose resource no longer exists. Fresh writes still run all authorization.
       return replayOperation(ctx, actor, definition.offlineOperation, payload, args.replay,
-        () => config.handler(ctx, args as ObjectType<A> & Assertions & Credentials));
+        () => config.handler(ctx, args as ObjectType<A> & Assertions & Credentials),
+        () => authorizeResources(ctx, actor, definition.resources(args), definition.authority ?? "edit"));
     },
   });
   return { public: mutation(config), internal: internalMutation(config), replay };
@@ -88,6 +94,6 @@ export function actorQuery<A extends PropertyValidators, R>(definition: Definiti
   return { public: query(config), internal: internalQuery(config) };
 }
 export function actorAction<A extends PropertyValidators, R>(definition: Definition<ActionCtx, A, R>) {
-  const config = prepare(definition, (ctx, args): Promise<ResolvedActor> => ctx.runQuery(internal.actorSession.resolve, { authToken: args.authToken, apiKey: args.apiKey }));
+  const config = prepare({ ...definition, authority: definition.authority ?? "edit" }, (ctx, args): Promise<ResolvedActor> => ctx.runQuery(internal.actorSession.resolve, { authToken: args.authToken, apiKey: args.apiKey }));
   return { public: action(config), internal: internalAction(config) };
 }

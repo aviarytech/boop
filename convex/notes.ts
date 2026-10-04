@@ -1,3 +1,4 @@
+import { hasScope } from "./lib/apiKeyHelpers";
 import { noteConflict } from "./lib/noteConflict";
 import { v } from "convex/values";
 import { actorMutation, actorQuery } from "./lib/authenticated";
@@ -61,7 +62,7 @@ export const { public: getNoteBody, internal: getNoteBodyInternal } = actorQuery
     return {
       body: row?.body ?? "",
       updatedAt: row?.updatedAt ?? list.createdAt,
-      canEdit: await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid),
+      canEdit: hasScope(ctx.actor.scopes, "items:write") && await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid),
     };
   },
 });

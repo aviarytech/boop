@@ -69,6 +69,8 @@ import type * as lib_sessionTokens from "../lib/sessionTokens.js";
 import type * as lib_sitePlans from "../lib/sitePlans.js";
 import type * as lib_turnkeyClient from "../lib/turnkeyClient.js";
 import type * as lib_turnkeySigner from "../lib/turnkeySigner.js";
+import type * as listGrants from "../listGrants.js";
+import type * as lib_listGrants from "../lib/listGrants.js";
 import type * as lists from "../lists.js";
 import type * as listsHttp from "../listsHttp.js";
 import type * as migrations_backfillGenesisSealedAt from "../migrations/backfillGenesisSealedAt.js";
@@ -166,6 +168,8 @@ declare const fullApi: ApiFromModules<{
   "lib/sitePlans": typeof lib_sitePlans;
   "lib/turnkeyClient": typeof lib_turnkeyClient;
   "lib/turnkeySigner": typeof lib_turnkeySigner;
+  listGrants: typeof listGrants;
+  "lib/listGrants": typeof lib_listGrants;
   lists: typeof lists;
   listsHttp: typeof listsHttp;
   "migrations/backfillGenesisSealedAt": typeof migrations_backfillGenesisSealedAt;

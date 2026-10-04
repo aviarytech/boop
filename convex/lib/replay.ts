@@ -26,6 +26,7 @@ export async function getReplaySequence(ctx: QueryCtx, accountId: Id<'users'>) {
 export async function replayOperation(
   ctx: MutationCtx, actor: ResolvedActor, operation: string,
   payload: Record<string, unknown>, meta: Metadata, execute: () => Promise<unknown>,
+  authorize: () => Promise<void>,
 ): Promise<ReplayAck> {
   if (meta.accountId !== actor.turnkeySubOrgId) throw new AuthError('Offline account mismatch', 'UNAUTHORIZED');
   if (!meta.operationId || meta.operationId.length > 200) throw new Error('Invalid operation ID');
@@ -35,6 +36,9 @@ export async function replayOperation(
     if (receipt.fingerprint !== fingerprint) throw new Error('Operation ID reused with different content');
     return { operationId: receipt.operationId, result: receipt.result, revisions: receipt.revisions, ...(receipt.sequence !== undefined ? { sequence: receipt.sequence } : {}) };
   }
+  // Fresh queued writes must authorize before even inspecting resource revisions.
+  // Existing receipts acknowledge past work only; they do not execute a write.
+  await authorize();
   const targets = replayTargets(operation, payload);
   if (canonical([...targets].sort()) !== canonical(meta.expected.map(e => e.id).sort())) throw conflict('Missing expected revision. Review this saved edit before applying it.');
   for (const expected of meta.expected) {

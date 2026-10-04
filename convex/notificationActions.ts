@@ -85,6 +85,7 @@ export const { public: sendListNotification, internal: sendListNotificationAuthe
 export const sendPushNotificationInternal = internalAction({
   args: {
     userDid: v.string(),
+    listId: v.optional(v.id("lists")),
     title: v.string(),
     body: v.string(),
     data: v.optional(v.any()),
@@ -92,6 +93,7 @@ export const sendPushNotificationInternal = internalAction({
   handler: async (ctx, args): Promise<void> => {
     const tokens: Array<{ token: string; platform: string; webPushKeys?: { p256dh: string; auth: string } }> = await ctx.runQuery(internal.notifications.getTokensForUser, {
       userDid: args.userDid,
+      listId: args.listId,
     });
 
     await Promise.allSettled(

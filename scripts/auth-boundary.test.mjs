@@ -97,12 +97,12 @@ test('scopes apply equally to direct and internal operations, and revocation is 
   ctx.rows.agentApiKeys[0].revokedAt=Date.now();
   await assert.rejects(() => call('lists','getUserListsInternal',ctx,{apiKey:'valid-key'}),/API key/);
 });
-test('published reads remain public, shared editing requires login, and unpublishing removes access', async () => {
+test('published reads remain public, outsider editing is denied, and unpublishing removes public access', async () => {
   const ctx=fixture({published:true});
   assert.ok(await call('publication','getPublicList',ctx,{webvhDid:'did:webvh:public'}));
   await assert.rejects(() => call('didResources','checkSharedItem',ctx,{listId:'L1',itemId:'I1'}),/Authentication/);
-  await call('items','checkItem',ctx,{authToken:strangerToken,itemId:'I1',checkedAt:10});
-  assert.equal(ctx.rows.items[0].checkedByDid,'did:stranger');
+  await assert.rejects(() => call('items','checkItem',ctx,{authToken:strangerToken,itemId:'I1',checkedAt:10}), /Resource unavailable/);
+  assert.equal(ctx.rows.items[0].checked,false);
   await call('publication','bookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
   await call('publication','unpublishList',ctx,{authToken:ownerToken,listId:'L1'});
   assert.equal(await call('publication','getPublicList',ctx,{webvhDid:'did:webvh:public'}),null);
@@ -218,7 +218,7 @@ test('attachment capabilities reject forged callers and cross-item removal befor
   const actionCtx={runQuery:ctx.runQuery,runMutation:ctx.runMutation};
   await assert.rejects(() => call('attachments','generateUploadUrl',actionCtx,{itemId:'I1',userDid:'did:owner',contentType:'image/png',byteLength:10}),/Authentication/);
   await assert.rejects(() => call('attachments','generateUploadUrl',actionCtx,{authToken:strangerToken,itemId:'I1',contentType:'image/png',byteLength:10}),/Resource unavailable/);
-  await assert.rejects(() => call('attachments','removeAttachment',actionCtx,{authToken:ownerToken,itemId:'I1',bucketKey:'attachments/I2/file.png'}),/Attachment not found/);
+  await assert.rejects(() => call('attachments','removeAttachment',actionCtx,{authToken:ownerToken,itemId:'I1',bucketKey:'attachments/I2/file.png'}),/Resource unavailable/);
 });
 test('agent combined read preserves indistinguishable missing/private responses', async () => {
   const ctx=fixture();
@@ -375,7 +375,7 @@ test('demotion conceals unknown and inaccessible parent IDs before changing an o
   }
 });
 
-test('comment deletion conceals missing, orphaned, and inaccessible comments while retaining author and editor access',async()=>{
+test('comment deletion conceals missing, orphaned, and inaccessible comments and requires current edit authority even for the author',async()=>{
   const errors=[];
   for(const commentId of ['missing','private','orphan']) {
     const ctx=fixture();
@@ -391,12 +391,17 @@ test('comment deletion conceals missing, orphaned, and inaccessible comments whi
   assert.deepEqual(errors[0],{kind:'auth',code:'FORBIDDEN',message:'Resource unavailable'});
   for(const [author,itemId] of [['did:owner','I2'],['did:legacy','I2'],['did:other','I1']]) {
     const ctx=fixture({migrated:true});ctx.rows.comments=[{_id:'comment',itemId,userDid:author,text:'Comment'}];
-    await call('comments','deleteComment',ctx,{authToken:ownerToken,commentId:'comment'});
-    assert.deepEqual(ctx.rows.comments,[]);
+    if(itemId === 'I2') {
+      await assert.rejects(() => call('comments','deleteComment',ctx,{authToken:ownerToken,commentId:'comment'}), /Resource unavailable/);
+      assert.equal(ctx.rows.comments.length,1);
+    } else {
+      await call('comments','deleteComment',ctx,{authToken:ownerToken,commentId:'comment'});
+      assert.deepEqual(ctx.rows.comments,[]);
+    }
   }
   const shared=fixture({published:true});shared.rows.comments=[{_id:'comment',itemId:'I1',userDid:'did:owner',text:'Shared'}];
-  await call('comments','deleteComment',shared,{authToken:strangerToken,commentId:'comment'});
-  assert.deepEqual(shared.rows.comments,[]);
+  await assert.rejects(() => call('comments','deleteComment',shared,{authToken:strangerToken,commentId:'comment'}), /Resource unavailable/);
+  assert.equal(shared.rows.comments.length,1);
 });
 
 test('identity assertion RPC errors retain their authentication status over HTTP',async()=>{

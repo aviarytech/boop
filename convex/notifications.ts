@@ -1,3 +1,4 @@
+import { canUserViewList } from "./lib/permissions";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
  * Push notification management — queries & mutations (non-Node.js).
@@ -91,8 +92,9 @@ export const { public: getUserSubscriptions, internal: getUserSubscriptionsInter
 });
 
 export const getTokensForUser = internalQuery({
-  args: { userDid: v.string() },
+  args: { userDid: v.string(), listId: v.optional(v.id("lists")) },
   handler: async (ctx, args) => {
+    if (args.listId && !await canUserViewList(ctx, args.listId, args.userDid)) return [];
     return await ctx.db
       .query("pushTokens")
       .withIndex("by_user", (q) => q.eq("userDid", args.userDid))
@@ -107,23 +109,27 @@ export const getTokensForList = internalQuery({
     const list = await ctx.db.get(args.listId);
     if (!list) return [];
 
+    const recipients = new Set([list.ownerDid]);
+    const grants = await ctx.db.query("listGrants")
+      .withIndex("by_list_recipient", q => q.eq("listId", args.listId)).collect();
+    for (const grant of grants) {
+      const recipient = await ctx.db.get(grant.recipientId);
+      if (recipient?.did) recipients.add(recipient.did);
+    }
+    const bookmarks = await ctx.db.query("bookmarks")
+      .withIndex("by_list", q => q.eq("listId", args.listId)).collect();
+    for (const bm of bookmarks) recipients.add(bm.userDid);
     const tokens = [];
-    // Owner's tokens
-    const ownerTokens = await ctx.db
-      .query("pushTokens")
-      .withIndex("by_user", (q) => q.eq("userDid", list.ownerDid))
-      .collect();
-    tokens.push(...ownerTokens);
-
-    // Tokens for users who bookmarked this list
-    const bookmarks = await ctx.db.query("bookmarks").collect();
-    for (const bm of bookmarks) {
-      if (bm.listId === args.listId && bm.userDid !== list.ownerDid) {
-        const userTokens = await ctx.db
-          .query("pushTokens")
-          .withIndex("by_user", (q) => q.eq("userDid", bm.userDid))
-          .collect();
-        tokens.push(...userTokens);
+    const seen = new Set<string>();
+    for (const did of recipients) {
+      // Recheck at scheduled-send lookup, not when the event was queued.
+      const account = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", did)).first()
+        ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", did)).first();
+      if (!account?.did || account.deletionRequestedAt !== undefined
+        || !await canUserViewList(ctx, args.listId, account.did, account.legacyDid)) continue;
+      for (const identity of new Set([account.did, account.legacyDid].filter((id): id is string => !!id))) {
+        const userTokens = await ctx.db.query("pushTokens").withIndex("by_user", q => q.eq("userDid", identity)).collect();
+        for (const token of userTokens) if (!seen.has(token._id)) { seen.add(token._id); tokens.push(token); }
       }
     }
     return tokens;

@@ -184,9 +184,10 @@ export const { public: reorderCategory, internal: reorderCategoryInternal } = ac
  * Set a list's category.
  *
  * Pass undefined for categoryId to move to uncategorized.
- * Validates that user has access to the list (owner or collaborator via collaborators table).
+ * Only the list owner may change its account-level category.
  */
 export const { public: setListCategory, internal: setListCategoryInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -197,27 +198,6 @@ export const { public: setListCategory, internal: setListCategoryInternal } = ac
     const list = await ctx.db.get(args.listId);
     if (!list) {
       throw new Error("List not found");
-    }
-
-    // DIDs to check: current DID and optionally legacy DID
-    const didsToCheck = [ctx.actor.did];
-    if (ctx.actor.legacyDid) {
-      didsToCheck.push(ctx.actor.legacyDid);
-    }
-
-    // Check user has access (owner or published list)
-    let hasAccess = didsToCheck.includes(list.ownerDid);
-
-    if (!hasAccess) {
-      const pub = await ctx.db
-        .query("publications")
-        .withIndex("by_list", (q) => q.eq("listId", args.listId))
-        .first();
-      hasAccess = pub?.status === "active";
-    }
-
-    if (!hasAccess) {
-      throw new Error("Not authorized to modify this list");
     }
 
     // If setting a category, verify ownership

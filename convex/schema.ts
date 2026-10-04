@@ -9,6 +9,15 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  // Accepted account grants only. Pending invitations must live separately.
+  listGrants: defineTable({
+    listId: v.id("lists"),
+    recipientId: v.id("users"),
+    role: v.union(v.literal("viewer"), v.literal("editor")),
+    acceptedAt: v.number(),
+  })
+    .index("by_list_recipient", ["listId", "recipientId"])
+    .index("by_recipient", ["recipientId"]),
   replaySequences: defineTable({
     accountId: v.id("users"), sequence: v.number(),
   }).index("by_account", ["accountId"]),
