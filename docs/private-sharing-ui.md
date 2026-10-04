@@ -14,7 +14,9 @@ owned resources, and returns an explicit projection: resource ID/title/kind, own
 role, consented owner display name (or “Owner”), public status and acceptance time.
 It returns no recipient emails, roster, invitation locator or resource body. Lists
 and notes appear after acceptance without bookmarks. Role changes, revocation,
-leave, publication and resource deletion update this subscription.
+leave, publication and resource deletion update this subscription. The shared read
+authorization predicate also hides resources immediately when owner deletion starts,
+before asynchronous cleanup removes the rows.
 
 Recipients open lists or notes from this page, review their role and owner, and
 confirm Leave. Failure keeps the entry and permits retry. Leave uses the existing
@@ -32,6 +34,8 @@ Email uses the existing HTTPS `/invitations/:id/:version` URL. Web visitors sign
 in place and explicitly accept; revoked/expired/unavailable links disclose no
 resource details and point to Shared with me or a new owner invitation. Capacitor
 handles warm and cold launch URLs, preserving path/query/fragment for continuation.
+The native listener lifecycle is independent of router navigation; the cold launch
+is consumed once, and aborted/unmounted setups remove their listeners.
 Malformed URLs and origins other than `https://boop.ad` are ignored.
 
 The Apple association adds invitation paths for the existing app identifier;

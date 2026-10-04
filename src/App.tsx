@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
-import { Routes, Route, Link, NavLink, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { useSettings } from './hooks/useSettings'
 import { AuthGuard } from './components/auth/AuthGuard'
@@ -15,7 +15,7 @@ import { ReferralRedeemer } from './components/ReferralRedeemer'
 import { NativePushRegistrar } from './components/NativePushRegistrar'
 import { CookieConsent } from './components/CookieConsent'
 import { useSwipeBack } from './hooks/useSwipeBack'
-import { initDeepLinks } from './lib/deeplinks'
+import { useNativeLinks } from './hooks/useNativeLinks'
 import { initPushNotifications } from './lib/pushNotifications'
 import { incrementMetric } from './lib/observability'
 
@@ -196,16 +196,13 @@ function PageLoadingFallback() {
 
 function App() {
   const { isAuthenticated } = useAuth()
-  const navigate = useNavigate()
   const location = useLocation()
 
   // Enable swipe-right from left edge to go back (mobile PWA)
   useSwipeBack()
 
   // Initialize deep links for mobile
-  useEffect(() => {
-    initDeepLinks(navigate)
-  }, [navigate])
+  useNativeLinks()
 
   // Initialize push notifications after user is authenticated
   useEffect(() => {

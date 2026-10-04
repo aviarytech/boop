@@ -470,3 +470,14 @@ test("discovery excludes pending, bookmarks, deleted resources and other recipie
   assert.equal((await modules.listGrants.getSharedWithMe._handler(ctx, credentials("viewer"))).length, 1);
   await assert.rejects(modules.listGrants.getSharedWithMe._handler(ctx, {}));
 });
+
+test("private discovery respects the owner's deletion barrier before bounded cleanup removes resources", async () => {
+  const ctx = make(), auth = credentials("viewer");
+  assert.equal((await modules.listGrants.getSharedWithMe._handler(ctx, auth)).length, 2);
+  ctx.rows.users.find(user => user._id === "U-owner").deletionRequestedAt = Date.now();
+  ctx.rows.publications.push({ _id: "P-deleting", listId: "L", status: "active" });
+  // Rows and grants deliberately remain: erasure is asynchronous, denial is immediate.
+  assert.ok(ctx.rows.lists.some(list => list._id === "L"));
+  assert.deepEqual(await modules.listGrants.getSharedWithMe._handler(ctx, auth), []);
+  assert.deepEqual(await modules.listGrants.getSharedWithMeInternal._handler(ctx, { apiKey: "key-viewer" }), []);
+});

@@ -2,7 +2,7 @@ import { chosenPublicDisplayName } from "./lib/publicDisplayName";
 import { v } from "convex/values";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { resourceUnavailable } from "./lib/authError";
-import { listRole } from "./lib/permissions";
+import { canUserViewList, listRole } from "./lib/permissions";
 
 const role = v.union(v.literal("viewer"), v.literal("editor"));
 
@@ -79,6 +79,7 @@ export const { public: getSharedWithMe, internal: getSharedWithMeInternal } = ac
     for (const grant of grants) {
       const list = await ctx.db.get(grant.listId);
       if (!list || list.ownerDid === ctx.actor.did || list.ownerDid === ctx.actor.legacyDid) continue;
+      if (!await canUserViewList(ctx, list._id, ctx.actor.did, ctx.actor.legacyDid)) continue;
       const owner = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", list.ownerDid)).unique()
         ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", list.ownerDid)).unique();
       const publication = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", list._id)).unique();
