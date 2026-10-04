@@ -168,7 +168,7 @@ remains. Test-generated icons/splashes were restored. These are local handler an
 static checks, not deployed validation; the #236 limitations above still apply.
 
 
-## #256 private-sharing authorization foundation (draft; incomplete acceptance)
+## #256 private-sharing authorization foundation (incomplete acceptance)
 
 This foundation changes backend authorization immediately when deployed. It is
 not the complete private-sharing release, does not complete #256 or #259, and
@@ -195,7 +195,10 @@ Coordinate release with #257–#262 and the deployed-client inventory above.
   An editor grant never permits owner publication/envelope replacement or access
   to the owner's signing keys. Key custody and provenance signatures are unchanged.
 - `getListGrants`, `updateListGrant`, and `revokeListGrant` are owner-only and
-  operate only on existing accepted grants. `getMyListAccess` reveals owner DID
+  operate only on existing accepted grants. Update/revoke require wildcard (`*`)
+  scope, matching publish/unpublish: an owner key with `items:write` alone cannot
+  manage access. The owner-only roster retains `lists:read` scope. Browser-owner
+  sessions retain their wildcard authority. `getMyListAccess` reveals owner DID
   and the current caller's role; it never reveals other recipients. The backend
   discovery query includes accepted shares; the dedicated sharing UI is #258.
 - `convex/lib/listGrants.ts:recordAcceptedListGrant` is a server library helper,
@@ -240,18 +243,53 @@ removal does. No claim is made that historical copied attachments are independen
 ### Required #259 compatibility cutover
 
 Existing public reads remain available. **Signed-in public-link visitors lose
-editing unless they have an accepted editor grant.** Old browser/native clients
-may still offer edit controls or call these operations; the same retained legacy
-names now reject unauthorized writes. `SharedListResource` currently promises
-that signing in permits edits, and `ShareModal` still conflates sharing with
-publication. `NoteView` currently uses content `canEdit` for rename/delete
-controls, which a granted editor will see but the server rejects. The #259/#258
-client changes must use owner authority for those controls and clearly distinguish
-public reading from named access. Invitation acceptance and owner-facing grant
-creation are not included here, so deploying this foundation alone removes the
-old collaborator UX without providing its replacement. Do not ship it silently
-as a complete sharing experience; keep the PR draft pending coordinated review.
-Do not restore implicit public editing as a compatibility fallback.
+editing unless they have an accepted editor grant.** Retained legacy operation
+names reject unauthorized writes. The current client capability inventory for
+#258/#259 includes:
+
+- `src/pages/ListView.tsx:692` hardcodes `canUserEdit = true` for every visitor
+  and passes that value into item/sub-item controls. The separate keyboard
+  shortcut path at line 437 hardcodes `canUserEditNow = true`. Both need current
+  content-edit authority, including after grant downgrade or revocation; hiding
+  buttons alone does not prevent keyboard actions or queue insertion.
+- `SharedListResource` promises that signing in permits edits; public read and
+  authenticated editing must be distinguished. `ShareModal` still conflates
+  sharing with public publication and needs separate owner-managed access and
+  publication flows.
+- `NoteView` uses content `canEdit` for rename/delete controls. Accepted editors
+  may edit bodies, but those resource-management controls require ownership.
+  Owner-only controls and content-edit controls must consume distinct capability
+  checks (`getMyListAccess` or an appropriately scope-aware server capability).
+- `src/lib/permissions.ts` supplies ownership/role presentation helpers, not a
+  complete current-access decision. Its stale public-edit header is corrected
+  here; that comment correction does not implement the client cutover.
+- Existing browser/native mutation paths and offline queue entry points must use
+  current capabilities. `src/lib/sync.ts` retries denied edits up to five times,
+  then retains them as failed work. The client cutover must prevent unauthorized
+  editing/queue creation and coordinate downgrade/revocation handling and saved
+  draft/export recovery with #260, including keyboard shortcuts, reconnects,
+  stale tabs and supported older native clients. Backend denials alone do not
+  deliver that user experience.
+
+Invitation acceptance and owner-facing grant creation are not included here.
+**Do not merge this foundation into `main`, bring it into `main` through another
+branch, or deploy it before the coordinated client cutover and accepted-grant
+migration/acceptance rollout are ready and verified.** Any accepted-grant
+migration must preserve verified explicit acceptance; historical bookmarks,
+contributors and public collaborators must not be automatically granted access.
+No such migration or rollout is performed by this change. The other documented
+attachment-copy and release-evidence blockers remain outstanding.
+
+PR #264 is ready for review at the user's request, which is not readiness or
+authorization to merge/deploy. #263 has merged and #264 now targets `main`.
+A push to `main` triggers `.github/workflows/deploy-convex.yaml`, which runs
+`npx convex deploy`; the Railway deployment uses `railway.json`'s `npm run build`
+(the script also invokes Convex codegen) for the web app. Main's automatic
+deployment paths make merging a release action, not a harmless staging step.
+The old authentication cutover checker is not an enforced deployment gate.
+Release coordination must account for backend and web/native timing before any
+merge; review status or green CI does not satisfy these gates. Do not restore
+implicit public editing as a compatibility fallback.
 
 ### Attachment and notification limits (#260 / authentication action follow-up)
 
@@ -295,3 +333,15 @@ splash artifacts were restored. Independent review identified read-only anchor
 verification and accepted-share profile statistics; both corrections and their
 handler regressions are included. Formal review of the final commit and the
 integration/platform evidence above remain the coordinator's next steps.
+
+PR #264 review follow-up (Pullfrog inline 4176250913): grant updates/revocations
+now require owner authority plus wildcard scope. Five new public/internal handler
+regressions cover denial without writes for item-write keys, owner wildcard and
+browser success, non-owner wildcard denial, and unchanged roster read scope.
+With frozen dependencies refreshed to the checked-in SDK 4 lockfile using
+`--ignore-scripts`, the focused sharing suite passed 57 tests and full `bun test`
+passed 503 tests (0 failed). Frontend/backend TypeScript, auth registry `--check`,
+changed-file ESLint and the direct Vite build passed. Build uploads were disabled
+and client environment values were placeholders; no live codegen ran. Existing
+React `act(...)` and bundle-size warnings remain; generated images were restored.
+This validation does not resolve the release/merge blockers above.

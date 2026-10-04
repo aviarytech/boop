@@ -1,8 +1,8 @@
 /**
  * Permission helpers.
- * With publication-based sharing, permissions are simple:
- * - Owner: full control
- * - Published list: anyone can edit
+ * Owners manage access, publication, naming, and deletion.
+ * Accepted editors can modify content; viewers and public readers cannot.
+ * Publication grants read access only. Server authorization also enforces key scopes.
  */
 
 /**

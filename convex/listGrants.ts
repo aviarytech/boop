@@ -25,7 +25,7 @@ export const { public: getMyListAccess, internal: getMyListAccessInternal } = ac
 
 /** Changes accepted grants only. Does not invite, accept, or transfer ownership. */
 export const { public: updateListGrant, internal: updateListGrantInternal } = actorMutation({
-  authority: "owner", scope: "items:write",
+  authority: "owner", scope: "*",
   resources: args => ({ lists: [args.listId] }),
   args: { listId: v.id("lists"), grantId: v.id("listGrants"), role },
   handler: async (ctx, args) => {
@@ -36,7 +36,7 @@ export const { public: updateListGrant, internal: updateListGrantInternal } = ac
 });
 
 export const { public: revokeListGrant, internal: revokeListGrantInternal } = actorMutation({
-  authority: "owner", scope: "items:write",
+  authority: "owner", scope: "*",
   resources: args => ({ lists: [args.listId] }),
   args: { listId: v.id("lists"), grantId: v.id("listGrants") },
   handler: async (ctx, args) => {

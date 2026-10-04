@@ -565,3 +565,43 @@ test("viewer/editor profile statistics include accepted lists/notes, deduplicate
   ctx.rows.listGrants.push({ _id: "self-redundant", listId: "L", recipientId: "U-owner", role: "viewer", acceptedAt: 1 });
   assert.deepEqual(await call("users", "getUserStats", ctx, credentials("owner")), { totalLists: 2, ownedLists: 2, sharedLists: 0, totalItems: 2, completedItems: 0, pendingItems: 2 });
 });
+
+for (const operation of ["updateListGrant", "revokeListGrant"]) for (const suffix of ["", "Internal"]) {
+  test(`${operation}${suffix}: access management requires wildcard scope and ownership`, async () => {
+    const args = { listId: "L", grantId: "G-L-viewer", ...(operation === "updateListGrant" ? { role: "editor" } : {}) };
+    const ctx = make();
+    const ownerKey = ctx.rows.agentApiKeys.find(key => key._id === "KEY-owner");
+    ownerKey.scopes = ["items:write"];
+    const before = structuredClone(ctx.rows);
+    await assert.rejects(() => call("listGrants", operation + suffix, ctx, { ...args, apiKey: "key-owner" }), /Missing scope: \*/);
+    assert.deepEqual(ctx.rows, before, "item-write authority cannot change access");
+
+    for (const role of ["editor", "viewer", "outsider"]) {
+      ctx.rows.agentApiKeys.find(key => key._id === `KEY-${role}`).scopes = ["*"];
+      const beforeNonOwner = structuredClone(ctx.rows);
+      await assert.rejects(() => call("listGrants", operation + suffix, ctx, { ...args, apiKey: `key-${role}` }), denied);
+      assert.deepEqual(ctx.rows, beforeNonOwner, "wildcard scope does not confer ownership");
+    }
+
+    ownerKey.scopes = ["*"];
+    await call("listGrants", operation + suffix, ctx, { ...args, apiKey: "key-owner" });
+    const grant = ctx.rows.listGrants.find(row => row._id === args.grantId);
+    if (operation === "updateListGrant") assert.equal(grant.role, "editor");
+    else assert.equal(grant, undefined);
+
+    const browser = make();
+    await call("listGrants", operation + suffix, browser, { ...args, ...credentials("owner") });
+    const browserGrant = browser.rows.listGrants.find(row => row._id === args.grantId);
+    if (operation === "updateListGrant") assert.equal(browserGrant.role, "editor");
+    else assert.equal(browserGrant, undefined);
+  });
+}
+
+test("owner roster reads retain lists:read scope after grant-management scope tightening", async () => {
+  const ctx = make();
+  ctx.rows.agentApiKeys.find(key => key._id === "KEY-owner").scopes = ["lists:read"];
+  for (const suffix of ["", "Internal"]) {
+    const rows = await call("listGrants", "getListGrants" + suffix, ctx, { listId: "L", apiKey: "key-owner" });
+    assert.equal(rows.length, 2);
+  }
+});
