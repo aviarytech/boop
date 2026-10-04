@@ -5,6 +5,8 @@ import { gateway } from 'ai';
 export default {
   // Keep Bun and node:test files out of e2e collection.
   tests: 'tests/**/*.e2e.ts',
+  timeout: 45_000,
+  actionTimeout: 10_000,
   // The Vercel AI Gateway serves the model id and reads AI_GATEWAY_API_KEY, or the OIDC token of a linked Vercel project.
   agents: {
     default: {
@@ -19,10 +21,9 @@ export default {
       // Each run owns an isolated dev server on a free port.
       command: {
         executable: 'bun',
-        args: ['run', 'dev', '--host', '127.0.0.1', '--port', '{port}', '--strictPort'],
+        args: ['tests/fixtures/server.mjs', '--port', '{port}'],
         log: '.e2e/logs/app.log',
-        // Public smoke tests need a valid URL, but never a live backend.
-        env: { VITE_CONVEX_URL: 'https://placeholder.convex.cloud' },
+        // The test-only server supplies a loopback Convex fixture, never a live backend.
       },
     },
   }],
