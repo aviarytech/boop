@@ -13,6 +13,7 @@
  */
 
 import { internalQuery } from "../_generated/server";
+import { genesisSealedAt, isLegacyGenesis } from "../lib/legacyList";
 
 const SCAN_LIMIT = 8000;
 
@@ -33,14 +34,7 @@ export const count = internalQuery({
     for (const list of lists) {
       const row = envelopeFor.get(list._id);
       if (!row) continue;
-      try {
-        const proof = JSON.parse(row.envelope)?.eventLog?.events?.[0]?.proof;
-        const created = (Array.isArray(proof) ? proof[0] : proof)?.created;
-        const sealedAt = created ? Date.parse(created) : NaN;
-        if (!Number.isNaN(sealedAt) && sealedAt - list.createdAt > 60_000) retroactive += 1;
-      } catch {
-        // An unparseable envelope is a verification problem, not a custody one.
-      }
+      if (isLegacyGenesis(genesisSealedAt(row.envelope), list.createdAt)) retroactive += 1;
     }
 
     // Grouped by DID scheme: a did:peer row means the earlier celAssetDids

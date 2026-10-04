@@ -205,8 +205,7 @@ async function loadMinter() {
 test("mintCelGenesis produces a verifiable envelope", async () => {
   const minter = await loadMinter();
 
-  // A real mint. Under SDK 3.0 an implicit no-custody createAsset throws
-  // NO_CUSTODY, so this fails here rather than mid-migration against prod data.
+  // A real v4 mint with explicit temporary custody, without touching a deployment.
   const { assetDid, envelope } = await minter.mintCelGenesis(
     "Groceries",
     "did:webvh:example:alice",
@@ -216,7 +215,7 @@ test("mintCelGenesis produces a verifiable envelope", async () => {
   assert.match(assetDid, /^did:cel:/);
 
   const parsed = JSON.parse(envelope);
-  assert.equal(parsed.assetDid, assetDid);
+  assert.equal(parsed.assetId, assetDid);
 
   // The migration's whole point is that migrated lists are verifiable. Replay
   // the log the same way the client does rather than trusting it parses.
@@ -228,5 +227,5 @@ test("mintCelGenesis produces a verifiable envelope", async () => {
   // The list's own createdAt is what the genesis resource commits to, so a
   // migrated list keeps its real creation date even though the log is sealed now.
   const resource = parsed.resources.find((r) => r.id === "list-metadata");
-  assert.equal(JSON.parse(resource.content).createdAt, "2026-02-01T00:00:00.000Z");
+  assert.equal(JSON.parse(Buffer.from(resource.content.data, "base64").toString()).createdAt, "2026-02-01T00:00:00.000Z");
 });

@@ -14,7 +14,7 @@
  *    a "will be replaced with proper DID" comment. It never replaced them, so
  *    every list made from a *saved* template carries a DID that was never real.
  *
- * Genesis is minted server-side here, as an explicitly `ephemeral` controller —
+ * Genesis is minted server-side here, with a temporary local signer —
  * no key is retained. That is
  * deliberate: the genesis controller key would otherwise be held by the server
  * rather than the owner, which is a custody change this migration has no mandate
@@ -32,20 +32,7 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { OriginalsSDK } from "@originals/sdk";
-import type { OriginalsConfig } from "@originals/sdk";
-
-const config: OriginalsConfig = {
-  network: "signet",
-  defaultKeyType: "Ed25519",
-};
-
-/** Lowercase hex SHA-256 — mirrors sha256Hex in src/lib/originals.ts. */
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
+import { createLocalSigner } from "@originals/sdk/v3";
 
 /**
  * Mint a did:cel for an existing list, using the same genesis resource shape as
@@ -61,21 +48,12 @@ export async function mintCelGenesis(
     createdBy: ownerDid,
     createdAt: new Date(createdAt).toISOString(),
   });
-  const sdk = OriginalsSDK.create(config);
-  // `ephemeral` is the explicit spelling of what this migration always did: mint
-  // without retaining the key. SDK 3.0 throws NO_CUSTODY on the implicit form.
-  const asset = await sdk.lifecycle.createAsset(
-    [
-      {
-        id: "list-metadata",
-        type: "ListMetadata",
-        contentType: "application/json",
-        content,
-        hash: await sha256Hex(content),
-      },
-    ],
-    { controller: "ephemeral" }
-  );
+  // Explicit temporary custody: retain the signed archive, discard the controller key.
+  const signer = createLocalSigner("Ed25519", crypto.getRandomValues(new Uint8Array(32)));
+  const sdk = OriginalsSDK.create({ signer });
+  const asset = await sdk.lifecycle.createAsset([
+    { id: "list-metadata", mediaType: "application/json", content },
+  ]);
   return { assetDid: asset.id, envelope: JSON.stringify(asset.serialize()) };
 }
 

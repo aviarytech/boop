@@ -10,22 +10,41 @@
 
 import { OriginalsSDK } from "@originals/sdk";
 import type {
-  AssetResource,
   DIDDocument,
   VerifiableCredential,
   KeyPair,
-  OriginalsConfig,
 } from "@originals/sdk";
 import { localCelKeyStore, hasCelKey } from "./celKeyStore";
 
-// SDK configuration for testnet/development
-const config: OriginalsConfig = {
-  network: "signet", // Use signet for development
-  defaultKeyType: "Ed25519",
-  // Retains each asset's genesis controller key; without it the SDK drops the
-  // key after signing genesis and later CEL appends degrade. See celKeyStore.ts.
-  keyStore: localCelKeyStore,
-};
+import { createLocalSigner } from "@originals/sdk/v3";
+
+/** Metadata helpers retain their app-facing shape; v4 computes its own digests. */
+interface AssetResource {
+  id: string;
+  type: string;
+  contentType: string;
+  content: string;
+  hash: string;
+}
+
+/** Only the old container versions may enter the compatibility reader. */
+function isLegacyEnvelope(envelope: string): boolean {
+  const parsed = JSON.parse(envelope);
+  return parsed?.format === "originals/asset" && parsed.version === 1;
+}
+
+async function createAsset(resources: AssetResource[]) {
+  const secret = crypto.getRandomValues(new Uint8Array(32));
+  const signer = createLocalSigner("Ed25519", secret);
+  const sdk = OriginalsSDK.create({ signer });
+  const asset = await sdk.lifecycle.createAsset(resources.map(r => ({
+    id: r.id, mediaType: r.contentType, content: r.content,
+  })));
+  // Keep the existing per-asset storage key, so authorship checks work for both formats.
+  const hex = Array.from(secret, b => b.toString(16).padStart(2, "0")).join("");
+  await localCelKeyStore.setPrivateKey!(`${asset.id}#key-0`, hex);
+  return asset;
+}
 
 export interface ListAsset {
   assetDid: string;
@@ -78,10 +97,9 @@ export async function buildListResource(
  * @returns Promise<ListAsset> The created list asset
  */
 export async function createListAsset(name: string, creatorDid: string): Promise<ListAsset> {
-  const sdk = OriginalsSDK.create(config);
   const createdAt = new Date().toISOString();
 
-  const asset = await sdk.lifecycle.createAsset([
+  const asset = await createAsset([
     await buildListResource(name, creatorDid, createdAt),
   ]);
 
@@ -107,10 +125,9 @@ export async function buildNoteBodyResource(body: string): Promise<AssetResource
 
 /** createListAsset for a note: genesis also commits to the (empty) body. */
 export async function createNoteAsset(name: string, creatorDid: string): Promise<ListAsset> {
-  const sdk = OriginalsSDK.create(config);
   const createdAt = new Date().toISOString();
 
-  const asset = await sdk.lifecycle.createAsset([
+  const asset = await createAsset([
     await buildListResource(name, creatorDid, createdAt),
     await buildNoteBodyResource(""),
   ]);
@@ -137,16 +154,12 @@ export interface EnvelopeVerification {
  * tampering surfaces as verified:false rather than throwing at the call site.
  */
 export async function verifyListEnvelope(envelope: string): Promise<EnvelopeVerification> {
-  const sdk = OriginalsSDK.create(config);
   try {
-    const { asset, verification, warnings } = await sdk.lifecycle.loadAsset(envelope);
-    return {
-      // loadAsset only returns absent `verification` when verification is skipped,
-      // which we never request — treat a missing result as unverified, not as pass.
-      verified: verification?.verified === true,
-      assetDid: asset.id,
-      warnings,
-    };
+    if (isLegacyEnvelope(envelope)) {
+      return (await import("./originalsLegacy")).verifyListEnvelope(envelope);
+    }
+    const { asset, verification } = await OriginalsSDK.create().lifecycle.loadAsset(envelope);
+    return { verified: verification.verified, assetDid: asset.id, warnings: [] };
   } catch (err) {
     return {
       verified: false,
@@ -197,6 +210,8 @@ export function buildListSnapshot(
 
 /**
  * Append a signed snapshot of the list's published state to its CEL log.
+ * `changes` is retained for legacy histories only; v4 resource updates have no
+ * description field, so their authenticated snapshot is the change record.
  *
  * Publishing used to leave no trace in the chain that exists to record an
  * asset's history — the `publications` row knew, the log did not. This appends
@@ -216,44 +231,28 @@ export async function recordPublishedVersion(
   snapshot: ListSnapshot,
   changes = "Published to the web"
 ): Promise<RecordedVersion> {
-  const sdk = OriginalsSDK.create(config);
-  const { asset } = await sdk.lifecycle.loadAsset(envelope);
-
-  if (!(await canAuthorList(asset.id))) {
+  if (isLegacyEnvelope(envelope)) {
+    return (await import("./originalsLegacy")).recordPublishedVersion(envelope, snapshot, changes);
+  }
+  const { asset } = await OriginalsSDK.create().lifecycle.loadAsset(envelope);
+  const hex = await localCelKeyStore.getPrivateKey(`${asset.id}#key-0`);
+  if (!hex) {
     throw new ListNotAuthorableError(
       "This list's signing key isn't on this device, so its history can't be updated."
     );
   }
-
+  const signer = createLocalSigner("Ed25519", Uint8Array.from(hex.match(/.{2}/g)!, b => parseInt(b, 16)));
   const content = JSON.stringify(snapshot);
-
-  try {
-    const resource = await asset.addResourceVersion(
-      "list-metadata",
-      content,
-      "application/json",
-      changes
-    );
-    return {
-      envelope: JSON.stringify(asset.serialize()),
-      version: resource.version ?? 0,
-      hash: resource.hash,
-      appended: true,
-    };
-  } catch (err) {
-    // Re-publishing an unchanged list is a no-op, not a failure. The SDK
-    // refuses a version identical to the current one.
-    if (err instanceof Error && /unchanged|identical|same content/i.test(err.message)) {
-      const current = asset.resources.find((r) => r.id === "list-metadata");
-      return {
-        envelope,
-        version: current?.version ?? 0,
-        hash: current?.hash ?? "",
-        appended: false,
-      };
-    }
-    throw err;
+  const current = asset.resources.filter(r => r.id === "list-metadata").at(-1);
+  if (current?.content && new TextDecoder().decode(current.content) === content) {
+    return { envelope, version: current.version, hash: await sha256Hex(content), appended: false };
   }
+  await asset.addResourceVersion("list-metadata", content, "application/json", { signer });
+  const resource = asset.resources.filter(r => r.id === "list-metadata").at(-1)!;
+  return {
+    envelope: JSON.stringify(asset.serialize()), version: resource.version,
+    hash: await sha256Hex(content), appended: true,
+  };
 }
 
 /**
@@ -266,7 +265,8 @@ export async function recordPublishedVersion(
  */
 export function genesisSealedAt(envelope: string): number | null {
   try {
-    const proof = JSON.parse(envelope)?.eventLog?.events?.[0]?.proof;
+    const log = JSON.parse(envelope)?.eventLog;
+    const proof = log?.log?.[0]?.proof ?? log?.events?.[0]?.proof;
     const created = (Array.isArray(proof) ? proof[0] : proof)?.created;
     const ms = created ? Date.parse(created) : NaN;
     return Number.isNaN(ms) ? null : ms;
