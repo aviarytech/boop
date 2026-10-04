@@ -2,9 +2,12 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
-import React from 'react';
-import { render, cleanup, fireEvent } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const React = await import('react');
+const { render, cleanup, fireEvent } = await import('@testing-library/react');
+const { MemoryRouter } = await import('react-router-dom');
 
 await build({
   entryPoints: ['src/components/ProvenanceInfo.tsx'], outfile: 'tmp/provenance-presentation/component.mjs',
