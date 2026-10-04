@@ -50,10 +50,10 @@ function setupStaleAssetDetection(): void {
  */
 async function forceFullRefresh(): Promise<void> {
   // Prevent multiple refreshes
-  if (sessionStorage.getItem('poo-app-refreshing')) {
+  if (sessionStorage.getItem('boop-app-refreshing')) {
     return;
   }
-  sessionStorage.setItem('poo-app-refreshing', 'true');
+  sessionStorage.setItem('boop-app-refreshing', 'true');
 
   try {
     // Clear all caches
@@ -100,7 +100,7 @@ export async function registerServiceWorker(
   }
 
   // Clear the refresh flag on successful load
-  sessionStorage.removeItem('poo-app-refreshing');
+  sessionStorage.removeItem('boop-app-refreshing');
 
   try {
     const registration = await navigator.serviceWorker.register('/sw.js', {

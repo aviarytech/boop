@@ -188,7 +188,7 @@ self.addEventListener('push', (event) => {
       body: data.body || 'You have a notification',
       icon: '/pwa-192x192.png',
       badge: '/pwa-192x192.png',
-      tag: data.tag || 'poo-notification',
+      tag: data.tag || 'boop-notification',
       data: {
         url: data.url || '/',
         itemId: data.itemId,

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 
 type Feature = {
   name: string
-  poo: string | boolean
+  boop: string | boolean
   competitor: string | boolean
 }
 
@@ -14,7 +14,7 @@ type CompetitorData = {
   metaTitle: string
   metaDescription: string
   ogDescription: string
-  pooHeadline: string
+  boopHeadline: string
   competitorHeadline: string
   features: Feature[]
   competitorWeakness: string
@@ -31,21 +31,21 @@ const COMPETITORS: Record<string, CompetitorData> = {
       'Comparing boop vs Todoist: offline-first access, real-time collaboration, DID-signed data ownership, and a free tier that actually works. See why teams are switching.',
     ogDescription:
       'boop vs Todoist — offline-first, real-time sync, and data you actually own. Free to start.',
-    pooHeadline: 'Offline-first. Data you own. Free to start.',
+    boopHeadline: 'Offline-first. Data you own. Free to start.',
     competitorHeadline: 'Todoist requires a connection and a credit card for collaboration.',
     features: [
-      { name: 'Real-time sync', poo: true, competitor: true },
-      { name: 'Offline access', poo: '✅ Full offline — works without internet', competitor: '⚠️ Limited offline mode (premium only)' },
-      { name: 'List sharing / collaboration', poo: '✅ Free', competitor: '⚠️ Requires paid plan' },
-      { name: 'Free tier list limit', poo: '5 lists free', competitor: '5 active projects free' },
-      { name: 'Pricing (paid)', poo: 'From $3/mo', competitor: 'From $4/mo' },
-      { name: 'iOS', poo: true, competitor: true },
-      { name: 'Android', poo: true, competitor: true },
-      { name: 'Web app', poo: true, competitor: true },
-      { name: 'Mac app', poo: '✅ PWA', competitor: true },
-      { name: 'Windows / Linux', poo: '✅ Web / PWA', competitor: true },
-      { name: 'DID-signed data ownership', poo: '✅ Your data, cryptographically yours', competitor: '❌ Vendor lock-in' },
-      { name: 'Open data export', poo: true, competitor: '⚠️ CSV only (paid)' },
+      { name: 'Real-time sync', boop: true, competitor: true },
+      { name: 'Offline access', boop: '✅ Full offline — works without internet', competitor: '⚠️ Limited offline mode (premium only)' },
+      { name: 'List sharing / collaboration', boop: '✅ Free', competitor: '⚠️ Requires paid plan' },
+      { name: 'Free tier list limit', boop: '5 lists free', competitor: '5 active projects free' },
+      { name: 'Pricing (paid)', boop: 'From $3/mo', competitor: 'From $4/mo' },
+      { name: 'iOS', boop: true, competitor: true },
+      { name: 'Android', boop: true, competitor: true },
+      { name: 'Web app', boop: true, competitor: true },
+      { name: 'Mac app', boop: '✅ PWA', competitor: true },
+      { name: 'Windows / Linux', boop: '✅ Web / PWA', competitor: true },
+      { name: 'DID-signed data ownership', boop: '✅ Your data, cryptographically yours', competitor: '❌ Vendor lock-in' },
+      { name: 'Open data export', boop: true, competitor: '⚠️ CSV only (paid)' },
     ],
     competitorWeakness:
       'Todoist is powerful but designed for power users who want lots of setup. Collaboration is paywalled, offline is an afterthought, and your data is locked in their servers.',
@@ -60,21 +60,21 @@ const COMPETITORS: Record<string, CompetitorData> = {
       'Comparing boop vs Apple Reminders: real-time sync across all platforms, full offline support, and list sharing without an Apple device. Free to start.',
     ogDescription:
       'boop vs Apple Reminders — works on Android, Windows, and web. Real-time sync. Free.',
-    pooHeadline: 'Cross-platform. Real-time. No Apple required.',
+    boopHeadline: 'Cross-platform. Real-time. No Apple required.',
     competitorHeadline: 'Apple Reminders only works if everyone you share with owns Apple devices.',
     features: [
-      { name: 'Real-time sync', poo: true, competitor: '⚠️ iCloud only — can lag' },
-      { name: 'Offline access', poo: true, competitor: true },
-      { name: 'List sharing / collaboration', poo: '✅ Any platform', competitor: '⚠️ Apple devices only' },
-      { name: 'Free tier', poo: '5 lists free, always', competitor: '✅ Free (with iCloud)' },
-      { name: 'Pricing (paid)', poo: 'From $3/mo', competitor: 'Free (iCloud storage separate)' },
-      { name: 'iOS', poo: true, competitor: true },
-      { name: 'Android', poo: true, competitor: '❌ Not available' },
-      { name: 'Web app', poo: true, competitor: '⚠️ iCloud.com only (limited)' },
-      { name: 'Mac app', poo: '✅ PWA', competitor: true },
-      { name: 'Windows / Linux', poo: '✅ Web / PWA', competitor: '❌ Not available' },
-      { name: 'DID-signed data ownership', poo: '✅ Your data, cryptographically yours', competitor: '❌ Apple owns your data' },
-      { name: 'Real-time collaborative editing', poo: true, competitor: '❌ No live collaboration' },
+      { name: 'Real-time sync', boop: true, competitor: '⚠️ iCloud only — can lag' },
+      { name: 'Offline access', boop: true, competitor: true },
+      { name: 'List sharing / collaboration', boop: '✅ Any platform', competitor: '⚠️ Apple devices only' },
+      { name: 'Free tier', boop: '5 lists free, always', competitor: '✅ Free (with iCloud)' },
+      { name: 'Pricing (paid)', boop: 'From $3/mo', competitor: 'Free (iCloud storage separate)' },
+      { name: 'iOS', boop: true, competitor: true },
+      { name: 'Android', boop: true, competitor: '❌ Not available' },
+      { name: 'Web app', boop: true, competitor: '⚠️ iCloud.com only (limited)' },
+      { name: 'Mac app', boop: '✅ PWA', competitor: true },
+      { name: 'Windows / Linux', boop: '✅ Web / PWA', competitor: '❌ Not available' },
+      { name: 'DID-signed data ownership', boop: '✅ Your data, cryptographically yours', competitor: '❌ Apple owns your data' },
+      { name: 'Real-time collaborative editing', boop: true, competitor: '❌ No live collaboration' },
     ],
     competitorWeakness:
       "Apple Reminders is free and well-integrated on Apple devices, but falls apart the moment you need to collaborate with someone on Android or Windows. There's no real web app and no real-time sync.",
@@ -89,21 +89,21 @@ const COMPETITORS: Record<string, CompetitorData> = {
       'Comparing boop vs Things 3: free to start, real-time collaboration, cross-platform, and no $50 Mac app purchase. See why boop is the modern Things alternative.',
     ogDescription:
       'boop vs Things 3 — free to start, real-time sharing, works on Android and web. No $50 upfront.',
-    pooHeadline: 'Free to start. Real-time. Works everywhere.',
+    boopHeadline: 'Free to start. Real-time. Works everywhere.',
     competitorHeadline: 'Things 3 costs $50 for Mac, has no Android app, and has zero collaboration.',
     features: [
-      { name: 'Real-time sync', poo: true, competitor: '⚠️ Things Cloud (no collaboration)' },
-      { name: 'Offline access', poo: true, competitor: true },
-      { name: 'List sharing / collaboration', poo: '✅ Real-time', competitor: '❌ No sharing at all' },
-      { name: 'Free tier', poo: '5 lists free, always', competitor: '❌ No free tier — one-time purchase' },
-      { name: 'Pricing', poo: 'Free + $3/mo Pro', competitor: '$9.99 iOS + $49.99 Mac + $19.99 iPad' },
-      { name: 'iOS', poo: true, competitor: true },
-      { name: 'Android', poo: true, competitor: '❌ Not available' },
-      { name: 'Web app', poo: true, competitor: '❌ Not available' },
-      { name: 'Mac app', poo: '✅ PWA', competitor: '✅ Native (paid separately)' },
-      { name: 'Windows / Linux', poo: '✅ Web / PWA', competitor: '❌ Not available' },
-      { name: 'DID-signed data ownership', poo: '✅ Your data, cryptographically yours', competitor: '❌ Vendor lock-in' },
-      { name: 'Real-time collaborative editing', poo: true, competitor: '❌ Solo use only' },
+      { name: 'Real-time sync', boop: true, competitor: '⚠️ Things Cloud (no collaboration)' },
+      { name: 'Offline access', boop: true, competitor: true },
+      { name: 'List sharing / collaboration', boop: '✅ Real-time', competitor: '❌ No sharing at all' },
+      { name: 'Free tier', boop: '5 lists free, always', competitor: '❌ No free tier — one-time purchase' },
+      { name: 'Pricing', boop: 'Free + $3/mo Pro', competitor: '$9.99 iOS + $49.99 Mac + $19.99 iPad' },
+      { name: 'iOS', boop: true, competitor: true },
+      { name: 'Android', boop: true, competitor: '❌ Not available' },
+      { name: 'Web app', boop: true, competitor: '❌ Not available' },
+      { name: 'Mac app', boop: '✅ PWA', competitor: '✅ Native (paid separately)' },
+      { name: 'Windows / Linux', boop: '✅ Web / PWA', competitor: '❌ Not available' },
+      { name: 'DID-signed data ownership', boop: '✅ Your data, cryptographically yours', competitor: '❌ Vendor lock-in' },
+      { name: 'Real-time collaborative editing', boop: true, competitor: '❌ Solo use only' },
     ],
     competitorWeakness:
       'Things 3 is a beautiful, polished app for solo productivity on Apple devices. But it has zero sharing, no Android or web app, and charges $50+ just for Mac access. Not built for teams or modern cross-platform life.',
@@ -200,7 +200,7 @@ export function Compare() {
             />
             <h1 className="text-3xl md:text-4xl font-black">{data.tagline}</h1>
           </div>
-          <p className="text-amber-200 text-lg max-w-2xl">{data.pooHeadline}</p>
+          <p className="text-amber-200 text-lg max-w-2xl">{data.boopHeadline}</p>
         </div>
       </header>
 
@@ -240,7 +240,7 @@ export function Compare() {
                   >
                     <td className="px-4 py-3 text-gray-800 dark:text-gray-100 font-medium">{feature.name}</td>
                     <td className="px-4 py-3 text-center">
-                      <FeatureCell value={feature.poo} />
+                      <FeatureCell value={feature.boop} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <FeatureCell value={feature.competitor} />
