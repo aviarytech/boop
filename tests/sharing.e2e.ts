@@ -15,7 +15,7 @@ test.describe("Sharing flow", () => {
     await screen.getByRole("button", { name: "Share" }).click();
 
     await expect(
-      screen.getByRole("heading", { name: "🔗 Share List" }),
+      screen.getByRole("heading", { name: "Share list" }),
     ).toBeVisible({ timeout: 5000 });
   });
 
@@ -24,11 +24,11 @@ test.describe("Sharing flow", () => {
 
     await screen.getByRole("button", { name: "Share" }).click();
     await expect(
-      screen.getByRole("heading", { name: "🔗 Share List" }),
+      screen.getByRole("heading", { name: "Share list" }),
     ).toBeVisible({ timeout: 5000 });
 
     await expect(
-      screen.getByRole("button", { name: "Publish to Share" }),
+      screen.getByRole("button", { name: "Publish publicly" }),
     ).toBeVisible({ timeout: 5000 });
   });
 
@@ -37,13 +37,13 @@ test.describe("Sharing flow", () => {
 
     await screen.getByRole("button", { name: "Share" }).click();
     await expect(
-      screen.getByRole("heading", { name: "🔗 Share List" }),
+      screen.getByRole("heading", { name: "Share list" }),
     ).toBeVisible({ timeout: 5000 });
 
     await screen.getByRole("button", { name: "Done" }).click();
 
     await expect(
-      screen.getByRole("heading", { name: "🔗 Share List" }),
+      screen.getByRole("heading", { name: "Share list" }),
     ).not.toBeVisible();
   });
 });
@@ -53,7 +53,7 @@ test.describe("Join flow", () => {
     await app.open("/join/invalid-list-id/invalid-token");
 
     await expect(
-      screen.getByRole("heading", { name: "Invite Links No Longer Supported" }),
+      screen.getByRole("heading", { name: "This legacy invite link is no longer supported" }),
     ).toBeVisible();
   });
 });
