@@ -86,6 +86,8 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
       if (await drain(ctx.db.query(table).withIndex("by_list", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     }
     if (await drain(ctx.db.query("listGrants").withIndex("by_list_recipient", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
+    if (await drain(ctx.db.query("listGrantRevocations").withIndex("by_list_recipient", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
+    if (await drain(ctx.db.query("listInvitations").withIndex("by_list_email", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     await ctx.db.delete(listId);
     return false;
   }
@@ -100,6 +102,11 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     if (await drain(ctx.db.query("didLogs").withIndex("by_user_did", q => q.eq("userDid", did)).take(DELETE_BATCH_SIZE))) return false;
   }
   if (await drain(ctx.db.query("listGrants").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("listGrantRevocations").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("listInvitations").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  // Pending email invitations are not account-bound. Profile email is not proof
+  // of ownership and must never authorize deletion of someone else’s invitations.
+  if (await drain(ctx.db.query("invitationRequests").withIndex("by_owner_request", q => q.eq("ownerId", userId)).take(DELETE_BATCH_SIZE))) return false;
   const code = await ctx.db.query("referralCodes").withIndex("by_user", q => q.eq("userId", userId)).first();
   if (code) {
     if (await drain(ctx.db.query("referrals").withIndex("by_code", q => q.eq("referralCodeId", code._id)).take(DELETE_BATCH_SIZE))) return false;

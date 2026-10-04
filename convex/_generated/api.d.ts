@@ -39,6 +39,8 @@ import type * as didResourcesHttp from "../didResourcesHttp.js";
 import type * as feedback from "../feedback.js";
 import type * as http from "../http.js";
 import type * as itemCategories from "../itemCategories.js";
+import type * as invitations from "../invitations.js";
+import type * as invitationMail from "../invitationMail.js";
 import type * as items from "../items.js";
 import type * as itemsHttp from "../itemsHttp.js";
 import type * as lib_actor from "../lib/actor.js";
@@ -139,6 +141,8 @@ declare const fullApi: ApiFromModules<{
   feedback: typeof feedback;
   http: typeof http;
   itemCategories: typeof itemCategories;
+  invitations: typeof invitations;
+  invitationMail: typeof invitationMail;
   items: typeof items;
   itemsHttp: typeof itemsHttp;
   "lib/actor": typeof lib_actor;
