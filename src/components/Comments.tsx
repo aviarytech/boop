@@ -11,8 +11,6 @@ import { useSettings } from "../hooks/useSettings";
 
 interface CommentsProps {
   itemId: Id<"items">;
-  userDid: string;
-  legacyDid?: string;
   canEdit: boolean;
 }
 

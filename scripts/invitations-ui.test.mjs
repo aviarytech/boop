@@ -111,3 +111,38 @@ test("accepted access uses account grant controls and never resends an active ac
   await screen.findByText(/Access revoked/);
   assert.equal(state.calls[1][0], "listGrants:revokeListGrant");
 });
+
+
+test("send and resend preserve distinct retry IDs when crypto.randomUUID is unavailable", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(crypto, "randomUUID");
+  Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
+  try {
+    reset(); state.fail = true; mount();
+    fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "new@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    await screen.findByRole("alert");
+    const send = state.calls[0];
+    assert.equal(send[0], "invitations:createInvitation");
+    assert.match(send[1].requestId, /^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/);
+    state.fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    await screen.findByText(/Invitation recorded/);
+    assert.deepEqual(state.calls[1], send);
+
+    state.fail = true;
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+    await screen.findByRole("alert");
+    const resend = state.calls[2];
+    assert.equal(resend[0], "invitations:resendInvitation");
+    assert.match(resend[1].requestId, /^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/);
+    assert.notEqual(resend[1].requestId, send[1].requestId);
+    state.fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+    await screen.findByText(/New invitation queued/);
+    assert.deepEqual(state.calls[3], resend);
+  } finally {
+    if (descriptor) Object.defineProperty(crypto, "randomUUID", descriptor);
+    else delete crypto.randomUUID;
+  }
+});

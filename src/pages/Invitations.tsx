@@ -6,6 +6,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useAuth } from "../hooks/useAuth";
+import { randomId } from "../lib/randomId";
 import { Login } from "./Login";
 
 const button = "min-h-11 rounded-full border border-stone-300 dark:border-gray-700 px-4 py-2 text-sm font-semibold hover:bg-stone-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-amber-600";
@@ -70,7 +71,7 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
   // Keep keys through ambiguous network failures; a changed payload gets a new key.
   const requests = useRef(new Map<string, string>());
   function requestId(key: string) {
-    if (!requests.current.has(key)) requests.current.set(key, crypto.randomUUID());
+    if (!requests.current.has(key)) requests.current.set(key, randomId());
     return requests.current.get(key)!;
   }
   async function run(operation: () => Promise<unknown>, success = "Changes saved.") {

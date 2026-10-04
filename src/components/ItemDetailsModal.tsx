@@ -552,8 +552,6 @@ export function ItemDetailsModal({
           </label>
           <Comments
             itemId={item._id}
-            userDid={userDid}
-            legacyDid={legacyDid}
             canEdit={canEdit}
           />
         </div>
