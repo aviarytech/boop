@@ -268,3 +268,21 @@ test('independent item subset clocks survive list-first and later-subset-first d
   await store.cacheItems(account, items, 'L');
   assert.equal((await store.getCachedItemsByList(account, 'L')).length, 129);
 });
+
+test('access reconciliation hashes only pending legacy update baselines and skips hashing modern or absent queues', async () => {
+  const account = 'selective-baselines', source = structuredClone(make().rows.items[0]);
+  await store.cacheItems(account, Array.from({length: 200}, (_, i) => ({...source, _id:`I${i}`})), 'L');
+  const digest = crypto.subtle.digest; let hashes = 0;
+  crypto.subtle.digest = function(...args) { hashes++; return digest.apply(this, args); };
+  const reconcile = checkedAt => store.reconcileOfflineAccess(account, [{listId:'L',canRead:true,canEdit:true,checkedAt,missingItemIds:[]}]);
+  try {
+    await reconcile(1); assert.equal(hashes, 0);
+    await store.queueMutation(account, {type:'updateItem',payload:{itemId:'I0',name:'Authored'}}, [{...source,_id:'I0'}]);
+    hashes = 0; await reconcile(2); assert.equal(hashes, 0);
+    const [modern] = await store.getOperations(account);
+    await store.saveOperation(account, {...modern, authoredFields:undefined});
+    hashes = 0; await reconcile(3); assert.equal(hashes, 1);
+    await store.saveOperation(account, {...modern, authoredFields:undefined, denied:true});
+    hashes = 0; await reconcile(4); assert.equal(hashes, 0);
+  } finally { crypto.subtle.digest = digest; }
+});

@@ -332,3 +332,39 @@ for (const kind of ['note', 'item']) test(`${kind} draft revocation removes orig
     assert.ok(listDrafts(documentKey).some(draft => draft.text === 'Stale tab keeps writing locally'));
   } finally { first.unmount(); second.unmount(); }
 });
+
+for (const kind of ['note', 'item']) test(`${kind} fresh authorized session saves past old denial while old drafts and later stale writes stay detached`, async () => {
+  const documentKey = `did:fresh-${kind}:${kind}:resource`, writes = [];
+  const options = { saved:'Source', canEdit:true, draftKey:documentKey, persist:async text => writes.push(text) };
+  const old = renderHook(() => useAutosaveDraft(options));
+  let fresh;
+  try {
+    await act(async () => old.result.current.onChange('Old independent work'));
+    await act(async () => reconcileDraftAccess(documentKey, false, 100));
+    fresh = renderHook(() => useAutosaveDraft({...options, accessCheckedAt: 101}));
+    assert.equal(fresh.result.current.value, 'Source');
+    await act(async () => fresh.result.current.onChange('Fresh authorized work'));
+    await act(async () => fresh.result.current.retry());
+    assert.deepEqual(writes, ['Fresh authorized work']);
+    assert.ok(listDrafts(documentKey).some(d => d.text === 'Old independent work' && d.detached && d.base === undefined));
+    await act(async () => reconcileDraftAccess(documentKey, false, 102));
+    await act(async () => fresh.result.current.onChange('Stale edit after new denial'));
+    await act(async () => fresh.result.current.retry());
+    assert.deepEqual(writes, ['Fresh authorized work']);
+    assert.ok(listDrafts(documentKey).every(d => d.base === undefined));
+  } finally { old.unmount(); fresh?.unmount(); }
+});
+
+for (const kind of ['note', 'item']) test(`${kind} newly mounted stale authorized snapshot cannot override a known cross-tab denial`, async () => {
+  const documentKey = `did:stale-new-${kind}:${kind}:resource`, writes = [];
+  reconcileDraftAccess(documentKey, false, 100);
+  const editor = renderHook(() => useAutosaveDraft({saved:'Stale source', canEdit:true, accessCheckedAt:99,
+    draftKey:documentKey, persist:async text => writes.push(text)}));
+  try {
+    await act(async () => editor.result.current.onChange('Independent work'));
+    await act(async () => editor.result.current.retry());
+    assert.deepEqual(writes, []);
+    assert.equal(editor.result.current.status, 'denied');
+    assert.ok(listDrafts(documentKey).every(d => d.detached && d.base === undefined));
+  } finally { editor.unmount(); }
+});

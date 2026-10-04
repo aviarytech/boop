@@ -494,8 +494,14 @@ export async function retainItemDraft(accountId: string, operationId: string, li
 
 const updateFields = ['name', 'description', 'dueDate', 'url', 'recurrence', 'priority', 'groceryAisle', 'assigneeDids', 'assigneeDid'];
 async function recoveryBaselines(accountId: string) {
-  const items = (await getOfflineDB(accountId)).getAll('items');
-  return new Map(await Promise.all((await items).map(async item => [item._id as string, { canonical: canonical(item), revision: await revision(cleanDocument(item)) }] as const)));
+  const db = await getOfflineDB(accountId);
+  const ids = [...new Set((await db.getAll('mutations'))
+    .filter(m => m.type === 'updateItem' && !m.authoredFields && !m.denied && m.state !== 'acked')
+    .map(m => m.payload.itemId).filter((id): id is string => typeof id === 'string'))];
+  const proofs = new Map<string, { canonical: string; revision: string }>();
+  if (!ids.length) return proofs;
+  const items = await Promise.all(ids.map(id => db.get('items', id)));
+  return new Map(await Promise.all(items.filter((item): item is OfflineItem => !!item).map(async item => [item._id as string, { canonical: canonical(item), revision: await revision(cleanDocument(item)) }] as const)));
 }
 function deniedRecovery(m: QueuedMutation, proofs: Awaited<ReturnType<typeof recoveryBaselines>>, items: OfflineItem[]): QueuedMutation {
   let payload = { ...m.payload }, legacyRecoveryPending = m.legacyRecoveryPending;

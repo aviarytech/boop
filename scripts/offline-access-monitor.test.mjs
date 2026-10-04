@@ -97,3 +97,37 @@ test('quota-exhausted storage cannot hide a newer in-memory denial from a stale 
     }
   } finally { Object.defineProperty(globalThis, 'localStorage', descriptor); }
 });
+
+test('discarding all drafts retains denied marker locators for regrant monitoring', async () => {
+  const document = 'did:monitor:note:discarded';
+  state.contact = true; state.canEdit = false; state.checkedAt = 100;
+  const key = `${document}:session:old`;
+  drafts.writeDraft(key, 'Independent work', 'Private baseline');
+  drafts.reconcileDraftAccess(document, false, 100);
+  drafts.clearDraft(key, drafts.readDraft(key));
+  assert.equal(drafts.listDrafts(document).length, 0);
+  assert.ok(drafts.draftResources(['did:monitor']).some(r => r.documentKey === document));
+  const view = render(React.createElement(OfflineAccessMonitor));
+  try {
+    state.canEdit = true; state.checkedAt = 101;
+    view.rerender(React.createElement(OfflineAccessMonitor));
+    await waitFor(() => assert.equal(drafts.draftIsDetached(`${document}:session:fresh`), false));
+    drafts.writeDraft(`${document}:session:fresh`, 'New authorized work', 'New baseline');
+    assert.equal(drafts.draftBase(`${document}:session:fresh`), 'New baseline');
+  } finally { view.unmount(); cleanup(); }
+});
+
+test('unrelated offline snapshots do not rescan app download caches', async () => {
+  const previous = globalThis.caches; let scans = 0;
+  globalThis.caches = { keys: async () => { scans++; return []; } };
+  const view = render(React.createElement(OfflineAccessMonitor));
+  try {
+    await waitFor(() => assert.ok(scans > 0));
+    const before = scans;
+    await act(async () => {
+      await store.cacheAllLists(state.user.turnkeySubOrgId, []);
+      await store.queueMutation(state.user.turnkeySubOrgId, {type:'createList',payload:{name:'Unrelated local work'}}, []);
+    });
+    assert.equal(scans, before);
+  } finally { view.unmount(); cleanup(); globalThis.caches = previous; }
+});

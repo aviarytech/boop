@@ -1,17 +1,18 @@
 import { authErrorData } from "../../convex/lib/authError";
 import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { draftIsDetached, sameDraftRevision, subscribeDrafts, draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
+import { reconcileDraftAccess, draftIsDetached, sameDraftRevision, subscribeDrafts, draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "denied";
 
 /** Callers remount this hook when the account/resource key changes. */
-export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = [], canEdit, persist }: {
+export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = [], canEdit, accessCheckedAt, persist }: {
   saved: string | undefined;
   draftKey?: string;
   draftAliases?: readonly string[];
   canEdit: boolean;
+  accessCheckedAt?: number;
   persist: (text: string, expectedBody: string) => Promise<void>;
 }) {
   const [session] = useState(() => ({
@@ -19,6 +20,11 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
     source: documentKey ? listDrafts(documentKey, draftAliases).find(draft => !draft.detached) : undefined,
   }));
   const draftKey = session.key;
+  // A cached canEdit boolean is not evidence of regrant. Only a newer
+  // timestamp from the server query may supersede a cross-tab denial.
+  useEffect(() => {
+    if (documentKey && accessCheckedAt !== undefined) reconcileDraftAccess(documentKey, canEdit, accessCheckedAt);
+  }, [documentKey, canEdit, accessCheckedAt]);
   const sourceRef = useRef(session.source);
   const [draft, setDraft] = useState<string | null>(session.source?.text ?? null);
   const [status, setStatus] = useState<SaveStatus>("idle");

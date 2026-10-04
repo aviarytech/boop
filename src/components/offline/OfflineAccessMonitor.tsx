@@ -40,7 +40,8 @@ export function OfflineAccessMonitor() {
   const { identity } = useQueries(token ? { identity: { query: api.items.getOfflineAccount, args: { authToken: token } } } : {});
   const [, refresh] = useReducer(value => value + 1, 0);
   useEffect(() => subscribeDrafts(refresh), []);
-  useEffect(() => { void purgeAppDownloadCaches().catch(() => undefined); }, [accountId, isOnline, compaction.revokedListIds]);
+  const revokedKey = [...compaction.revokedListIds ?? []].sort().join(',');
+  useEffect(() => { void purgeAppDownloadCaches().catch(() => undefined); }, [accountId, isOnline, revokedKey]);
   const ids = [...new Set([
     ...(compaction.lists ?? []).map(list => list._id), ...compaction.items.map(item => item.listId),
     ...compaction.operations.flatMap(m => m.listIds), ...compaction.revokedListIds ?? [],

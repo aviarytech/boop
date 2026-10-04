@@ -88,12 +88,6 @@ export function clearRecoveredDraft(source: StoredDraft) {
 /** Once source editing is unavailable, retain only the independent local text.
  * The original server body is a comparison cache, not recoverable user work. */
 export function detachDraftBases(documentKey: string, aliases: readonly string[] = []): boolean {
-  for (const key of [documentKey, ...aliases]) {
-    const previous = accessFor(key);
-    const denied = { canEdit: false, checkedAt: previous?.checkedAt ?? -1 };
-    accessMemory.set(key, denied);
-    try { localStorage.setItem(accessPrefix + key, JSON.stringify(denied)); accessMemory.delete(key); } catch { /* memory fallback */ }
-  }
   let changed = false;
   for (const draft of listDrafts(documentKey, aliases)) {
     if (draft.detached || readDraft(draft.key) !== draft.record) continue;
@@ -144,11 +138,18 @@ export function reconcileDraftAccess(documentKey: string, canEdit: boolean, chec
   accessMemory.set(documentKey, next);
   try { localStorage.setItem(accessPrefix + documentKey, JSON.stringify(next)); accessMemory.delete(documentKey); } catch { /* memory fallback */ }
   if (!canEdit) detachDraftBases(documentKey);
+  if (prior?.canEdit !== canEdit || prior?.checkedAt !== checkedAt) draftChanged();
 }
 export function draftResources(dids: string[]): Array<{ documentKey: string; kind: 'note' | 'item'; id: string }> {
   const keys = new Set(memory.keys());
   try { for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key?.startsWith(prefix)) keys.add(key.slice(prefix.length)); } } catch { /* memory */ }
   const documents = new Set([...keys].map(documentOf));
+  const accessKeys = new Set(accessMemory.keys());
+  try { for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(accessPrefix)) accessKeys.add(key.slice(accessPrefix.length));
+  } } catch { /* memory */ }
+  for (const key of accessKeys) if (accessFor(key)?.canEdit === false) documents.add(key);
   return [...documents].flatMap(documentKey => {
     for (const did of dids) for (const kind of ['note', 'item'] as const) {
       const start = `${did}:${kind}:`;

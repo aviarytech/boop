@@ -66,7 +66,13 @@ original comparison `base` from localStorage and memory. Server-verified draft
 access checks cover unopened notes and item descriptions. Denial markers and
 per-draft detachment prevent a stale tab from reintroducing a comparison body or
 automatically replaying a detached draft, even after regrant. Detached text can
-be copied/downloaded; restoring it to the source is disabled. An edited note may
+be copied/downloaded; restoring it to the source is disabled. Unavailable views
+only detach existing drafts; server observations alone write document access
+markers. Marker-only denied documents remain monitored after all drafts are
+discarded. Both editor queries include a server permission observation timestamp; a newer
+authorized observation clears an older marker. Mounting with a stale cached
+`canEdit: true` cannot clear denial. Existing detached drafts stay export-only.
+An edited note may
 contain unchanged text as part of the user's independently recoverable draft;
 the separate original source/comparison body is removed.
 

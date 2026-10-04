@@ -648,6 +648,7 @@ export const { public: getItemForEditor, internal: getItemForEditorInternal } = 
 
     return {
       itemId: item._id,
+      accessCheckedAt: Date.now(),
       name: item.name,
       description: item.description ?? "",
       canEdit,
