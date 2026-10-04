@@ -694,7 +694,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
           >
             Originals Protocol
           </a>
-          , providing cryptographic proof of ownership and authenticity.
+          , for portable provenance. Verification results apply only to the evidence checked; historical attribution records may be unsigned.
           {anchors && anchors.length > 0 && (
             <span>
               {" "}This list has been anchored to Bitcoin for immutable timestamping.

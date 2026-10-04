@@ -42,5 +42,5 @@ test('historical list placeholder does not imply verified ownership', () => {
   const { container } = render(React.createElement(MemoryRouter, null, React.createElement(ListProvenanceInfo, { list })));
   fireEvent.click(container.querySelector('button'));
   assert.match(container.textContent, /Historical ownership record \(unsigned\)/);
-  assert.doesNotMatch(container.textContent, /Ownership Verifiable Credential/);
+  assert.doesNotMatch(container.textContent, /Ownership Verifiable Credential|cryptographic proof of ownership and authenticity/);
 });
