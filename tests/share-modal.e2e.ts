@@ -22,23 +22,23 @@ test.describe("Share / publish flow (POO-14)", () => {
     ).toBeVisible({ timeout: 5000 });
 
     await expect(
-      screen.getByRole("button", { name: /Publish to Share/i }),
+      screen.getByRole("button", { name: /Publish publicly/i }),
     ).toBeVisible();
   });
 
-  test("3. Publish to Share triggers publishList mutation and updates UI", async ({ screen, scenario }) => {
+  test("3. Publish publicly triggers publishList mutation and updates UI", async ({ screen, scenario }) => {
     await openList(scenario, screen, { published: false });
 
     await screen.getByRole("button", { name: "Share", exact: false }).click({ timeout: 10000 });
-    await expect(screen.getByRole("button", { name: /Publish to Share/i })).toBeVisible({ timeout: 5000 });
+    await expect(screen.getByRole("button", { name: /Publish publicly/i })).toBeVisible({ timeout: 5000 });
 
-    await screen.getByRole("button", { name: /Publish to Share/i }).click();
+    await screen.getByRole("button", { name: /Publish publicly/i }).click();
 
     await expect(
-      screen.getByRole("heading", { name: /Shared List/i }),
+      screen.getByRole("heading", { name: /Share list/i }),
     ).toBeVisible({ timeout: 10000 });
 
-    await expect(screen.getByText("This list is shared")).toBeVisible({ timeout: 5000 });
+    await expect(screen.getByText("This list is published publicly")).toBeVisible({ timeout: 5000 });
   });
 
   test("4. already-published list shows share link in modal", async ({ screen, browser, scenario }) => {
@@ -47,7 +47,7 @@ test.describe("Share / publish flow (POO-14)", () => {
     await screen.getByRole("button", { name: "Share", exact: false }).click({ timeout: 10000 });
 
     await expect(
-      screen.getByRole("heading", { name: /Shared List/i }),
+      screen.getByRole("heading", { name: /Share list/i }),
     ).toBeVisible({ timeout: 5000 });
 
     await expect(browser.locator('input[readonly]').first()).toBeVisible({ timeout: 5000 });
@@ -55,17 +55,17 @@ test.describe("Share / publish flow (POO-14)", () => {
     await expect(screen.getByRole("button", { name: /Copy/i })).toBeVisible();
   });
 
-  test("5. Stop sharing button is visible for published lists", async ({ screen, scenario }) => {
+  test("5. Unpublish button is visible for published lists", async ({ screen, scenario }) => {
     await openList(scenario, screen, { published: true });
 
     await screen.getByRole("button", { name: "Share", exact: false }).click({ timeout: 10000 });
 
     await expect(
-      screen.getByRole("heading", { name: /Shared List/i }),
+      screen.getByRole("heading", { name: /Share list/i }),
     ).toBeVisible({ timeout: 5000 });
 
     await expect(
-      screen.getByRole("button", { name: /Stop sharing/i }),
+      screen.getByRole("button", { name: /Unpublish/i }),
     ).toBeVisible();
   });
 
@@ -74,21 +74,21 @@ test.describe("Share / publish flow (POO-14)", () => {
 
     await screen.getByRole("button", { name: "Share", exact: false }).click({ timeout: 10000 });
     await expect(
-      screen.getByRole("heading", { name: /Shared List/i }),
+      screen.getByRole("heading", { name: /Share list/i }),
     ).toBeVisible({ timeout: 5000 });
 
     await screen.getByRole("button", { name: "Done" }).click();
 
     await expect(
-      screen.getByRole("heading", { name: /Shared List/i }),
+      screen.getByRole("heading", { name: /Share list/i }),
     ).not.toBeVisible({ timeout: 3000 });
   });
 
-  test("7. list detail page shows Shared badge when list is published", async ({ screen, scenario }) => {
+  test("7. list detail page shows public badge when list is published", async ({ screen, scenario }) => {
     await openList(scenario, screen, { published: true });
 
     await expect(
-      screen.getByText("shared", { exact: true }),
+      screen.getByText("public", { exact: true }),
     ).toBeVisible({ timeout: 10000 });
   });
 });
