@@ -1,3 +1,4 @@
+import { authErrorData } from "../../convex/lib/authError";
 import { Component, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Sentry } from '../lib/sentry'
@@ -35,12 +36,12 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="min-h-screen bg-stone-50 dark:bg-gray-950 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-md w-full text-center">
             <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-              Something went wrong
+              {authErrorData(this.state.error)?.code === 'FORBIDDEN' ? 'Access no longer available' : 'Something went wrong'}
             </h1>
             <p className="text-gray-600 dark:text-gray-300 mb-4">
-              An unexpected error occurred. Please try again.
+              {authErrorData(this.state.error)?.code === 'FORBIDDEN' ? 'This resource was removed or your access changed. Unsent edits remain available in saved edits for independent export.' : 'An unexpected error occurred. Please try again.'}
             </p>
-            {this.state.error && (
+            {this.state.error && !authErrorData(this.state.error) && (
               <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded mb-4 font-mono">
                 {this.state.error.message}
               </p>

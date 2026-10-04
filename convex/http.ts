@@ -1,3 +1,4 @@
+import { download as downloadAttachment } from "./attachmentDownload";
 import { extractTokenFromRequest } from "./lib/jwt";
 /**
  * Convex HTTP router for server-side endpoints.
@@ -311,6 +312,8 @@ const logout = httpAction(async (ctx, request) => {
 });
 
 const http = httpRouter();
+http.route({ path: "/api/attachments/download", method: "GET", handler: downloadAttachment });
+http.route({ path: "/api/attachments/download", method: "OPTIONS", handler: downloadAttachment });
 
 // Auth endpoints
 http.route({

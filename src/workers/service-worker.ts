@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 
+import { isUncacheableResource, purgeAppDownloadCaches } from "../lib/downloadCache";
+
 declare const self: ServiceWorkerGlobalScope;
 
 // Injected at build time — ensures browser detects new SW on every deploy
@@ -54,6 +56,7 @@ self.addEventListener('activate', (event) => {
             })
         );
       }),
+      purgeAppDownloadCaches(caches),
       // Take control of all pages immediately
       self.clients.claim(),
     ])
@@ -75,6 +78,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Private retrieval must always reach its authorization broker, including
+  // same-origin reverse proxies. Cache-Control alone does not govern Cache API.
+  if (isUncacheableResource(url) || request.headers.has('Authorization') || url.hostname.endsWith('.convex.site')) return;
+
   // CRITICAL: Never intercept Convex API calls
   if (request.url.includes('convex.cloud')) {
     return;
@@ -82,14 +89,14 @@ self.addEventListener('fetch', (event) => {
 
   // Hashed assets (/assets/*): cache-first since they're immutable by hash
   // This enables offline access to JS/CSS bundles within Capacitor native shell
-  if (url.pathname.startsWith('/assets/') && /[-\.][a-f0-9]{8,}\.(js|css|woff2?)$/.test(url.pathname)) {
+  if (url.pathname.startsWith('/assets/') && /[-.][a-f0-9]{8,}\.(js|css|woff2?)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
         if (cachedResponse) {
           return cachedResponse;
         }
         return fetch(request).then((response) => {
-          if (response.ok) {
+          if (response.ok && !/no-store|private/i.test(response.headers.get('Cache-Control') ?? '')) {
             const responseClone = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(request, responseClone);
@@ -109,7 +116,7 @@ self.addEventListener('fetch', (event) => {
       fetch(request)
         .then((response) => {
           // Cache successful responses for offline fallback
-          if (response.ok) {
+          if (response.ok && !/no-store|private/i.test(response.headers.get('Cache-Control') ?? '')) {
             const responseClone = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(request, responseClone);
@@ -149,7 +156,7 @@ self.addEventListener('fetch', (event) => {
 
         return fetch(request).then((response) => {
           // Only cache successful responses
-          if (response.ok) {
+          if (response.ok && !/no-store|private/i.test(response.headers.get('Cache-Control') ?? '')) {
             const responseClone = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               cache.put(request, responseClone);

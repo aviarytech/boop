@@ -490,7 +490,7 @@ test("attachment URL queries and action checkpoints stop after grant/key revocat
   await call("attachments", "getAttachmentUrls", ctx, { itemId: "I", ...credentials("viewer") });
   await call("listGrants", "revokeListGrant", ctx, { listId: "L", grantId: "G-L-viewer", ...credentials("owner") });
   await assert.rejects(() => call("attachments", "getAttachmentUrls", ctx, { itemId: "I", ...credentials("viewer") }), denied);
-  assert.deepEqual(bucket.calls, [["get", attachment.key]], "no new presigned URL after revoke; old URL lifetime is #260");
+  assert.deepEqual(bucket.calls, [], "private metadata never issues bearer storage URLs; broker retrieval is covered by revocation.test.mjs");
   key.scopes = ["items:write"];
   const actionCtx = { ...ctx.action, runQuery: async (ref, args) => {
     // Revoke the API key after actor resolution, before resource authorization.
@@ -499,7 +499,7 @@ test("attachment URL queries and action checkpoints stop after grant/key revocat
     return result;
   } };
   await assert.rejects(() => call("attachments", "generateUploadUrl", actionCtx, { apiKey: "key-editor", itemId: "I", contentType: "image/png", byteLength: 10 }), /Invalid API key/);
-  assert.equal(bucket.calls.length, 1);
+  assert.equal(bucket.calls.length, 0);
 });
 
 test("anchor ID substitution and malformed anchor associations fail closed", async () => {

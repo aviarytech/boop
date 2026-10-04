@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 const { renderHook, act } = await import('@testing-library/react');
-await build({ entryPoints: ['src/hooks/useAutosaveDraft.ts'], outfile: 'tmp/autosave-draft-test.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react'] });
-const { useAutosaveDraft } = await import(pathToFileURL(`${process.cwd()}/tmp/autosave-draft-test.mjs`));
+await build({ stdin: { contents: 'export { useAutosaveDraft } from "./src/hooks/useAutosaveDraft"; export { reconcileDraftAccess, listDrafts } from "./src/lib/noteDrafts";', resolveDir: process.cwd() }, outfile: 'tmp/autosave-draft-test.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react'] });
+const { useAutosaveDraft, reconcileDraftAccess, listDrafts } = await import(pathToFileURL(`${process.cwd()}/tmp/autosave-draft-test.mjs`));
 
 test('failed autosave keeps the draft, warns on close, and retries the latest text', async () => {
   let reject = true;
@@ -309,4 +309,26 @@ test('permission rejection is distinct from conflict, keeps draft and blocks ret
   assert.ok(durableDrafts(key).some(d => d.text === 'independent unsent text'));
   await act(async () => unmount());
   assert.equal(writes, 1);
+});
+
+
+for (const kind of ['note', 'item']) test(`${kind} draft revocation removes original bases and prevents stale mounted editors from automatic source replay even after regrant`, async () => {
+  const documentKey = `did:stale-${kind}:${kind}:resource`, writes = [];
+  const options = { saved: 'Original private comparison source', canEdit: true, draftKey: documentKey, persist: async text => writes.push(text) };
+  const first = renderHook(() => useAutosaveDraft(options));
+  const second = renderHook(() => useAutosaveDraft(options));
+  try {
+    await act(async () => { first.result.current.onChange('First independent work'); second.result.current.onChange('Second independent work'); });
+    assert.equal(listDrafts(documentKey).length, 2);
+    await act(async () => { reconcileDraftAccess(documentKey, false, 20); });
+    assert.ok(listDrafts(documentKey).every(draft => draft.detached && draft.base === undefined));
+    await act(async () => {
+      first.result.current.onChange('Stale tab keeps writing locally');
+      reconcileDraftAccess(documentKey, true, 30);
+      await first.result.current.retry(); await second.result.current.retry();
+    });
+    assert.deepEqual(writes, []);
+    assert.ok(listDrafts(documentKey).every(draft => draft.base === undefined));
+    assert.ok(listDrafts(documentKey).some(draft => draft.text === 'Stale tab keeps writing locally'));
+  } finally { first.unmount(); second.unmount(); }
 });

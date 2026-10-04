@@ -1,12 +1,15 @@
+import { fetchAttachment } from "../lib/attachmentFetch";
+import { getConvexHttpUrl } from "../lib/convexUrls";
 /**
  * Attachments component for uploading and viewing files on items.
  * Uses Convex file storage for secure file handling.
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAction, useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../hooks/useSettings";
 
 async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
@@ -42,6 +45,7 @@ const ALLOWED_TYPES = [
 
 export function Attachments({ itemId, canEdit }: AttachmentsProps) {
   const { haptic } = useSettings();
+  const { token } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -50,6 +54,24 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
 
   // Fetch attachment URLs
   const attachments = useQuery(api.attachments.getAttachmentUrls, { itemId });
+
+  const attachmentKey = JSON.stringify(attachments ?? []);
+  const [previews, setPreviews] = useState<{ token: string | null; itemId: string; urls: Record<string, string> }>({ token: null, itemId: '', urls: {} });
+  useEffect(() => {
+    const controller = new AbortController();
+    const urls: Record<string, string> = {};
+    setPreviews({ token, itemId, urls });
+    const entries: Array<{ key: string; url: string }> = JSON.parse(attachmentKey);
+    void Promise.all(entries.map(async entry => {
+      try {
+        const blob = await fetchAttachment(entry.url, getConvexHttpUrl(), token, controller.signal);
+        if (controller.signal.aborted) return;
+        urls[entry.key] = URL.createObjectURL(blob);
+        setPreviews({ token, itemId, urls: { ...urls } });
+      } catch { /* Unmount, revocation or failed retrieval: no stale preview. */ }
+    }));
+    return () => { controller.abort(); Object.values(urls).forEach(url => URL.revokeObjectURL(url)); };
+  }, [attachmentKey, itemId, token]);
 
   const generateUploadUrl = useAction(api.attachments.generateUploadUrl);
   const addAttachment = useMutation(api.attachments.addAttachment);
@@ -191,7 +213,9 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
       {/* Attachment grid */}
       {attachments && attachments.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {attachments.map(({ key, url }) => (
+          {attachments.map(({ key }) => {
+            const url = previews.token === token && previews.itemId === itemId ? previews.urls[key] : undefined;
+            return (
             <div
               key={key}
               className="relative group aspect-square bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden"
@@ -199,10 +223,10 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
               {url ? (
                 <a
                   href={url}
-                  target="_blank"
+                  download={key.split("/").at(-1) ?? "attachment"}
                   rel="noopener noreferrer"
                   className="block w-full h-full"
-                  title="Open attachment"
+                  title="Download attachment"
                 >
                   {!failedPreviewKeys[key] ? (
                     <img
@@ -249,7 +273,7 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
                 </button>
               )}
             </div>
-          ))}
+          ); })}
         </div>
       )}
 

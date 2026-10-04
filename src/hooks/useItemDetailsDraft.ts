@@ -30,5 +30,11 @@ export function useItemDetailsDraft(item: Doc<'items'> & { assigneeDids?: string
     dirty.current = true;
     setDraft(previous => ({ ...previous, [key]: value }));
   };
-  return { draft, set, source };
+  const getUnsent = () => {
+    if (!dirty.current) return {};
+    const original = fields(source.current);
+    return Object.fromEntries(Object.entries(draft).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(original[key as keyof ItemDetailsDraft])));
+  };
+  const reset = () => { dirty.current = false; source.current = item; setDraft(fields(item)); };
+  return { draft, set, source, getUnsent, reset };
 }

@@ -93,3 +93,20 @@ test('switching accounts closes the discard dialog and suppresses late inspectio
     assert.equal((await store.getOperations(other)).length, 1);
   } finally { view.unmount(); cleanup(); }
 });
+
+test('revocation clears a previously inspected server snapshot and keeps only independent local export/discard', async () => {
+  const { account, operations, view } = await setup();
+  try {
+    fireEvent.click(view.getByText('Review conflict'));
+    await waitFor(() => assert.ok(view.getByText('Current server version')));
+    await act(async () => { await store.denyOperation(account, operations[0].operationId); });
+    assert.ok((await store.getOperations(account)).every(m => m.denied), JSON.stringify(await store.getOperations(account)));
+    await waitFor(() => assert.ok(!view.queryByText('Current server version'), view.container.textContent));
+    assert.equal(view.queryByText('Apply saved edit to this version'), null);
+    assert.equal(view.queryByText('Review conflict'), null);
+    assert.ok(view.getByText('Export saved edits'));
+    assert.equal(view.getAllByText('Discard saved edit').length, 3);
+    await act(async () => { await store.retryOperations(account); });
+    assert.ok((await store.getOperations(account)).every(m => m.denied));
+  } finally { view.unmount(); cleanup(); }
+});

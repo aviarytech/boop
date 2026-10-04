@@ -23,6 +23,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
     return () => clearInterval(timer);
   }, [accountId, listId, needsReceiptScan]);
   const snapshot = useQuery(api.items.getListItemsForReplay, { listId, operationIds: replayOperationIds(operations, listId, scanOffset) });
+  const revoked = compaction?.revokedListIds?.includes(listId) ?? false;
   const scope = `${accountId}:${listId}`;
   type CachedSnapshot = Awaited<ReturnType<typeof getCachedListSnapshot>> & { scope: string };
   const [cached, setCached] = useState<CachedSnapshot>({ scope: '', items: [], operationIds: [], acknowledgments: [], sequence: undefined, retiredThrough: 0, retainedOperationIds: [] });
@@ -41,17 +42,17 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   const snapshotIds = useMemo(() => snapshot?.acknowledgments.map(a => a.operationId) ?? EMPTY_OPERATION_IDS, [snapshot]);
   const server = snapshot && coversFrontier({ sequence: snapshot.sequence, operationIds: snapshotIds })
     ? { ...snapshot, operationIds: snapshotIds, scope } : undefined;
-  if (server && accountId) last.current = server;
+  if (server && accountId && !revoked) last.current = server;
   useEffect(() => {
     let active = true;
     const persist = async () => {
-      if (snapshot && accountId) await cacheListSnapshot(accountId, listId, snapshot.items, snapshot.acknowledgments, snapshot.sequence);
+      if (snapshot && accountId && !revoked) await cacheListSnapshot(accountId, listId, snapshot.items, snapshot.acknowledgments, snapshot.sequence);
       const stored = await getCachedListSnapshot(accountId, listId);
       if (active) setCached({ scope, ...stored });
     };
     void persist();
     return () => { active = false; };
-  }, [snapshot, accountId, listId, scope, operations]);
+  }, [snapshot, accountId, listId, scope, operations, revoked]);
   const lastBase = last.current && coversFrontier(last.current) ? last.current : undefined;
   // The shared observer may advance before this hook's cache effect. Carry
   // its atomic item snapshot too, so compaction cannot expose an older fallback
@@ -64,12 +65,16 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   } : undefined, [compaction, listId]);
   const selected = accountId ? server ?? lastBase ?? (cached.scope === scope && coversFrontier(cached) ? cached : undefined)
     ?? (sharedBase && coversFrontier(sharedBase) ? sharedBase : undefined) : undefined;
-  const base = selected?.items ?? EMPTY_ITEMS;
+  const base = useMemo(() => revoked ? EMPTY_ITEMS : (selected?.items ?? EMPTY_ITEMS).filter(item => !compaction?.unavailableItemIds?.includes(item._id)), [revoked, selected?.items, compaction?.unavailableItemIds]);
   const baseOperationIds = selected?.operationIds ?? EMPTY_OPERATION_IDS;
   const baseAcknowledgments = selected?.acknowledgments ?? EMPTY_ACKNOWLEDGMENTS;
   const baseSequence = selected?.sequence;
   const previousProjection = useRef<{ scope: string; items: OptimisticItem[] }>({ scope, items: [] });
+  useEffect(() => {
+    if (revoked) { last.current = undefined; previousProjection.current = { scope, items: [] }; }
+  }, [revoked, scope]);
   const items = useMemo(() => {
+    if (revoked) return EMPTY_ITEMS;
     const identities = { ...Object.fromEntries((previousProjection.current.scope === scope ? previousProjection.current.items : []).filter(i => i._localKey).map(i => [i._id, i._localKey!])), ...Object.fromEntries((cached.scope === scope ? cached.items : []).filter(i => i._localKey).map(i => [i._id, i._localKey!])), ...aliases };
     const proof = cached.scope === scope && cached.retiredThrough > (compaction?.retiredThrough ?? 0) ? cached : compaction;
     const projected = projectItems(base, operations, listId, new Set(baseOperationIds), baseAcknowledgments, { ...proof, aliases: identities, sequence: baseSequence });
@@ -80,7 +85,7 @@ export function useOptimisticItems(listId: Id<'lists'>) {
     });
     previousProjection.current = { scope, items: stable };
     return stable;
-  }, [base, operations, listId, baseOperationIds, baseAcknowledgments, baseSequence, aliases, compaction, cached, scope]);
+  }, [base, operations, listId, baseOperationIds, baseAcknowledgments, baseSequence, aliases, compaction, cached, scope, revoked]);
   const snapshots = useRef(base);
   snapshots.current = base;
   const enqueue = useCallback((type: Parameters<typeof queueMutation>[0]['type'], payload: unknown) => queueMutation({ type, payload }, snapshots.current).then(() => undefined), [queueMutation]);

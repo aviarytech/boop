@@ -26,7 +26,7 @@ for (const code of ['UNAUTHORIZED', 'INVALID_TOKEN', 'EXPIRED_TOKEN']) {
     assert.equal(statuses.at(-1).status, 'synced'); assert.equal(f.rows.items[0].checked, false);
   });
 }
-for (const error of [wireError('FORBIDDEN'), new Error('Transport down')]) {
+for (const error of [new Error('Transport down')]) {
   test(`${error.message}: exhaustion retains failed work and its successors, unrelated edits proceed, explicit retry recovers`, async () => {
     const f = await seed(); const manager = new SyncManager(), statuses = [];
     manager.subscribe(s => statuses.push(s));
@@ -114,4 +114,21 @@ test('rerun belongs to its account/session; switching accounts cannot send the o
   current = a.session.accountId;
   await manager.sync(a.client, a.session, isA);
   assert.equal((await store.getQueuedMutations(a.session.accountId)).length, 0);
+});
+
+test('FORBIDDEN parks the whole dependency chain permanently; manual retry cannot resend or rebase denied work', async () => {
+  const f = await seed(), manager = new SyncManager();
+  let calls = 0;
+  const denied = { mutation: async () => { calls++; throw wireError('FORBIDDEN'); } };
+  await manager.sync(denied, f.session);
+  const queue = await store.getQueuedMutations(f.session.accountId);
+  assert.equal(calls, 1);
+  assert.ok(queue.every(m => m.state === 'conflict' && m.denied));
+  await store.retryOperations(f.session.accountId);
+  await manager.sync(denied, f.session);
+  await new SyncManager().sync(denied, f.session);
+  assert.equal(calls, 1);
+  await assert.rejects(() => store.rebaseOperation(f.session.accountId, queue[0].id, f.rows.items), /Only a rejected conflict/);
+  assert.equal(f.rows.items[0].checked, false);
+  assert.equal(modules.optimistic.projectItems(f.rows.items, queue, 'L1')[0].checked, false);
 });

@@ -1,3 +1,5 @@
+import { retainItemDraft } from "../lib/offline";
+import { randomId } from "../lib/randomId";
 /**
  * Panel for viewing and editing item details.
  * Uses Panel component for slide-up drawer experience.
@@ -5,7 +7,7 @@
  */
 
 import { useItemDetailsDraft } from "../hooks/useItemDetailsDraft";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "../lib/authenticatedConvex";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
@@ -51,12 +53,22 @@ export function ItemDetailsModal({
   onClose,
 }: ItemDetailsModalProps) {
   const { haptic } = useSettings();
-  const { queueMutation } = useOffline();
+  const { queueMutation, accountId } = useOffline();
   const navigate = useNavigate();
   // Queued creates have no server document yet, even during reconnect.
   const hasServerItem = !item._id.startsWith("temp-");
 
-  const { draft, set: setDraft, source: draftSource } = useItemDetailsDraft(item);
+  const { draft, set: setDraft, source: draftSource, getUnsent, reset } = useItemDetailsDraft(item);
+  const [recoveryId] = useState(randomId);
+  const abandon = useRef<(() => void) | undefined>(undefined);
+  abandon.current = () => { void retainItemDraft(accountId, recoveryId, item.listId, item._id, getUnsent()); };
+  useEffect(() => () => { abandon.current?.(); }, []);
+  useEffect(() => {
+    if (!canEdit) { abandon.current?.(); reset(); }
+    // Reset only on permission transition, not on each local keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canEdit]);
+  const close = () => { abandon.current = undefined; onClose(); };
   const { name, description, url, dueDate, hasRecurrence, recurrenceFrequency,
     recurrenceInterval, recurrenceEndDate, priority, selectedCategory, assigneeDids } = draft;
   const [isSaving, setIsSaving] = useState(false);
@@ -100,7 +112,7 @@ export function ItemDetailsModal({
 
   // Available categories: built-in aisles + custom aisles from the list
   const availableCategories: GroceryAisle[] = useMemo(() => {
-    const customAisles = (list as any)?.customAisles as GroceryAisle[] | undefined;
+    const customAisles = list?.customAisles as GroceryAisle[] | undefined;
     const all = customAisles?.length
       ? [...AISLES, ...customAisles].sort((a, b) => a.order - b.order)
       : [...AISLES];
@@ -125,30 +137,21 @@ export function ItemDetailsModal({
     setIsSaving(true);
 
     try {
-      const payload = {
-        itemId: item._id,
-        userDid,
-        legacyDid,
-        name: name !== item.name ? name : undefined,
-        description: description || undefined,
-        dueDate: dueDate ? new Date(dueDate).getTime() : undefined,
-        url: url || undefined,
-        recurrence: hasRecurrence
-          ? {
-              frequency: recurrenceFrequency,
-              interval: recurrenceInterval || 1,
-              ...(recurrenceEndDate ? { endDate: new Date(recurrenceEndDate).getTime() } : {}),
-            }
-          : undefined,
-        priority: priority || undefined,
-        groceryAisle: selectedCategory || undefined,
-        assigneeDids: JSON.stringify([...assigneeDids].sort()) !== JSON.stringify([...(draftSource.current.assigneeDids ?? (draftSource.current.assigneeDid ? [draftSource.current.assigneeDid] : []))].sort()) ? assigneeDids : undefined,
-        clearDueDate: !dueDate && !!item.dueDate,
-        clearUrl: !url && !!item.url,
-        clearRecurrence: !hasRecurrence && !!item.recurrence,
-        clearPriority: !priority && !!item.priority,
-        clearGroceryAisle: !selectedCategory && !!item.groceryAisle,
-      };
+      const changed = getUnsent();
+      const payload: Record<string, unknown> = { itemId: item._id };
+      if ('name' in changed) payload.name = name;
+      if ('description' in changed) payload.description = description;
+      if ('url' in changed) Object.assign(payload, url ? { url } : { clearUrl: true });
+      if ('dueDate' in changed) Object.assign(payload, dueDate ? { dueDate: new Date(dueDate).getTime() } : { clearDueDate: true });
+      if ('priority' in changed) Object.assign(payload, priority ? { priority } : { clearPriority: true });
+      if ('selectedCategory' in changed) Object.assign(payload, selectedCategory ? { groceryAisle: selectedCategory } : { clearGroceryAisle: true });
+      if ('assigneeDids' in changed) payload.assigneeDids = assigneeDids;
+      if (['hasRecurrence', 'recurrenceFrequency', 'recurrenceInterval', 'recurrenceEndDate'].some(key => key in changed)) {
+        Object.assign(payload, hasRecurrence ? { recurrence: {
+          frequency: recurrenceFrequency, interval: recurrenceInterval || 1,
+          ...(recurrenceEndDate ? { endDate: new Date(recurrenceEndDate).getTime() } : {}),
+        } } : { clearRecurrence: true });
+      }
       
       await queueMutation({
         type: "updateItem",
@@ -158,7 +161,7 @@ export function ItemDetailsModal({
       }, [draftSource.current]);
       
       haptic("success");
-      onClose();
+      close();
     } catch (err) {
       console.error("Failed to update item:", err);
       haptic("error");
@@ -173,7 +176,7 @@ export function ItemDetailsModal({
         {canEdit ? "Edit Item" : "Item Details"}
       </h2>
       <button
-        onClick={onClose}
+        onClick={close}
         className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg transition-colors"
         aria-label="Close panel"
       >
@@ -187,7 +190,7 @@ export function ItemDetailsModal({
   const footer = canEdit ? (
     <div className="flex justify-end gap-2 px-5 py-4">
       <button
-        onClick={onClose}
+        onClick={close}
         className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
       >
         Cancel
@@ -205,7 +208,7 @@ export function ItemDetailsModal({
   return (
     <Panel
       isOpen={true}
-      onClose={onClose}
+      onClose={close}
       header={header}
       footer={footer}
       ariaLabelledBy="item-details-title"

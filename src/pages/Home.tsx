@@ -54,7 +54,7 @@ export function Home() {
   const { isPro } = useBilling();
   const { streak } = useStreaks(did ?? undefined);
   const { categories, isLoading: categoriesLoading } = useCategories();
-  const { isOnline, accountId } = useOffline();
+  const { isOnline, accountId, compaction } = useOffline();
   const { listSort, haptic } = useSettings();
   const [searchParams] = useSearchParams();
   
@@ -68,7 +68,7 @@ export function Home() {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(isOnboardingDone);
   const [cache, setCache] = useState<{ accountId: string; lists: OfflineList[] }>({ accountId: "", lists: [] });
-  const cachedLists = cache.accountId === accountId ? cache.lists : [];
+  const cachedLists = cache.accountId === accountId ? cache.lists.filter(list => !compaction.revokedListIds?.includes(list._id)) : [];
   const [searchQuery, setSearchQuery] = useState("");
 
   // 2-step onboarding state

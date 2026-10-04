@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { clearDraft, listDrafts, type StoredDraft } from "../lib/noteDrafts";
+import { useEffect, useState } from "react";
+import { clearDraft, detachDraftBases, subscribeDrafts, listDrafts, type StoredDraft } from "../lib/noteDrafts";
 
 export function RecoveredNoteDrafts({ drafts, disabled, onRecover }: {
   drafts: StoredDraft[]; disabled: boolean; onRecover: (draft: StoredDraft) => void;
@@ -12,7 +12,8 @@ export function RecoveredNoteDrafts({ drafts, disabled, onRecover }: {
       {drafts.map(draft => (
         <div key={draft.key} className="mt-3">
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{draft.text || "(Empty note)"}</pre>
-          <button type="button" disabled={disabled} className="underline disabled:opacity-50" onClick={() => onRecover(draft)}>Restore this draft</button>
+          <p>{draft.detached ? "Independent local draft after permission loss. Copy this text to keep it; it cannot be restored to the source." : ""}</p>
+          <button type="button" disabled={disabled || draft.detached} className="underline disabled:opacity-50" onClick={() => onRecover(draft)}>Restore this draft</button>
         </div>
       ))}
     </details>
@@ -25,6 +26,11 @@ export function UnsentNoteDrafts({ documentKey, aliases = [], onDiscard }: {
   documentKey?: string; aliases?: readonly string[]; onDiscard?: (draft: StoredDraft) => void;
 }) {
   const [, refresh] = useState(0);
+  const aliasKey = JSON.stringify(aliases);
+  useEffect(() => subscribeDrafts(() => refresh(value => value + 1)), []);
+  useEffect(() => {
+    if (documentKey) detachDraftBases(documentKey, JSON.parse(aliasKey));
+  }, [documentKey, aliasKey]);
   const drafts = documentKey ? listDrafts(documentKey, aliases) : [];
   if (!drafts.length) return null;
   return (

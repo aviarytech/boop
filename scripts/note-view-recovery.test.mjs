@@ -51,6 +51,13 @@ for (const loss of ['Revoke access', 'Downgrade to viewer', 'Save denied before 
       assert.equal(view.getByRole('textbox', { name: 'Unsent local draft' }).value, 'My independent draft');
       assert.equal(view.queryByText('Compare with the server version'), null);
       assert.equal(view.queryByRole('textbox', { name: 'Note body' }), null);
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('boop-note-draft:did:editor:')) {
+          const record = JSON.parse(localStorage.getItem(key));
+          assert.equal(record.base, undefined); assert.equal(record.detached, true);
+        }
+      }
       fireEvent.click(view.getByText('Download draft'));
       assert.equal(await blobs[0].text(), 'My independent draft');
       const ownKeys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter(k => k.startsWith('boop-note-draft:'));
