@@ -372,7 +372,7 @@ export const ListItem = memo(function ListItem({
               title={`Assigned to ${assigneeDid}`}
             >
               <span className="leading-none">👤</span>
-              {assigneeDid === userDid ? "You" : `${assigneeDid.slice(0, 6)}…`}
+              {assigneeDid === userDid ? "You" : assigneeDid.length > 12 ? `…${assigneeDid.slice(-8)}` : assigneeDid}
             </span>
           ))}
           {/* Attachments indicator */}
