@@ -133,6 +133,9 @@ export function sameDraftRevision(left: string | null, right: string | null): bo
  * export-only even after a later grant; newly authored sessions can edit. */
 export function reconcileDraftAccess(documentKey: string, canEdit: boolean, checkedAt: number) {
   const prior = accessFor(documentKey);
+  // Passive viewing creates no recovery work to fence. Keep existing markers
+  // (including prior grants) and draft-backed denials for stale tabs/regrant.
+  if (!canEdit && !prior && !listDrafts(documentKey).length) return;
   if (prior && (prior.checkedAt > checkedAt || (prior.checkedAt === checkedAt && !prior.canEdit && canEdit))) return;
   const next = { canEdit, checkedAt };
   accessMemory.set(documentKey, next);

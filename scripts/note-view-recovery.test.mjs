@@ -207,10 +207,13 @@ test('discarding one unavailable draft leaves other sessions of the same account
 
 for (const oldDenial of [false, true]) test(`viewer render then promotion and fresh session saves (older denied marker: ${oldDenial})`, async () => {
   let view = setup({ canEdit: false, accessCheckedAt: 99, seed: () => {
-    if (oldDenial) drafts.reconcileDraftAccess('did:editor:note:N', false, 100);
+    if (oldDenial) {
+      drafts.reconcileDraftAccess('did:editor:note:N', true, 98);
+      drafts.reconcileDraftAccess('did:editor:note:N', false, 100);
+    }
   } });
   try {
-    assert.equal(localStorage.getItem('boop-note-access:did:editor:note:N'), JSON.stringify({canEdit:false,checkedAt:oldDenial ? 100 : 99}));
+    assert.equal(localStorage.getItem('boop-note-access:did:editor:note:N'), oldDenial ? JSON.stringify({canEdit:false,checkedAt:100}) : null);
     await act(async () => { state.canEdit = true; state.accessCheckedAt = 101; state.refresh(); });
     await act(async () => view.unmount());
     view = render(React.createElement(Harness));

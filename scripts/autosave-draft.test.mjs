@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 const { renderHook, act } = await import('@testing-library/react');
-await build({ stdin: { contents: 'export { useAutosaveDraft } from "./src/hooks/useAutosaveDraft"; export { reconcileDraftAccess, listDrafts } from "./src/lib/noteDrafts";', resolveDir: process.cwd() }, outfile: 'tmp/autosave-draft-test.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react'] });
-const { useAutosaveDraft, reconcileDraftAccess, listDrafts } = await import(pathToFileURL(`${process.cwd()}/tmp/autosave-draft-test.mjs`));
+await build({ stdin: { contents: 'export { useAutosaveDraft } from "./src/hooks/useAutosaveDraft"; export { reconcileDraftAccess, listDrafts, draftResources } from "./src/lib/noteDrafts";', resolveDir: process.cwd() }, outfile: 'tmp/autosave-draft-test.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react'] });
+const { useAutosaveDraft, reconcileDraftAccess, listDrafts, draftResources } = await import(pathToFileURL(`${process.cwd()}/tmp/autosave-draft-test.mjs`));
 
 test('failed autosave keeps the draft, warns on close, and retries the latest text', async () => {
   let reject = true;
@@ -357,6 +357,7 @@ for (const kind of ['note', 'item']) test(`${kind} fresh authorized session save
 
 for (const kind of ['note', 'item']) test(`${kind} newly mounted stale authorized snapshot cannot override a known cross-tab denial`, async () => {
   const documentKey = `did:stale-new-${kind}:${kind}:resource`, writes = [];
+  reconcileDraftAccess(documentKey, true, 98);
   reconcileDraftAccess(documentKey, false, 100);
   const editor = renderHook(() => useAutosaveDraft({saved:'Stale source', canEdit:true, accessCheckedAt:99,
     draftKey:documentKey, persist:async text => writes.push(text)}));
@@ -367,4 +368,17 @@ for (const kind of ['note', 'item']) test(`${kind} newly mounted stale authorize
     assert.equal(editor.result.current.status, 'denied');
     assert.ok(listDrafts(documentKey).every(d => d.detached && d.base === undefined));
   } finally { editor.unmount(); }
+});
+
+test('passive viewer mounts do not accumulate denial markers or monitored resources', async () => {
+  const did = 'did:passive-viewer';
+  for (const kind of ['note', 'item']) for (let index = 0; index < 64; index++) {
+    const documentKey = `${did}:${kind}:${index}`;
+    const viewer = renderHook(() => useAutosaveDraft({saved:'Read-only source', canEdit:false, accessCheckedAt:100,
+      draftKey:documentKey, persist:async () => assert.fail('viewer must not save')}));
+    await act(async () => viewer.unmount());
+    assert.equal(localStorage.getItem(`boop-note-access:${documentKey}`), null);
+    assert.deepEqual(listDrafts(documentKey), []);
+  }
+  assert.deepEqual(draftResources([did]), []);
 });
