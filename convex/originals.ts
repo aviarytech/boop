@@ -1,4 +1,3 @@
-import { withAssignmentsBatch } from "./lib/assignments";
 import { actorQuery } from "./lib/authenticated";
 
 import type { Doc } from "./_generated/dataModel";
@@ -41,7 +40,7 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
 
     await Promise.all(
       lists.map(async (list) => {
-        const [pub, anchors, latestActivity, items] = await Promise.all([
+        const [pub, anchors, latestActivity, assignments] = await Promise.all([
           ctx.db
             .query("publications")
             .withIndex("by_list", (q) => q.eq("listId", list._id))
@@ -56,7 +55,7 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
             .order("desc")
             .first(),
           ctx.db
-            .query("items")
+            .query("itemAssignees")
             .withIndex("by_list", (q) => q.eq("listId", list._id))
             .collect(),
         ]);
@@ -66,9 +65,10 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
         if (latestActivity) activitiesByList.set(list._id, { createdAt: latestActivity.createdAt });
 
         const uniqueAssignees = new Set<string>();
-        for (const item of await withAssignmentsBatch(ctx, items)) {
-          for (const did of item.assigneeDids) uniqueAssignees.add(did);
-        }
+        // Count the authoritative compact rows without reading full item bodies.
+        // Legacy scalar/orphan convergence is a mandatory frontend release gate;
+        // before it completes this intentionally retains baseline row-only counts.
+        for (const assignment of assignments) uniqueAssignees.add(assignment.assigneeDid);
         if (uniqueAssignees.size > 0) assigneesByList.set(list._id, uniqueAssignees.size);
       }),
     );
