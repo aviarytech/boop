@@ -243,7 +243,7 @@ export const { public: bookmarkList, internal: bookmarkListInternal } = actorMut
 
     if (existing) return existing._id;
 
-    // Plan enforcement: check list owner's plan for collaborator limit
+    // Preserve the existing bookmark quota; bookmarks confer no editing authority.
     const list = await ctx.db.get(args.listId);
     if (list) {
       const owner = await ctx.db
@@ -257,12 +257,12 @@ export const { public: bookmarkList, internal: bookmarkListInternal } = actorMut
           .first();
         const plan = sub && (sub.status === "active" || sub.status === "trialing") ? sub.plan : "free";
         if (plan === "free") {
-          const collaborators = await ctx.db
+          const bookmarks = await ctx.db
             .query("bookmarks")
             .withIndex("by_list", (q) => q.eq("listId", args.listId))
             .collect();
-          if (collaborators.length >= 3) {
-            throw new Error("PLAN_LIMIT: This list has reached the free plan limit of 3 collaborators. The list owner must upgrade at /pricing to add more collaborators.");
+          if (bookmarks.length >= 3) {
+            throw new Error("PLAN_LIMIT: This list has reached the free plan limit of 3 bookmarks. The list owner must upgrade at /pricing to allow more bookmarks.");
           }
         }
       }
@@ -275,15 +275,15 @@ export const { public: bookmarkList, internal: bookmarkListInternal } = actorMut
     });
 
     if (list && ![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
-      // Notify the list owner: a new collaborator joined
+      // A public reader saved the list; this does not create a grant.
       await ctx.scheduler.runAfter(0, internal.notificationActions.sendPushNotificationInternal, {
         userDid: list.ownerDid,
         listId: args.listId,
         title: list.name,
-        body: "A new collaborator joined your list",
+        body: "Someone bookmarked your public list",
         data: { listId: args.listId },
       });
-      // Notify the joiner: the list was shared with them (delivers to their other devices)
+      // Notify the reader on their other devices.
       await ctx.scheduler.runAfter(0, internal.notificationActions.sendPushNotificationInternal, {
         userDid: ctx.actor.did,
         listId: args.listId,

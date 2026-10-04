@@ -6,7 +6,8 @@ import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { withMutationObservability } from "./lib/observability";
-import { canUserViewList } from "./lib/permissions";
+import { hasScope } from "./lib/apiKeyHelpers";
+import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 import { isLegacyGenesis } from "./lib/legacyList";
 import { isNote } from "./lib/noteBody";
@@ -378,7 +379,7 @@ export const { public: getList, internal: getListInternal } = actorQuery({
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list || !await canUserViewList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid)) return null;
-    return list;
+    return { ...list, canEdit: hasScope(ctx.actor.scopes, "items:write") && await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid) };
   },
 });
 

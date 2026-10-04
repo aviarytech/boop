@@ -24,6 +24,7 @@ import { groupByCategory, resolveCategories, type Category } from "../lib/catego
 import { CategoryHeaderMenu } from "../components/CategoryHeaderMenu";
 import { useCategories } from "../hooks/useCategories";
 import { shareList } from "../lib/share";
+import { buildListResourceUrl } from "../lib/webvh";
 import { recordLatencyMs, setGaugeMetric } from "../lib/observability";
 import { AddItemInput } from "../components/AddItemInput";
 import { NestedListItem } from "../components/NestedListItem";
@@ -428,9 +429,9 @@ export function ListView() {
 
   // Native share handler
   const handleNativeShare = useCallback(async () => {
-    if (!list) return;
-    
-    const listUrl = `${window.location.origin}/d/${list._id}`;
+    if (!list || publicationStatus?.status !== "active") return;
+
+    const listUrl = buildListResourceUrl(publicationStatus.webvhDid.replace(/\/resources\/list-.+$/, ""), list._id);
     
     try {
       await shareList(list.name, listUrl);
@@ -439,7 +440,7 @@ export function ListView() {
       console.error('Share failed:', error);
       haptic('error');
     }
-  }, [list, haptic]);
+  }, [list, publicationStatus, haptic]);
 
   // Keyboard shortcuts for power users
   const shortcuts: Shortcut[] = useMemo(() => {
@@ -751,7 +752,7 @@ export function ListView() {
                     }}
                     aria-hidden="true"
                   />
-                  shared
+                  public
                 </span>
               </>
             )}
@@ -890,8 +891,8 @@ export function ListView() {
             canRename={canUserDelete}
             isOnline={isOnline}
             isPublished={publicationStatus?.status === "active"}
-            onShare={() => setIsShareModalOpen(true)}
-            onNativeShare={userIsOwner || isPublished ? handleNativeShare : undefined}
+            onShare={() => navigate(`/invitations?listId=${encodeURIComponent(listId)}`)}
+            onNativeShare={isPublished ? handleNativeShare : undefined}
             onPublish={() => setIsPublishModalOpen(true)}
             onSaveTemplate={() => setIsSaveTemplateModalOpen(true)}
             onDelete={() => setIsDeleteDialogOpen(true)}

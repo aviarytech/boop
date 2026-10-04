@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import { PublicDisplayNameEditor } from "../components/PublicDisplayNameEditor";
 import { useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -60,6 +60,7 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
   const profile = useQuery(api.users.getMyPublicDisplayName, {});
   const canSend = !!profile?.displayName;
   const invitations = useQuery(api.invitations.getListInvitations, { listId });
+  const publication = useQuery(api.publication.getPublicationStatus, { listId });
   const grants = useQuery(api.listGrants.getListGrants, { listId });
   const create = useMutation(api.invitations.createInvitation);
   const resend = useMutation(api.invitations.resendInvitation);
@@ -85,6 +86,11 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
     finally { setBusy(false); }
   }
   return <div className="mt-6">
+    <div className="mb-5 space-y-2 text-sm" role="status">
+      <p>{publication === undefined ? "Loading publication status…" : publication?.status === "active" ? "Published publicly: anyone with the link can read this list." : "Not published publicly: only the owner and people with accepted grants have access."}</p>
+      <p>Adding or removing named access does not change publication. Removing a grant does not stop public reading while publication is active. Unpublish to end public access; other accepted grants remain.</p>
+      {publication?.status === "active" && <Link className="underline" to={`/list/${listId}`} state={{ openShare: true }}>Manage public publication</Link>}
+    </div>
     <PublicDisplayNameEditor profile={profile} />
     {profile?.displayName && <p className="mt-4 text-sm">Invitations identify you as <strong>{profile.displayName}</strong>.</p>}
     <form className="mt-6 space-y-4" onSubmit={e => {
@@ -128,7 +134,7 @@ function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
         return <li key={grant._id} className="py-4 space-y-2"><p className="break-all font-semibold">{label}</p>
           <div className="flex flex-wrap gap-2"><select aria-label={`Access for ${label}`} className={`${input} w-auto`} disabled={busy} value={grant.role} onChange={e => void run(() => changeGrant({ listId, grantId: grant._id, role: e.target.value as Role }))}>
             <option value="viewer">Viewer</option><option value="editor">Editor</option>
-          </select><button className={button} disabled={busy} onClick={() => void run(() => revokeGrant({ listId, grantId: grant._id }), "Access revoked. Previous invitation links cannot restore it.")}>Revoke access</button></div>
+          </select><button className={button} disabled={busy} onClick={() => void run(() => revokeGrant({ listId, grantId: grant._id }), "Named access revoked. Previous invitation links cannot restore it. If publication is active, this person can still read publicly.")}>Revoke access</button></div>
         </li>;
       })}
     </ul>}
@@ -141,7 +147,8 @@ export function Invitations() {
   const { logout } = useAuth();
   const pending = useQuery(api.invitations.getPendingInvitations, {});
   const lists = useQuery(api.lists.getUserLists, {});
-  const [selected, setSelected] = useState("");
+  const [searchParams] = useSearchParams();
+  const [selected, setSelected] = useState(() => searchParams.get("listId") ?? "");
   const owned = lists?.filter(list => [did, legacyDid].includes(list.ownerDid)) ?? [];
   const selectedList = owned.find(list => list._id === selected);
   const validLink = invitationId && /^[a-z0-9]{20,64}$/.test(invitationId) && version && /^[1-9]\d*$/.test(version) && Number.isSafeInteger(Number(version));

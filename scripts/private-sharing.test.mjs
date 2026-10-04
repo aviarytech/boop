@@ -605,3 +605,68 @@ test("owner roster reads retain lists:read scope after grant-management scope ti
     assert.equal(rows.length, 2);
   }
 });
+
+
+test("published-list capability reflects accepted editing and API scope, never bookmarks", async () => {
+  for (const role of ["owner", "editor", "viewer", "outsider", "pending"]) {
+    const ctx = make({ published: true });
+    ctx.rows.bookmarks.push({ _id: "B", listId: "L", userDid: `did:${role}` });
+    for (const suffix of ["", "Internal"]) {
+      assert.equal((await call("lists", "getList" + suffix, ctx, { listId: "L", ...credentials(role) })).canEdit, editors.has(role));
+    }
+    if (role !== "pending") {
+      ctx.rows.agentApiKeys.find(key => key._id === `KEY-${role}`).scopes = ["lists:read"];
+      assert.equal((await call("lists", "getList", ctx, { listId: "L", apiKey: `key-${role}` })).canEdit, false);
+    }
+  }
+});
+
+test("accepting, downgrading and revoking named access leaves public status unchanged; unpublish preserves other grants", async () => {
+  const ctx = make({ published: true }); const owner = credentials("owner");
+  const originalPublication = structuredClone(ctx.rows.publications);
+  ctx.rows.bookmarks.push({ _id: "B", listId: "L", userDid: "did:outsider" });
+  const grantId = await modules["lib/listGrants"].recordAcceptedListGrant(ctx, {
+    listId: "L", ownerId: "U-owner", recipientId: "U-outsider", role: "editor",
+  });
+  assert.deepEqual(ctx.rows.publications, originalPublication);
+  await call("items", "checkItem", ctx, { itemId: "I", checkedAt: 3, ...credentials("outsider") });
+  await call("listGrants", "updateListGrant", ctx, { listId: "L", grantId, role: "viewer", ...owner });
+  assert.deepEqual(ctx.rows.publications, originalPublication);
+  await assert.rejects(() => call("items", "uncheckItem", ctx, { itemId: "I", ...credentials("outsider") }), denied);
+  await call("listGrants", "revokeListGrant", ctx, { listId: "L", grantId, ...owner });
+  assert.deepEqual(ctx.rows.publications, originalPublication);
+  assert.ok(await call("publication", "getPublicList", ctx, { webvhDid: "did:webvh:public" }));
+  assert.ok((await call("lists", "getUserLists", ctx, credentials("outsider"))).some(row => row._id === "L"));
+  const otherGrants = structuredClone(ctx.rows.listGrants);
+  await call("publication", "unpublishList", ctx, { listId: "L", ...owner });
+  assert.deepEqual(ctx.rows.listGrants, otherGrants);
+  assert.equal(await call("publication", "getPublicList", ctx, { webvhDid: "did:webvh:public" }), null);
+  assert.equal(await call("didResources", "getListById", ctx, { listId: "L" }), null);
+  assert.deepEqual(await call("didResources", "getPublicListItems", ctx, { listId: "L" }), []);
+  assert.equal((await call("lists", "getUserLists", ctx, credentials("outsider"))).some(row => row._id === "L"), false);
+  assert.equal((await call("lists", "getList", ctx, { listId: "L", ...credentials("editor") })).canEdit, true);
+  assert.equal((await call("lists", "getList", ctx, { listId: "L", ...credentials("viewer") })).canEdit, false);
+  await call("items", "uncheckItem", ctx, { itemId: "I", ...credentials("editor") });
+  await call("publication", "publishList", ctx, { listId: "L", webvhDid: "did:webvh:public", ...owner });
+  assert.deepEqual(ctx.rows.listGrants, otherGrants);
+  assert.equal((await call("lists", "getList", ctx, { listId: "L", ...credentials("outsider") })).canEdit, false);
+});
+
+test("published ordinary HTTP writes intersect explicit editor access with session/API-key authentication", async () => {
+  for (const role of ["owner", "editor", "viewer", "outsider"]) for (const viaKey of [false, true]) {
+    const ctx = make({ published: true });
+    const headers = { "Content-Type": "application/json", ...(viaKey ? { "X-API-Key": `key-${role}` } : { Authorization: `Bearer ${sessions[role].authToken}` }) };
+    const response = await call("itemsHttp", "checkItem", ctx.action, new Request("https://fixture.invalid/api/items/check", {
+      method: "POST", headers, body: JSON.stringify({ itemId: "I" }),
+    }));
+    assert.equal(response.status, editors.has(role) ? 200 : 403);
+    assert.equal(ctx.rows.items[0].checked, editors.has(role));
+  }
+});
+
+test("bookmark notification describes public reading without creating collaborator access", async () => {
+  const ctx = make({ published: true }); const before = structuredClone(ctx.rows.listGrants);
+  await call("publication", "bookmarkList", ctx, { listId: "L", ...credentials("outsider") });
+  assert.deepEqual(ctx.rows.listGrants, before);
+  assert.ok(ctx.scheduled.some(job => job.args.body === "Someone bookmarked your public list"));
+});

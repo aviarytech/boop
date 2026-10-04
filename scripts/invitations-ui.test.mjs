@@ -15,7 +15,7 @@ const pending = { invitationId: id, version: 1, inviter: "Alex", role: "viewer",
 function reset() {
   Object.assign(state, { calls: [], queries: [], fail: false, mutationError: null, profile: { displayName: "Alex" }, pending: [pending], linked: pending,
     lists: [{ _id: "L", name: "My list", ownerDid: "did:owner" }, { _id: "N", name: "My note", kind: "note", ownerDid: "did:owner" }, { _id: "X", name: "Someone else's list", ownerDid: "did:other" }],
-    invitations: [{ ...pending, email: "friend@example.test", status: "pending", delivery: "failed" }], grants: [],
+    publication: null, invitations: [{ ...pending, email: "friend@example.test", status: "pending", delivery: "failed" }], grants: [],
   });
 }
 await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitation-ui.mjs", bundle: true, jsx: "automatic", platform: "node", format: "esm", external: ["react", "react/jsx-runtime", "react-router-dom", "convex/server", "convex/values"],
@@ -30,7 +30,7 @@ await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitati
       login: 'import React from "react"; export const Login=({embedded})=>React.createElement("p",null,embedded?"Embedded email sign-in":"Other sign-in");',
       convex: `import {ConvexError} from "convex/values"; import {useSyncExternalStore} from "react"; import {getFunctionName} from "convex/server";
         export function useQuery(ref,args){const s=globalThis.__invitationUi;useSyncExternalStore(s.subscribe,()=>s.revision);const name=getFunctionName(ref);s.queries.push([name,args]);
-          return {"invitations:getPendingInvitations":s.pending,"invitations:getInvitation":s.linked,"lists:getUserLists":s.lists,"invitations:getListInvitations":s.invitations,"listGrants:getListGrants":s.grants,"users:getMyPublicDisplayName":s.profile}[name];}
+          return {"invitations:getPendingInvitations":s.pending,"invitations:getInvitation":s.linked,"lists:getUserLists":s.lists,"invitations:getListInvitations":s.invitations,"listGrants:getListGrants":s.grants,"users:getMyPublicDisplayName":s.profile,"publication:getPublicationStatus":s.publication}[name];}
         export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");if(s.mutationError)throw new ConvexError(s.mutationError);if(name==="users:setPublicDisplayName"){s.profile={displayName:args.displayName.trim()};s.notify();return s.profile;}return {listId:"accepted-list"};};}`,
     }[path] }));
   } }],
@@ -110,7 +110,7 @@ test("accepted access uses account grant controls and never resends an active ac
   await screen.findByText("Changes saved.");
   assert.deepEqual(state.calls[0], ["listGrants:updateListGrant", { listId: "L", grantId: "G", role: "editor" }]);
   fireEvent.click(screen.getByRole("button", { name: "Revoke access" }));
-  await screen.findByText(/Access revoked/);
+  await screen.findByText(/Named access revoked/);
   assert.equal(state.calls[1][0], "listGrants:revokeListGrant");
 });
 
@@ -208,4 +208,20 @@ test("invitation form displays actionable server email and rate-limit messages",
     assert.equal(screen.getByLabelText("Recipient email").value, "a@b");
     cleanup();
   }
+});
+
+
+test("Share with people preselects only an owned list and reports public access during grant revocation", async () => {
+  reset(); state.publication = { status: "active" }; state.grants = [{ _id: "G", recipientId: "recipient", role: "editor" }];
+  mount("/invitations?listId=L");
+  assert.equal(screen.getByLabelText("Your list or note").value, "L");
+  assert.ok(screen.getByText(/Published publicly: anyone/));
+  assert.match(screen.getByText(/Adding or removing named access/).textContent, /does not stop public reading/);
+  fireEvent.click(screen.getByRole("button", { name: "Revoke access" }));
+  await screen.findByText(/Named access revoked/);
+  assert.deepEqual(state.calls, [["listGrants:revokeListGrant", { listId: "L", grantId: "G" }]]);
+  assert.match(screen.getByText(/Named access revoked/).textContent, /still read publicly/);
+  cleanup(); reset(); mount("/invitations?listId=X");
+  assert.equal(screen.getByLabelText("Your list or note").value, "");
+  assert.equal(screen.queryByLabelText("Recipient email"), null);
 });

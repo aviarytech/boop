@@ -142,7 +142,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
         onClick={() => { haptic('medium'); handleShareList(); }}
         className="flex-1 px-4 py-3 bg-amber-500 hover:bg-amber-400 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/25 transition-all"
       >
-        Share list
+        Share with people
       </button>
     </div>
   ) : (
@@ -197,7 +197,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
               <span>"{name}" is ready</span>
             </div>
             <p className="text-sm text-green-700 dark:text-green-500">
-              Invite a collaborator to join the list and get things done together.
+              Invite someone by email as a viewer or editor. Only accepted editors can edit; public publication is a separate choice.
             </p>
           </div>
         </div>

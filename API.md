@@ -345,7 +345,7 @@ await fetch(`${BASE_URL}/api/agent/items/${itemId}`, {
 
 Authenticated direct operations require `authToken` (the JWT from login) or an appropriately scoped `apiKey`. Browser/native clients first call `actorSession.establish({ authToken })` so logout and expiry invalidate reactive subscriptions. HTTP clients continue sending Bearer/cookie JWT or `X-API-Key`; the HTTP adapter establishes existing valid sessions automatically.
 
-Do not supply acting DIDs. Ownership, attribution and legacy-account access are resolved from authenticated server records. Old optional identity fields are compatibility checks only and never grant access. Anonymous access is limited to explicitly public resources with active publications; shared writes require authentication.
+Do not supply acting DIDs. Ownership, attribution and legacy-account access are resolved from authenticated server records. Old optional identity fields are compatibility checks only and never grant access. Anonymous access is limited to explicitly public resources with active publications; shared writes require authentication and ownership or an accepted editor grant, intersected with API-key scopes. Public links and bookmarks grant reading only. See [sharing compatibility](docs/sharing-publication.md) for the owner invitation path and publication/revocation behavior.
 
 See [authentication rollout](docs/authentication-rollout.md) for the required deployed-version confirmation and coordinated client/backend cutover.
 

@@ -5,10 +5,10 @@ import { pathToFileURL } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
-const { render, screen, fireEvent, waitFor, cleanup } = await import("@testing-library/react");
+const { render, screen, fireEvent, waitFor, cleanup, act } = await import("@testing-library/react");
 const React = await import("react");
 
-const state = globalThis.__sharedListAuthTest = { token: null, did: null };
+const state = globalThis.__sharedListAuthTest = { token: null, did: null, canEdit: false };
 await build({
   entryPoints: ["src/components/SharedListResource.tsx"],
   outfile: "tmp/shared-list-auth-test.mjs",
@@ -24,7 +24,7 @@ await build({
       builder.onResolve({ filter: /^(react-router-dom|\.\.\/lib\/authenticatedConvex|\.\.\/hooks\/useCurrentUser|\.\.\/hooks\/useAuth)$/ }, ({ path }) => ({ path, namespace: "fixture" }));
       builder.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ contents: ({
         "react-router-dom": `import React from "react";export const useParams=()=>({userPath:"owner",resourceId:"list-list1"});export const Link=({children,to,...props})=>React.createElement("a",{...props,href:to},children);export const useNavigate=()=>()=>{};`,
-        "../lib/authenticatedConvex": `export const useMutation=()=>async()=>{};export const useQuery=()=>false;`,
+        "../lib/authenticatedConvex": `export const useMutation=()=>async()=>{};export const useQuery=()=>({canEdit:globalThis.__sharedListAuthTest.canEdit});`,
         "../hooks/useCurrentUser": `export const useCurrentUser=()=>({did:globalThis.__sharedListAuthTest.did});`,
         "../hooks/useAuth": `export const useAuth=()=>({token:globalThis.__sharedListAuthTest.token});`,
       })[path] }));
@@ -45,6 +45,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   state.token = null;
   state.did = null;
+  state.canEdit = false;
 });
 
 async function renderLoaded(postResponse = new Response(null, { status: 200 })) {
@@ -62,12 +63,13 @@ test("anonymous viewers see a sign-in affordance and cannot send item writes", a
   const calls = await renderLoaded();
   const item = screen.getByRole("button", { name: /Milk/ });
   assert.equal(item.disabled, true);
-  assert.match(screen.getByRole("link", { name: "Sign in" }).parentElement.textContent, /check off items/);
+  assert.match(screen.getByRole("link", { name: "Sign in" }).parentElement.textContent, /editor invitation/);
   fireEvent.click(item);
   assert.equal(calls.filter(({ options }) => options?.method === "POST").length, 0);
 });
 
 test("signed-in item writes send the session token and cross-origin credentials", async () => {
+  state.canEdit = true;
   state.token = "session-token";
   state.did = "did:webvh:owner";
   const calls = await renderLoaded();
@@ -79,6 +81,7 @@ test("signed-in item writes send the session token and cross-origin credentials"
 });
 
 test("a 401 rolls back the optimistic check and shows a visible error", async () => {
+  state.canEdit = true;
   state.token = "expired-token";
   state.did = "did:webvh:owner";
   await renderLoaded(new Response(null, { status: 401 }));
@@ -88,4 +91,41 @@ test("a 401 rolls back the optimistic check and shows a visible error", async ()
   assert.match(screen.getByRole("alert").textContent, /Sign in again/);
   assert.equal(item.querySelector("svg"), null);
   assert.equal(item.querySelector("p").className.includes("line-through"), false);
+});
+
+// The backend suite covers individual roles; this fixture covers a denied capability.
+test("a signed-in reader without edit capability cannot send public-list writes", async () => {
+  state.token = "session-token";
+  state.did = "did:reader";
+  const calls = await renderLoaded();
+  const item = screen.getByRole("button", { name: /Milk/ });
+  assert.equal(item.disabled, true);
+  assert.match(screen.getByText(/Read-only public list/).textContent, /bookmark does not grant editing/);
+  fireEvent.click(item);
+  assert.equal(calls.filter(({ options }) => options?.method === "POST").length, 0);
+});
+
+test("revoked editor receives actionable denial and optimistic state rolls back", async () => {
+  state.token = "session-token"; state.did = "did:editor"; state.canEdit = true;
+  await renderLoaded(new Response(null, { status: 403 }));
+  const item = screen.getByRole("button", { name: /Milk/ });
+  fireEvent.click(item);
+  await screen.findByRole("alert");
+  assert.match(screen.getByRole("alert").textContent, /editor invitation/);
+  assert.equal(item.querySelector("p").className.includes("line-through"), false);
+});
+
+
+// Compatibility coverage for the visible 404 behavior, which also existed before #259.
+// This does not claim to observe whether React retained the prior resource in memory.
+test("public polling continues to hide content after a 404", async () => {
+  const originalInterval = globalThis.setInterval;
+  let poll;
+  globalThis.setInterval = (callback, delay) => { if (delay === 5000) poll = callback; return originalInterval(callback, delay); };
+  try { await renderLoaded(); } finally { globalThis.setInterval = originalInterval; }
+  globalThis.fetch = async () => new Response(null, { status: 404 });
+  await act(async () => { await poll(); });
+  assert.ok(screen.getByRole("heading", { name: "List not found" }));
+  assert.equal(screen.queryByRole("button", { name: /Milk/ }), null);
+  assert.equal(screen.queryByText("Groceries"), null);
 });

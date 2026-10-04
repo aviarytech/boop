@@ -85,6 +85,13 @@ export function SharedListResource() {
     did && convexListId ? { listId: convexListId } : "skip"
   );
 
+  // Nullable on lost access; accepted editors retain private access after unpublish.
+  const access = useQuery(
+    api.lists.getList,
+    token && convexListId ? { listId: convexListId } : "skip"
+  );
+  const canEdit = !!token && !!access?.canEdit;
+
   const [favouritePending, setFavouritePending] = useState(false);
   const [bookmarkPlanLimit, setBookmarkPlanLimit] = useState(false);
   const navigate = useNavigate();
@@ -94,12 +101,13 @@ export function SharedListResource() {
     try {
       const url = getResourceUrl(userPath, listId);
       const res = await fetch(url);
+      if (res.status === 404) setResource(null);
       if (!res.ok) throw new Error(res.status === 404 ? "List not found" : "Failed to load list");
       const data = await res.json();
       setResource(data);
       setError(null);
-    } catch (err: any) {
-      if (!resource) setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load list");
     } finally {
       setLoading(false);
     }
@@ -134,7 +142,7 @@ export function SharedListResource() {
   };
 
   const handleToggleItem = async (itemId: string, currentChecked: boolean) => {
-    if (!userPath || !listId || !resource || !token) return;
+    if (!userPath || !listId || !resource || !token || !canEdit) return;
 
     setToggleError(null);
 
@@ -162,7 +170,7 @@ export function SharedListResource() {
       });
 
       if (!resp.ok) {
-        throw new Error(resp.status === 401 ? "Sign in again to update this list." : "Couldn't update this item. Please try again.");
+        throw new Error(resp.status === 401 ? "Sign in again to update this list." : resp.status === 403 ? "Editing access is unavailable. Ask the owner for an editor invitation." : "Couldn't update this item. Please try again.");
       }
     } catch (err) {
       console.error("Failed to toggle shared item:", err);
@@ -260,9 +268,9 @@ export function SharedListResource() {
           <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-sm space-y-2">
             <div className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300">
               <span>🚀</span>
-              <span>This list has reached its collaborator limit</span>
+              <span>This list has reached its bookmark limit</span>
             </div>
-            <p className="text-amber-700 dark:text-amber-400">The list owner needs to upgrade to Pro to add more collaborators.</p>
+            <p className="text-amber-700 dark:text-amber-400">The list owner needs to upgrade to Pro to allow more bookmarks. Bookmarks do not grant editing access.</p>
             <button
               onClick={() => navigate("/pricing")}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-lg font-semibold text-sm transition-colors"
@@ -278,10 +286,12 @@ export function SharedListResource() {
             <span>✓</span>
             <span>
               <Link to="/login" className="font-medium underline">Sign in</Link>
-              {" "}to check off items in this shared list
+              {" "}to save this list or use an accepted invitation. Editing requires an editor invitation from the owner.
             </span>
           </div>
         )}
+
+        {token && !canEdit && <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">Read-only public list. Ask the owner for an editor invitation to edit. Saving a bookmark does not grant editing access.</p>}
 
         {toggleError && (
           <div role="alert" className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl text-sm text-red-700 dark:text-red-400">
@@ -308,13 +318,13 @@ export function SharedListResource() {
             <button
               key={item._id}
               onClick={() => handleToggleItem(item._id, item.checked)}
-              disabled={!token}
-              title={!token ? "Sign in to update this shared list" : undefined}
+              disabled={!canEdit}
+              title={!canEdit ? "Editing requires an accepted editor invitation from the owner" : undefined}
               className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl transition-colors ${
                 item.checked
                   ? "bg-gray-100 dark:bg-gray-900/50"
                   : "bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-              } ${!token ? "cursor-not-allowed opacity-70" : ""}`}
+              } ${!canEdit ? "cursor-not-allowed opacity-70" : ""}`}
             >
               <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                 item.checked
