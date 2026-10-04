@@ -119,7 +119,7 @@ function mount(path = '/invitations', navigationState) {
 }
 async function assertNoOwnerControls(view) {
   fireEvent.click(view.getByRole('button', { name: 'More actions' }));
-  for (const name of ['Rename list', 'Publish list', 'Manage publication', 'Delete list', 'Change category', 'Share link']) assert.equal(view.queryByRole('button', { name: new RegExp(name + '$') }), null, name);
+  for (const name of ['Rename list', 'Publish publicly', 'Manage publication', 'Delete list', 'Change category', 'Share with people']) assert.equal(view.queryByRole('button', { name: new RegExp(name + '$') }), null, name);
   fireEvent.click(view.getByRole('button', { name: 'More actions' }));
 }
 
@@ -202,7 +202,7 @@ test('owner destination retains rename, publication, delete and content controls
   const view = mount('/list/L');
   assert.ok(view.getByRole('textbox', { name: 'Add new item' }));
   fireEvent.click(view.getByRole('button', { name: 'More actions' }));
-  for (const name of ['Rename list', 'Publish list', 'Delete list', 'Change category']) assert.ok(view.getByRole('button', { name: new RegExp(name + '$') }));
+  for (const name of ['Rename list', 'Publish publicly', 'Delete list', 'Change category']) assert.ok(view.getByRole('button', { name: new RegExp(name + '$') }));
 });
 
 test('an already-open editor details panel becomes read-only when the accepted role is downgraded', async () => {

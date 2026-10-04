@@ -1,9 +1,9 @@
 /**
- * Share modal - now triggers did:webvh publication for sharing.
- * Publishing = sharing. Once published, anyone with the link can edit.
+ * Named access and public publication are independent owner choices.
  */
 
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -41,16 +41,16 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
   }, []);
 
   const isPublished = publicationStatus?.status === "active";
-  const publicUrl = isPublished && did
-    ? buildListResourceUrl(did, list._id)
+  const publicUrl = isPublished && publicationStatus
+    ? buildListResourceUrl(publicationStatus.webvhDid.replace(/\/resources\/list-.+$/, ""), list._id)
     : null;
-  const resourceDid = isPublished && did
-    ? buildListResourceDid(did, list._id)
+  const resourceDid = isPublished && publicationStatus
+    ? publicationStatus.webvhDid
     : null;
 
   const handlePublish = async () => {
     if (!did || !subOrgId) {
-      setError("You must be logged in to share a list");
+      setError("You must be logged in to publish a list");
       return;
     }
 
@@ -72,7 +72,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
       haptic('success');
     } catch (err) {
       console.error("[ShareModal] Failed to publish:", err);
-      setError(err instanceof Error ? err.message : "Failed to share list");
+      setError(err instanceof Error ? err.message : "Failed to publish list");
       haptic('error');
     } finally {
       setIsPublishing(false);
@@ -121,7 +121,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
     <>
       <div>
         <h2 id="share-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
-          {isPublished ? "🌐 Shared List" : "🔗 Share List"}
+          Share list
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
           {list.name}
@@ -146,7 +146,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
           onClick={handleUnpublish}
           className="px-4 py-3 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-xl font-medium hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
         >
-          Stop sharing
+          Unpublish
         </button>
       )}
       <button
@@ -167,23 +167,34 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
       ariaLabelledBy="share-dialog-title"
     >
       <div className="p-5 space-y-5">
-        {isPublished ? (
+        <section aria-labelledby="share-people-title" className="space-y-3">
+          <h3 id="share-people-title" className="font-semibold text-gray-900 dark:text-gray-100">Share with people</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Invite someone by email as a viewer or editor. They must accept the invitation. Adding or removing named access does not change public publication.
+          </p>
+          <Link to={`/invitations?listId=${encodeURIComponent(list._id)}`} className="inline-block px-4 py-3 rounded-xl bg-amber-500 text-white font-semibold">
+            Invite people and manage access
+          </Link>
+        </section>
+        <section aria-labelledby="share-public-title" className="space-y-5 border-t border-gray-200 dark:border-gray-700 pt-5">
+          <h3 id="share-public-title" className="font-semibold text-gray-900 dark:text-gray-100">Publish publicly</h3>
+        {publicationStatus === undefined ? <p role="status">Loading publication status…</p> : isPublished ? (
           <>
             <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
               <div className="flex items-center gap-2 text-green-800 dark:text-green-400">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span className="font-medium">This list is shared</span>
+                <span className="font-medium">This list is published publicly</span>
               </div>
               <p className="mt-1 text-sm text-green-700 dark:text-green-500">
-                Anyone with the link can view and edit this list.
+                Anyone with the link can read this list. Only the owner and accepted editors can edit.
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Share link
+                Public read link
               </label>
               <div className="flex gap-2">
                 <input
@@ -213,7 +224,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                 </svg>
-                Send to a friend
+                Send public read link
               </button>
             )}
 
@@ -241,8 +252,8 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
         ) : (
           <>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Share this list by publishing it with a verifiable <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">did:webvh</code> identity. 
-              Anyone with the link can view and edit the list.
+              Publish this list with a verifiable <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">did:webvh</code> identity.
+              Anyone with the link can read the list. Publishing does not grant editing access.
             </p>
 
             <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
@@ -251,11 +262,11 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div>
-                  <p className="font-medium">What happens when you share</p>
+                  <p className="font-medium">What happens when you publish</p>
                   <ul className="mt-2 text-sm space-y-1 text-amber-700 dark:text-amber-500">
                     <li>• A verifiable DID is created for the list</li>
-                    <li>• Anyone with the link can view &amp; edit items</li>
-                    <li>• You can stop sharing at any time</li>
+                    <li>• Anyone with the link can read items</li>
+                    <li>• Unpublishing ends public reading; accepted grants remain</li>
                   </ul>
                 </div>
               </div>
@@ -263,7 +274,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
 
             <button
               onClick={handlePublish}
-              disabled={isPublishing}
+              disabled={isPublishing || publicationStatus === undefined}
               className="w-full px-4 py-3 bg-amber-500 hover:bg-amber-400 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/25 disabled:opacity-50 transition-all"
             >
               {isPublishing ? (
@@ -275,11 +286,16 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
                   Publishing...
                 </span>
               ) : (
-                "Publish to Share"
+                "Publish publicly"
               )}
             </button>
           </>
         )}
+
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Removing a named grant does not stop public reading while publication is active. To end public access, unpublish the list. Accepted viewers and editors keep their private access.
+          </p>
+        </section>
 
         {error && (
           <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-400 text-sm flex items-center gap-2">

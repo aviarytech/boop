@@ -46,8 +46,8 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
   const [unrecorded, setUnrecorded] = useState(false);
 
   const isPublished = publicationStatus?.status === "active";
-  const publicUrl = isPublished && did
-    ? buildListResourceUrl(did, list._id)
+  const publicUrl = isPublished && publicationStatus
+    ? buildListResourceUrl(publicationStatus.webvhDid.replace(/\/resources\/list-.+$/, ""), list._id)
     : null;
 
   const handlePublish = async () => {
@@ -151,7 +151,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
         <span className="text-2xl leading-none">{isPublished ? "🌐" : "📤"}</span>
         <div>
           <h2 id="publish-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
-            {isPublished ? "Published List" : "Publish List"}
+            {isPublished ? "Published List" : "Publish publicly"}
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
             {list.name}
@@ -211,7 +211,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
             Publishing...
           </span>
         ) : (
-          "Publish List"
+          "Publish publicly"
         )}
       </button>
     </div>
@@ -267,7 +267,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
                 <span className="font-medium">This list is published</span>
               </div>
               <p className="mt-1 text-sm text-green-700 dark:text-green-500">
-                Anyone with the link can view this list.
+                Anyone with the link can read this list. Only the owner and accepted editors can edit.
               </p>
             </div>
 
@@ -308,7 +308,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
           <>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Publishing makes this list publicly viewable. Anyone with the link
-              can see the list contents and verify who added each item.
+              can see the list contents and verify who added each item. Editing requires an accepted editor invitation; publishing does not grant editing access.
             </p>
 
             <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
@@ -338,6 +338,10 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
             </div>
           </>
         )}
+
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Named access is separate from publication. Removing a grant does not stop public reading while publication is active. Unpublishing ends public access; accepted viewers and editors keep their private access.
+        </p>
 
         {unrecorded && (
           <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm">

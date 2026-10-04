@@ -240,7 +240,11 @@ another item is now rejected before storage deletion. Existing row/list/account
 erasure does not physically delete these bucket objects; explicit attachment
 removal does. No claim is made that historical copied attachments are independent.
 
-### Required #259 compatibility cutover
+### #259 compatibility cutover
+
+The following inventory describes the original foundation gaps. The #257/#259
+client changes supersede the ListView, SharedListResource and ShareModal entries;
+see [the current publication/sharing contract and audit](sharing-publication.md).
 
 Existing public reads remain available. **Signed-in public-link visitors lose
 editing unless they have an accepted editor grant.** Retained legacy operation

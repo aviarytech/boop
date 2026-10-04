@@ -182,7 +182,7 @@ export function PublicList() {
         {/* CTA */}
         <div className="mt-6 text-center">
           <p className="text-gray-600 dark:text-gray-300 mb-3">
-            Want to collaborate on shared lists?
+            To edit this list, ask its owner for an editor invitation and accept it after signing in.
           </p>
           <Link
             to="/login"

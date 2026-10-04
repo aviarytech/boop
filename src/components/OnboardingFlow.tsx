@@ -159,7 +159,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       setShareUrl(url);
       haptic("success");
     } catch (err) {
-      setPublishError("Couldn't share list. You can share it later.");
+      setPublishError("Couldn't publish list. You can publish it later.");
       haptic("error");
     } finally {
       setIsPublishing(false);
@@ -537,11 +537,10 @@ function ShareStep({
           <>
             <div className="text-5xl mb-4">🤝</div>
             <h2 className="text-2xl font-black text-amber-900 mb-2">
-              Share your list
+              Publish publicly
             </h2>
             <p className="text-amber-800/60 text-sm">
-              Invite someone to collaborate on{" "}
-              <span className="font-semibold">{listName}</span> in real time.
+              Make <span className="font-semibold">{listName}</span> readable by anyone with the link. To invite specific people instead, open your list and choose Share with people.
             </p>
           </>
         )}
@@ -559,7 +558,7 @@ function ShareStep({
             />
             <button
               onClick={onCopy}
-              aria-label={isCopied ? "Link copied" : "Copy invite link"}
+              aria-label={isCopied ? "Link copied" : "Copy public read link"}
               className={`px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
                 isCopied
                   ? "bg-green-500 text-white"
@@ -583,7 +582,7 @@ function ShareStep({
             <ul className="space-y-2 text-sm text-amber-800/80">
               <li className="flex items-center gap-2">
                 <span className="text-amber-500">✓</span>
-                Anyone with the link can view &amp; edit
+                Anyone with the link can read; editing needs an editor invitation
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-amber-500">✓</span>
@@ -591,7 +590,7 @@ function ShareStep({
               </li>
               <li className="flex items-center gap-2">
                 <span className="text-amber-500">✓</span>
-                Stop sharing at any time
+                Unpublish to end public reading; named access stays
               </li>
             </ul>
           </div>
@@ -611,10 +610,10 @@ function ShareStep({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                Sharing...
+                Publishing...
               </span>
             ) : (
-              "Share this list 🔗"
+              "Publish publicly 🌐"
             )}
           </button>
 
