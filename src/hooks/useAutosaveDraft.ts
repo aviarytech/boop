@@ -167,6 +167,20 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
     setDraft(stored.text);
     setStatus("idle");
   };
+  // Recovery may discard a stored record while this editor remains mounted
+  // (e.g. viewer downgrade). Do not resurrect that exact draft if editing returns.
+  const discardStoredDraft = (stored: StoredDraft) => {
+    if (stored.record !== recordRef.current ||
+        (stored.key !== draftKey && stored.key !== sourceRef.current?.key)) return;
+    revisionRef.current++;
+    recordRef.current = null;
+    sourceRef.current = undefined;
+    recoveredRef.current = false;
+    conflictRef.current = false;
+    dirtyRef.current = false;
+    setDraft(null);
+    if (!deniedRef.current) setStatus("idle");
+  };
   const otherDrafts = documentKey ? listDrafts(documentKey, draftAliases).filter(candidate =>
     candidate.key !== draftKey && candidate.key !== sourceRef.current?.key) : [];
 
@@ -178,5 +192,5 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
   }, [dirty]);
 
   return { value, onChange, status: conflict ? "conflict" as const : status,
-    dirty, retry: save, useServer, saveDraft, otherDrafts, recoverDraft };
+    dirty, retry: save, useServer, saveDraft, otherDrafts, recoverDraft, discardStoredDraft };
 }

@@ -1,4 +1,5 @@
-import { listDrafts, type StoredDraft } from "../lib/noteDrafts";
+import { useState } from "react";
+import { clearDraft, listDrafts, type StoredDraft } from "../lib/noteDrafts";
 
 export function RecoveredNoteDrafts({ drafts, disabled, onRecover }: {
   drafts: StoredDraft[]; disabled: boolean; onRecover: (draft: StoredDraft) => void;
@@ -20,7 +21,10 @@ export function RecoveredNoteDrafts({ drafts, disabled, onRecover }: {
 
 /** Recovery is independent of source access: only this account's local text.
  * Never show the stored base or fetch the resource to export an unsent draft. */
-export function UnsentNoteDrafts({ documentKey, aliases = [] }: { documentKey?: string; aliases?: readonly string[] }) {
+export function UnsentNoteDrafts({ documentKey, aliases = [], onDiscard }: {
+  documentKey?: string; aliases?: readonly string[]; onDiscard?: (draft: StoredDraft) => void;
+}) {
+  const [, refresh] = useState(0);
   const drafts = documentKey ? listDrafts(documentKey, aliases) : [];
   if (!drafts.length) return null;
   return (
@@ -38,6 +42,11 @@ export function UnsentNoteDrafts({ documentKey, aliases = [] }: { documentKey?: 
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 0);
           }}>Download draft</button>
+          <button type="button" className="ml-4 underline" onClick={() => {
+            // A different tab may have revised this record since it was rendered.
+            if (clearDraft(draft.key, draft.record)) onDiscard?.(draft);
+            refresh(revision => revision + 1);
+          }}>Discard draft</button>
         </div>
       ))}
     </section>

@@ -24,13 +24,14 @@ export function draftText(key: string): string | null {
   } catch { return null; }
 }
 export function clearDraft(key: string, record: string | null) {
-  if (record === null || readDraft(key) !== record) return;
+  if (record === null || readDraft(key) !== record) return false;
   memory.delete(key);
   released.delete(key);
   try {
     localStorage.removeItem(prefix + key);
     localStorage.removeItem(releasePrefix + key);
   } catch { /* SPA fallback */ }
+  return true;
 }
 
 export function draftBase(key: string): string | undefined {

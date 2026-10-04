@@ -39,7 +39,7 @@ function ItemNoteEditor() {
 
   const draftKey = did && itemId ? `${did}:item:${itemId}` : undefined;
   const [mode, setMode] = useState<"edit" | "preview">("edit");
-  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
+  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft, discardStoredDraft } = useAutosaveDraft({
     saved: data?.description,
     draftKey,
     canEdit: !!data?.canEdit,
@@ -63,7 +63,7 @@ function ItemNoteEditor() {
     return (
       <div className="min-h-screen-safe bg-stone-50 dark:bg-gray-950 flex flex-col items-center justify-center gap-4 p-6 text-center">
         <p className="text-stone-600 dark:text-stone-400">This note isn't available.</p>
-        <UnsentNoteDrafts documentKey={draftKey} />
+        <UnsentNoteDrafts documentKey={draftKey} onDiscard={discardStoredDraft} />
         <button
           onClick={goBack}
           className="rounded-full px-4 py-2 text-sm font-semibold bg-amber-500 text-white"
@@ -76,7 +76,7 @@ function ItemNoteEditor() {
 
   const editingUnavailable = !data.canEdit;
   const displayBody = editingUnavailable ? data.description : value;
-  const nearLimit = value.length > MAX_NOTE_LENGTH - 500;
+  const nearLimit = displayBody.length > MAX_NOTE_LENGTH - 500;
   const statusLabel = status === "saving" ? "Saving…" : status === "saved" ? "Saved" : "";
 
   // --- Editor
@@ -102,17 +102,19 @@ function ItemNoteEditor() {
               </span>
             ) : statusLabel}
           </span>
-          <button
-            onClick={() => { haptic("light"); setMode((mode) => (mode === "edit" ? "preview" : "edit")); }}
-            aria-pressed={mode === "preview"}
-            className="rounded-full px-3 py-1.5 text-xs font-semibold bg-stone-100 dark:bg-gray-900 text-stone-700 dark:text-stone-200"
-          >
-            {mode === "edit" ? "Preview" : "Edit"}
-          </button>
+          {!editingUnavailable && (
+            <button
+              onClick={() => { haptic("light"); setMode((mode) => (mode === "edit" ? "preview" : "edit")); }}
+              aria-pressed={mode === "preview"}
+              className="rounded-full px-3 py-1.5 text-xs font-semibold bg-stone-100 dark:bg-gray-900 text-stone-700 dark:text-stone-200"
+            >
+              {mode === "edit" ? "Preview" : "Edit"}
+            </button>
+          )}
         </div>
       </header>
       {editingUnavailable
-        ? <UnsentNoteDrafts documentKey={draftKey} />
+        ? <UnsentNoteDrafts documentKey={draftKey} onDiscard={discardStoredDraft} />
         : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
       {!editingUnavailable && status === "conflict" && <NoteConflict serverBody={data.description} onUseServer={useServer} onSaveDraft={saveDraft} />}
 
@@ -137,7 +139,7 @@ function ItemNoteEditor() {
         )}
         {nearLimit && (
           <p className="flex-shrink-0 pt-2 text-xs text-stone-400 text-right">
-            {value.length} / {MAX_NOTE_LENGTH}
+            {displayBody.length} / {MAX_NOTE_LENGTH}
           </p>
         )}
       </main>

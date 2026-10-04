@@ -81,7 +81,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
 
   const [dialog, setDialog] = useState<"rename" | "category" | "delete" | null>(null);
 
-  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
+  const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft, discardStoredDraft } = useAutosaveDraft({
     saved: note.body,
     draftKey,
     draftAliases,
@@ -98,14 +98,14 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
   if (status === "denied") {
     return <div className="max-w-3xl mx-auto">
       <p>This note isn't available for editing.</p>
-      <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} />
+      <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} onDiscard={discardStoredDraft} />
       <Link to="/d" className="underline">Back to lists</Link>
     </div>;
   }
 
   const categoryName = categories.find((c) => c._id === list.categoryId)?.name;
-  const words = wordCount(value);
-  const nearLimit = value.length > MAX_NOTE_LENGTH - 500;
+  const words = wordCount(displayBody);
+  const nearLimit = displayBody.length > MAX_NOTE_LENGTH - 500;
   const statusLabel = status === "saving" ? "Saving…" : status === "saved" ? "Saved" : "";
   const meta = [
     "note",
@@ -208,7 +208,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
       </div>
 
       {editingUnavailable
-        ? <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} />
+        ? <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} onDiscard={discardStoredDraft} />
         : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
       {!editingUnavailable && status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
       {mode === "edit" ? (
@@ -231,7 +231,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
       )}
       {nearLimit && (
         <p className="pt-2 text-xs text-stone-400 text-right">
-          {value.length} / {MAX_NOTE_LENGTH}
+          {displayBody.length} / {MAX_NOTE_LENGTH}
         </p>
       )}
 
