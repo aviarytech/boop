@@ -27,7 +27,7 @@ const ownerResources = (args: { listId: Id<"lists"> }) => ({ lists: [args.listId
 const noResources = () => ({});
 function normalizeEmail(email: string) {
   const normalized = email.trim().toLowerCase();
-  if (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new Error("Invalid email");
+  if (normalized.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) throw new ConvexError("Enter a valid email address.");
   return normalized;
 }
 async function verifiedEmail(ctx: ActorCtx<QueryCtx | MutationCtx>) {
@@ -72,7 +72,7 @@ async function budget(ctx: MutationCtx, key: string, max: number, windowMs: numb
   const now = Date.now();
   const row = await ctx.db.query("rateLimits").withIndex("by_key_endpoint", q => q.eq("key", key).eq("endpoint", "private-invitation")).unique();
   if (row && now < row.windowStart + windowMs) {
-    if (row.attempts >= max) throw new Error("Invitation rate limit reached. Try again later.");
+    if (row.attempts >= max) throw new ConvexError("Invitation rate limit reached. Try again later.");
     await ctx.db.patch(row._id, { attempts: row.attempts + 1 });
   } else {
     const value = { key, endpoint: "private-invitation", attempts: 1, windowStart: now, expiresAt: now + windowMs * 2 };

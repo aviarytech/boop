@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { ConvexError } from "convex/values";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { SignJWT } from "jose";
@@ -166,7 +167,7 @@ test("generic mail, stable provider idempotency, failure visibility, and obsolet
     assert.equal((await call("getListInvitations", ctx, { ...owner, listId: "L" }))[0].delivery, "failed");
     const sent = JSON.parse(calls[0].options.body);
     assert.equal(sent.to, "recipient@example.test");
-    assert.match(sent.text, /owner Friend invited/);
+    assert.equal(sent.text.split("\n")[0], 'An account named "owner Friend" invited you to collaborate on boop.');
     for (const secret of ["Private list", "Secret item", "Private note", "attachments", "owner@example.test", '"listId"']) assert.equal(JSON.stringify(sent).includes(secret), false);
     assert.equal(calls[0].options.headers["Idempotency-Key"], `private-invitation/${invite.invitationId}/1`);
     const fresh = await call("resendInvitation", ctx, { ...manage(invite), requestId: "delivery_retry" });
@@ -345,4 +346,76 @@ test("pending historical identities never leak through preview or queued mail an
     const resent = await call("resendInvitation", ctx, { ...manage(invite), requestId: "name_fixed_resend" });
     assert.equal((await accept(ctx, resent, auth)).role, "viewer");
   }
+});
+
+
+test("link-shaped public names are rejected on save and revalidated across every invitation path", async () => {
+  const badNames = [
+    "Account locked - verify at evil.example/reset", "evil.example", "www.evil", "https://evil", "mailto:evil",
+    "evil.example:443", "evil.c", "evil.1", "evil.123", "Click 127.0.0.1", "evil.рф", "evil.xn--p1ai", "evil.e\u0301xample",
+    "ｅｖｉｌ．ｅｘａｍｐｌｅ", "evil。example", "evil｡example", "evil․example", "https：／／evil", "evil\\reset",
+  ];
+  for (const name of badNames) {
+    const ctx = make(), invite = await create(ctx), auth = await login(ctx);
+    const ownerProfile = ctx.rows.users.find(user => user._id === "U-owner");
+    const before = { ...ownerProfile };
+    for (const suffix of ["", "Internal"]) {
+      await assert.rejects(() => setName(ctx, name, owner, suffix), error => error instanceof ConvexError && /without links/.test(error.data));
+    }
+    assert.deepEqual(ownerProfile, before);
+    // Simulate a previously saved name accepted by the old validator.
+    ownerProfile.displayName = name;
+    for (const suffix of ["", "Internal"]) {
+      await assert.rejects(() => call(`createInvitation${suffix}`, ctx, { ...owner, listId: "L", email: "new@example.test", requestId: "blocked_link_name" }), /Choose and save/);
+      await assert.rejects(() => call(`resendInvitation${suffix}`, ctx, { ...manage(invite), requestId: "blocked_link_resend" }), /Choose and save/);
+    }
+    assert.equal(await call("getInvitation", ctx, { ...invite, ...auth }), null);
+    assert.deepEqual(await call("getPendingInvitations", ctx, auth), []);
+    assert.equal(await call("deliveryPayload", ctx, invite), null);
+    await assert.rejects(() => accept(ctx, invite, auth), unavailable);
+    let mailCalls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => { mailCalls++; return { ok: true }; };
+    try { await modules.invitationMail.deliver._handler(ctx.action, invite); }
+    finally { globalThis.fetch = originalFetch; }
+    assert.equal(mailCalls, 0);
+    assert.equal(ctx.scheduled.length, 2);
+    assert.equal(ctx.rows.listInvitations.length, 1);
+    assert.equal(ctx.rows.listInvitations[0].version, 1);
+  }
+});
+
+test("realistic public names retain punctuation and appear as quoted account attributes in mail", async () => {
+  for (const name of ["J. Smith", "J. R. R. Tolkien", "Smith Jr.", "O'Neill", "Anne-Marie O’Connor", "María-José", "李小龍", 'Alex "Ace" Rivera']) {
+    const ctx = make();
+    await setName(ctx, name);
+    const invite = await create(ctx), auth = await login(ctx);
+    assert.equal((await call("getInvitation", ctx, { ...invite, ...auth })).inviter, name);
+    const originalFetch = globalThis.fetch, originalKey = process.env.RESEND_API_KEY;
+    let message;
+    process.env.RESEND_API_KEY = "fixture-only";
+    globalThis.fetch = async (_url, options) => { message = JSON.parse(options.body); return { ok: true }; };
+    try { await modules.invitationMail.deliver._handler(ctx.action, invite); }
+    finally {
+      globalThis.fetch = originalFetch;
+      if (originalKey === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = originalKey;
+    }
+    assert.equal(message.text.split("\n")[0], `An account named ${JSON.stringify(name)} invited you to collaborate on boop.`);
+    assert.deepEqual(message.text.match(/https?:\/\/\S+/g), [`https://boop.ad/invitations/${invite.invitationId}/1`]);
+    assert.equal(JSON.stringify(message).includes("owner@example.test"), false);
+  }
+});
+
+test("invalid recipient email and rate limits expose actionable ConvexError strings", async () => {
+  const isActionable = expected => error => error instanceof ConvexError && error.data === expected;
+  for (const email of ["a@b", "friend@gmailcom", "not an email", `${"a".repeat(250)}@example.test`]) {
+    const ctx = make();
+    await assert.rejects(() => create(ctx, { email }), isActionable("Enter a valid email address."));
+    assert.equal(ctx.scheduled.length, 0);
+    assert.equal(ctx.rows.listInvitations, undefined);
+  }
+  const ctx = make();
+  let invite = await create(ctx);
+  for (let i = 0; i < 2; i++) invite = await call("resendInvitation", ctx, { ...manage(invite), requestId: `rate_error_${i}` });
+  await assert.rejects(() => call("resendInvitation", ctx, { ...manage(invite), requestId: "rate_error_more" }), isActionable("Invitation rate limit reached. Try again later."));
 });

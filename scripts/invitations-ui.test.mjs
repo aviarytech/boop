@@ -13,12 +13,12 @@ state.subscribe = listener => { state.listeners.add(listener); return () => stat
 state.notify = () => { state.revision++; for (const listener of state.listeners) listener(); };
 const pending = { invitationId: id, version: 1, inviter: "Alex", role: "viewer", expiresAt: Date.now() + 86400000 };
 function reset() {
-  Object.assign(state, { calls: [], queries: [], fail: false, profile: { displayName: "Alex" }, pending: [pending], linked: pending,
+  Object.assign(state, { calls: [], queries: [], fail: false, mutationError: null, profile: { displayName: "Alex" }, pending: [pending], linked: pending,
     lists: [{ _id: "L", name: "My list", ownerDid: "did:owner" }, { _id: "N", name: "My note", kind: "note", ownerDid: "did:owner" }, { _id: "X", name: "Someone else's list", ownerDid: "did:other" }],
     invitations: [{ ...pending, email: "friend@example.test", status: "pending", delivery: "failed" }], grants: [],
   });
 }
-await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitation-ui.mjs", bundle: true, jsx: "automatic", platform: "node", format: "esm", external: ["react", "react/jsx-runtime", "react-router-dom", "convex/server"],
+await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitation-ui.mjs", bundle: true, jsx: "automatic", platform: "node", format: "esm", external: ["react", "react/jsx-runtime", "react-router-dom", "convex/server", "convex/values"],
   plugins: [{ name: "invitation-ui-fixtures", setup(b) {
     b.onResolve({ filter: /lib\/authenticatedConvex$/ }, () => ({ path: "convex", namespace: "fixture" }));
     b.onResolve({ filter: /hooks\/useCurrentUser$/ }, () => ({ path: "user", namespace: "fixture" }));
@@ -28,10 +28,10 @@ await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitati
       user: 'export const useCurrentUser=()=>({did:"did:owner",email:"owner@example.test"});',
       auth: 'export const useAuth=()=>({logout:async()=>{globalThis.__invitationUi.calls.push(["logout"]);}});',
       login: 'import React from "react"; export const Login=({embedded})=>React.createElement("p",null,embedded?"Embedded email sign-in":"Other sign-in");',
-      convex: `import {useSyncExternalStore} from "react"; import {getFunctionName} from "convex/server";
+      convex: `import {ConvexError} from "convex/values"; import {useSyncExternalStore} from "react"; import {getFunctionName} from "convex/server";
         export function useQuery(ref,args){const s=globalThis.__invitationUi;useSyncExternalStore(s.subscribe,()=>s.revision);const name=getFunctionName(ref);s.queries.push([name,args]);
           return {"invitations:getPendingInvitations":s.pending,"invitations:getInvitation":s.linked,"lists:getUserLists":s.lists,"invitations:getListInvitations":s.invitations,"listGrants:getListGrants":s.grants,"users:getMyPublicDisplayName":s.profile}[name];}
-        export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");if(name==="users:setPublicDisplayName"){s.profile={displayName:args.displayName.trim()};s.notify();return s.profile;}return {listId:"accepted-list"};};}`,
+        export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");if(s.mutationError)throw new ConvexError(s.mutationError);if(name==="users:setPublicDisplayName"){s.profile={displayName:args.displayName.trim()};s.notify();return s.profile;}return {listId:"accepted-list"};};}`,
     }[path] }));
   } }],
 });
@@ -172,7 +172,7 @@ test("inline public-name setup explains disclosure, rejects invalid names and en
   fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
   assert.match(screen.getByText(/Choose a name people you invite/).textContent, /This name is public.*Your account email stays private/);
   fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "new@example.test" } });
-  for (const name of ["boop user", "alex@example.test"]) {
+  for (const name of ["boop user", "alex@example.test", "Account locked - verify at evil.example/reset", "ｅｖｉｌ．ｅｘａｍｐｌｅ", "evil。1"]) {
     fireEvent.change(screen.getByLabelText("Public display name"), { target: { value: name } });
     fireEvent.click(screen.getByRole("button", { name: "Save public name" }));
     await screen.findByRole("alert");
@@ -194,4 +194,18 @@ test("inline public-name setup explains disclosure, rejects invalid names and en
   fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
   await screen.findByText(/Invitation recorded/);
   assert.equal(state.calls.at(-1)[0], "invitations:createInvitation");
+});
+
+
+test("invitation form displays actionable server email and rate-limit messages", async () => {
+  for (const message of ["Enter a valid email address.", "Invitation rate limit reached. Try again later."]) {
+    reset(); state.mutationError = message; mount();
+    fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "a@b" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Send invitation" }).closest("form"));
+    assert.equal((await screen.findByRole("alert")).textContent, message);
+    assert.equal(state.calls[0][0], "invitations:createInvitation");
+    assert.equal(screen.getByLabelText("Recipient email").value, "a@b");
+    cleanup();
+  }
 });

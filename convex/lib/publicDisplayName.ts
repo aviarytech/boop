@@ -19,6 +19,14 @@ export function displayNameError(value: string, email?: string): string | null {
     || /^(boopuser|anonymous|unknown|user)$/i.test(name.replace(/\s/g, ""))) {
     return "Choose a recognizable name of 2–80 characters, without an email address or hidden characters.";
   }
+  // Detect after NFKC so full-width URL punctuation cannot bypass the rule.
+  // IDNA also treats ideographic/half-width full stops as domain separators.
+  // Periods must end a word: spaced initials and suffixes remain usable,
+  // while every adjacent domain label (including single letters/digits) fails.
+  if (/[:/\\]/u.test(name) || /www[.\u3002\uff61]/iu.test(name)
+    || /[.\u3002\uff61](?=\S)/u.test(name)) {
+    return "Choose a name without links, web addresses or URL punctuation.";
+  }
   if (email && name.toLowerCase() === email.split("@")[0].trim().normalize("NFKC").toLowerCase()) {
     return "Choose a name different from the first part of your email address to keep it private.";
   }

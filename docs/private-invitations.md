@@ -43,7 +43,13 @@ and shared activity, while the account email stays private. Names are trimmed an
 Unicode-normalized, must contain a letter and be 2–80 characters, and cannot contain
 email addresses, control/hidden characters or generic defaults (`boop user`, `user`,
 `anonymous`, `unknown`). The first part of the stored or signed-session email is also
-rejected case-insensitively. This is an explicit recognizable-name choice, not legal
+rejected case-insensitively. URL punctuation (colon and slashes) and domain-shaped
+text, including IP addresses, punycode and Unicode dot variants, are rejected after
+normalization. Periods must be followed by whitespace or end the name, preserving
+spaced initials (`J. Smith`) and suffixes (`Smith Jr.`); apostrophes, hyphens and
+multilingual letters/marks remain supported. Invitation emails quote the name as
+an account attribute rather than presenting it as a message from boop.
+This is an explicit recognizable-name choice, not legal
 identity verification. Nicknames and non-Latin names are supported.
 
 Preview, inbox, background mail payload and acceptance use `chosenPublicDisplayName`,
@@ -131,7 +137,9 @@ hour, 10 sends/recipient/day across owners, and 120 new request IDs/owner/hour.
 Recipient budget keys use email hashes. Retries with the same request ID do not
 consume budget. These are abuse limits, not a paid feature or lifetime recipient cap.
 Creation responses never disclose whether an account exists. Delivery errors are
-generic and visible only to the resource owner.
+generic and visible only to the resource owner. Invalid recipient addresses and
+rate-limit failures use actionable `ConvexError` strings so the UI preserves the
+correction/retry guidance in production.
 
 ## Local verification and limits
 
