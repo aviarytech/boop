@@ -56,12 +56,12 @@ test.describe("Landing page", () => {
     await expect(screen.getByText("Made carefully, by humans and agents.")).toBeVisible();
   });
 
-  test("9. OG image meta tag points to /og-image.png", async ({ browser, scenario }) => {
+  test("9. OG image meta tag points to /og-image-boop.png", async ({ browser, scenario }) => {
     await scenario.open("/", { authenticated: false });
     const ogImage = browser.locator('meta[property="og:image"]');
-    await expect(ogImage).toHaveAttribute("content", /\/og-image\.png/);
+    await expect(ogImage).toHaveAttribute("content", /\/og-image-boop\.png/);
     const twitterImage = browser.locator('meta[name="twitter:image"]');
-    await expect(twitterImage).toHaveAttribute("content", /\/og-image\.png/);
+    await expect(twitterImage).toHaveAttribute("content", /\/og-image-boop\.png/);
   });
 
   test("10. no fabricated user-count stats are visible", async ({ browser, scenario }) => {

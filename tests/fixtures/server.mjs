@@ -41,7 +41,19 @@ function query(account, path, args) {
       acknowledgments: account.receipts.filter(r => args.operationIds.includes(r.operationId)),
       sequence: account.sequence,
     };
-    case 'items:getOfflineAccount': return { accountId: user.turnkeySubOrgId };
+    case 'items:getOfflineAccount': return { accountId: user.turnkeySubOrgId, did: user.did };
+    case 'items:getOfflineAccess': return [...new Set([...args.listIds, ...(args.items ?? []).map(i => i.listId)])].map(listId => {
+      const canRead = account.lists.some(l => l._id === listId);
+      const locators = (args.items ?? []).filter(i => i.listId === listId);
+      const present = id => canRead && account.items.some(i => i._id === id && i.listId === listId);
+      return { listId, canRead, canEdit: canRead, checkedAt: Date.now(),
+        presentItemIds: locators.filter(i => present(i.itemId)).map(i => i.itemId),
+        missingItemIds: locators.filter(i => !present(i.itemId)).map(i => i.itemId) };
+    });
+    case 'items:getOfflineDraftAccess': return args.resources.map(resource => ({ ...resource, checkedAt: Date.now(),
+      canEdit: resource.kind === 'note' ? account.lists.some(l => l._id === resource.id) : account.items.some(i => i._id === resource.id && account.lists.some(l => l._id === i.listId)) }));
+    case 'listGrants:getMyListAccess': return { ownerDid: user.did, role: account.lists.some(l => l._id === args.listId) ? 'owner' : null };
+    case 'users:getMyPublicDisplayName': return { displayName: null };
     case 'billing:getUserPlan': return 'free';
     case 'billing:getUserSubscription': return null;
     case 'publication:getPublicationStatus': return account.published ? {
