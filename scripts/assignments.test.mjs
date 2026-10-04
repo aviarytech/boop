@@ -131,20 +131,26 @@ for(const operation of ['checkItem','batchCheckItems','copyList']) test(`${opera
   assert.deepEqual(f.rows.items[0].vcProofs[0],source.vcProofs[0]);
   if(operation==='copyList') assert.deepEqual(f.rows.items[0],source);
   assert.equal(next.vcProofs,undefined);
+  const explorer=await f.call('originals','listOwnedOriginals',{});
+  assert.equal(explorer.find(row=>row.sourceId===next.listId).collaborators,3);
   for(const event of f.rows.activities.filter(a=>a.itemId===next._id)) {
     assert.equal(event.actorDid,f.owner.user.did); assert.match(event.metadata.note,/from item I1/);
   }
 });
 
-for(const operation of ['removeItem','batchDeleteItems','deleteList']) test(`${operation} deletes live memberships; Explorer ignores old orphan rows`,async()=>{
+for(const operation of ['removeItem','batchDeleteItems','deleteList']) test(`${operation} deletes live memberships; explicit cleanup removes legacy Explorer ghosts`,async()=>{
   const f=await fixture(); await seed(f,undefined,['a','b']);
   const orphan=await f.ctx.db.insert('itemAssignees',{itemId:'old-deleted',listId:'L1',assigneeDid:'ghost',assignedByDid:'a',assignedAt:1});
-  assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,2);
+  assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,3);
   if(operation==='deleteList') await f.call('lists',operation,{listId:'L1'});
   else await f.call('items',operation,operation==='removeItem'?{itemId:'I1'}:{itemIds:['I1']});
   assert.equal(f.rows.itemAssignees.some(r=>r.itemId==='I1'),false);
   if(operation==='deleteList') assert.equal(f.rows.itemAssignees.length,0);
-  else {assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,undefined); await modules.assignees.cleanupOrphanRows._handler(f.ctx,{rowIds:[orphan]});}
+  else {
+    assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,1);
+    await modules.assignees.cleanupOrphanRows._handler(f.ctx,{rowIds:[orphan]});
+    assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,undefined);
+  }
 });
 
 test('queued assignment and unrelated edits hash persisted fields, retain multi-membership and reject same-clock API changes',async()=>{
@@ -310,12 +316,14 @@ function assertLargeProjection(items) {
   }
 }
 
-for(const count of [20,4500]) test(`Explorer ${count} items uses one assignment read and filters legacy/orphan data`,async()=>{
+for(const count of [20,4500]) test(`Explorer ${count} items uses one compact row query with explicit pre-migration semantics`,async()=>{
   const f=await fixture(); seedLargeList(f,count); const reads=measureReads(f);
   const rows=await f.call('originals','listOwnedOriginals',{});
-  assert.equal(rows[0].collaborators,6);
+  assert.equal(rows[0].collaborators,5); // Four live row DIDs + old orphan; two scalar-only DIDs await reconciliation.
   assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_list',bounds:{listId:'L1'}}]);
   assert.ok(reads.queries.length<15);
+  assert.equal(reads.queries.some(q=>q.table==='items'),false);
+  assert.equal(reads.getIds.some(id=>id.startsWith('large-')),false);
 });
 
 for(const operation of ['getListItems','getListItemsForReplay','getListWithItemsForViewer','getSubItems','getItemsWithDueDates','getHighPriorityItems']) test(`${operation} batches a 4500-item list without querying assignments on unrelated lists`,async()=>{
@@ -395,4 +403,72 @@ test('batch recurrence preloads assignment/order once per list and inserts truth
     assert.equal(target.order,i<8?-i-1:-(i-8)-1);
     for(const event of f.rows.activities.filter(a=>a.itemId===target._id)) {assert.equal(event.actorDid,f.owner.user.did);assert.match(event.metadata.note,/recurrence from item large-/);}
   }
+});
+
+for(const [label,scalar,rowDids] of [
+  ['none',undefined,[]], ['scalar','scalar-only',[]], ['rows',undefined,['row-only']],
+  ['matching','same',['same']], ['conflict','scalar',['row']],
+  ['multi','scalar',['scalar','second','third']], ['duplicates','scalar',['row','row']],
+]) test(`Explorer release gate ${label}: baseline counts converge after full reconciliation and orphan cleanup`,async()=>{
+  const f=await fixture(); await seed(f,scalar,rowDids);
+  const orphan=await f.ctx.db.insert('itemAssignees',{itemId:'gone',listId:'L1',assigneeDid:'orphan',assignedByDid:'historic',assignedAt:1});
+  assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,new Set([...rowDids,'orphan']).size);
+  // Item/API reads already retain the whole live union before the release gate.
+  const expected=[...new Set([...rowDids,...(scalar?[scalar]:[])])].sort();
+  assert.deepEqual(await dids(f),expected);
+  const history=structuredClone(f.rows.itemAssignees.filter(row=>row._id!==orphan));
+  const result=await modules.assignees.reconcileBatch._handler(f.ctx,{itemIds:['I1']});
+  assert.equal(result[0].conflict,!!scalar && rowDids.some(did=>did!==scalar));
+  assert.equal(f.rows.items[0].assignmentsVersion,1);
+  assert.deepEqual(await modules.assignees.cleanupOrphanRows._handler(f.ctx,{rowIds:[orphan]}),[orphan]);
+  assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,expected.length||undefined);
+  for(const row of history) assert.deepEqual(await f.ctx.db.get(row._id),row);
+  const completed=structuredClone(f.rows);
+  await modules.assignees.reconcileBatch._handler(f.ctx,{itemIds:['I1']});
+  await modules.assignees.cleanupOrphanRows._handler(f.ctx,{rowIds:[orphan]});
+  assert.deepEqual(f.rows,completed,'checkpoint retries are idempotent');
+  // Normal writes/deletes keep the converged store and Explorer synchronized.
+  await f.call('assignees','assignItem',{itemId:'I1',assigneeDid:'new-member'});
+  assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,expected.length+1);
+  await f.call('items','removeItem',{itemId:'I1'});
+  assert.equal((await f.call('originals','listOwnedOriginals',{}))[0].collaborators,undefined);
+});
+
+test('Explorer reads zero item documents or item bytes across multiple lists with more than 16MiB of item payloads',async()=>{
+  const f=await fixture();
+  f.rows.lists=Array.from({length:3},(_,i)=>({_id:`wide-list-${i}`,ownerDid:f.owner.user.did,name:`Wide ${i}`,createdAt:1}));
+  const proof='x'.repeat(64*1024);
+  f.rows.items=f.rows.lists.flatMap(list=>Array.from({length:200},(_,i)=>({_id:`${list._id}-item-${i}`,listId:list._id,
+    name:'Large note/proof',checked:false,createdAt:i,createdByDid:f.owner.user.did,description:proof,
+    ...(i===0?{assigneeDid:'legacy-only'}:{})})));
+  f.rows.itemAssignees=f.rows.lists.flatMap(list=>[
+    {_id:`${list._id}-row`,listId:list._id,itemId:`${list._id}-item-1`,assigneeDid:'row-member',assignedByDid:'historic',assignedAt:1},
+    {_id:`${list._id}-orphan`,listId:list._id,itemId:'gone',assigneeDid:'orphan',assignedByDid:'historic',assignedAt:1},
+  ]);
+  const itemIds=new Set(f.rows.items.map(i=>i._id));
+  const sourceBytes=f.rows.items.reduce((n,item)=>n+Buffer.byteLength(JSON.stringify(item)),0);
+  assert.ok(sourceBytes>32*1024*1024);
+  const usage={itemQueries:0,itemGets:0,itemDocuments:0,itemBytes:0,returnedBytes:0};
+  const record=value=>{
+    for(const doc of (Array.isArray(value)?value:value?[value]:[])) {
+      const bytes=Buffer.byteLength(JSON.stringify(doc));usage.returnedBytes+=bytes;
+      if(itemIds.has(doc._id)){usage.itemDocuments++;usage.itemBytes+=bytes;}
+    }
+    return value;
+  };
+  const query=f.ctx.db.query,get=f.ctx.db.get;
+  f.ctx.db.get=async id=>{if(itemIds.has(id))usage.itemGets++;return record(await get(id));};
+  f.ctx.db.query=table=>{
+    if(table==='items')usage.itemQueries++;
+    const q=query(table);
+    for(const method of ['collect','first','unique','take']) {
+      const original=q[method];q[method]=async(...args)=>record(await original(...args));
+    }
+    return q;
+  };
+  const results=await f.call('originals','listOwnedOriginals',{});
+  assert.equal(results.length,3);
+  assert.ok(results.every(row=>row.collaborators===2),'baseline has row-member+orphan, not scalar-only');
+  assert.deepEqual({queries:usage.itemQueries,gets:usage.itemGets,documents:usage.itemDocuments,bytes:usage.itemBytes},{queries:0,gets:0,documents:0,bytes:0});
+  assert.ok(usage.returnedBytes<16*1024,'only compact metadata and assignment rows are returned from storage');
 });

@@ -4,8 +4,10 @@
 
 `itemAssignees` is the authoritative multiple-assignee membership store.
 `convex/lib/assignments.ts` provides shared reads, reconciliation, writes and
-inheritance. Browser details, list badges, API reads, Explorer, sub-items,
-calendar/priority/sync reads, copying and both recurrence paths use it.
+inheritance. Browser details, list badges, API reads, sub-items,
+calendar/priority/sync reads, copying and both recurrence paths use it. Explorer
+counts distinct DIDs directly from the authoritative rows; the release gate
+below establishes their convergence with legacy evidence.
 Membership is a set of exact DID strings; arbitrary external assignee identities
 remain supported. Assignees are not permission grants.
 
@@ -75,35 +77,63 @@ cannot resurrect it. Unassignment activities retain all removed duplicate rows'
 assigner/time/inference metadata in their note. Existing events are never
 rewritten by assignment operations.
 
-## Bounded operator workflow (not executed by this change)
+## Mandatory backend-first release and reconciliation gate
 
 Deployment, production inspection and migration require separate authorization.
-Do not run deployment/codegen or copy credentials merely to test this work.
+This change supplies code and a runbook; it neither runs those operations nor
+certifies that any deployed dataset has converged.
 
-1. Deploy the additive schema/backend and matching supported clients together
-   under an approved release. Keep compatibility fields and names.
-2. From an authorized data export/operator inventory, select item IDs missing
-   `assignmentsVersion`. Review the scalar/row differences first.
-3. Invoke internal `assignees:reconcileBatch` with `{ itemIds: [...] }`, at most
-   **25 IDs** per transaction. It returns per-item `migrated`, `conflict`, or
-   `missing`. Duplicate requested IDs are processed once. An item with more than
-   **100 physical assignment rows** rejects the whole transaction and requires a
-   separately reviewed migration strategy; it is never partially truncated.
-4. Save the results, review conflict activities, and reconcile disagreements via
-   explicit normal assignment writes. Retry a batch safely; already-marked
-   records are no-ops. Audit final logical memberships against the pre-migration
-   union and verify browser/API/Explorer agreement on designated staging data.
-5. Never drop the scalar/compatibility adapter based only on a successful local
-   test. Confirm browser/native versions, external integrations and migration
-   completeness first.
+**Before reconciliation, Explorer intentionally retains its baseline row-only
+semantics:** scalar-only memberships are absent from its count and legacy orphan
+rows may contribute. Item and assignment API reads still expose the lossless
+live scalar/row union. No memberships or history are discarded. The new frontend
+must not be released until the whole target dataset passes the gate below.
 
-Old orphan rows do not contribute to Explorer. Internal
-`assignees:cleanupOrphanRows({ rowIds: [...] })` accepts at most **100 candidate
-row IDs**, rechecks that each referenced item is missing, and deletes only those
-orphans. It never deletes a live membership; it is explicit, idempotent and not
-scheduled. Normal item/batch-child/list deletion removes membership rows, and
-account deletion drains rows by list even if the item was previously removed.
-No orphan cleanup or migration was run against a deployment.
+1. Hold frontend/native rollout. Railway and Convex deploy independently; merging
+   a branch or observing a green frontend build does not enforce backend-first
+   ordering. The release owner must hold Railway auto-deployment or use a
+   separately controlled staged release. Deploy the additive Convex schema and
+   backend **first**, retaining old client validators, names and scalar adapters.
+   Verify new and cached/old-client reads, writes and replay compatibility against
+   that backend before proceeding. Do not release a frontend that sends
+   `assigneeDids` to a backend whose validators do not support it.
+2. Inventory the **whole target deployment dataset**, across every list/account,
+   using an authorized consistent export or complete paginated operator scan.
+   Record the dataset/deployment identifier, checkpoint/cursor, item and
+   assignment-row IDs, and all items missing `assignmentsVersion`. Inventory all
+   orphan rows whose referenced item is absent, not only rows for recently
+   visited lists. Preserve the pre-migration memberships/history for comparison.
+   A sample, an owner-only scan or an undocumented exclusion is not completion.
+3. Run internal `assignees:reconcileBatch({ itemIds: [...] })` for **all** items
+   missing the marker, at most **25 IDs** per transaction. Save inputs, returned
+   `migrated`/`conflict`/`missing` results and completed checkpoints. Duplicate IDs
+   are processed once; completed items are no-ops on retry. Retry failed batches
+   from their last confirmed checkpoint. More than **100 physical assignment
+   rows** on one item rejects the whole batch; separately review a safe strategy
+   for those records and keep the frontend release blocked until resolved.
+4. Run internal `assignees:cleanupOrphanRows({ rowIds: [...] })` for **all** inventoried
+   orphan candidates, at most **100 IDs** per batch. It rechecks item absence and
+   removes only orphans; live memberships are never removed by this operation.
+   Save deleted IDs and checkpoints, and retry safely. Normal item/batch-child/
+   list deletion removes membership rows; account deletion also drains legacy
+   rows by list when their item is already gone.
+5. Save and review every reconciliation conflict. The union is the explicit
+   reconciliation policy: retain both sides unless an authorized user deliberately
+   removes a membership through a normal write. Review does not require choosing
+   a winner. Confirm original row attribution, duplicate rows, activities and
+   credential evidence remain intact. Compare row memberships against the saved
+   live scalar/row union and compare browser/API/Explorer results.
+6. Re-inventory from a fresh consistent checkpoint. Require **no remaining items
+   missing the marker, no remaining orphan rows, and no unresolved exclusions or
+   batch failures** in the target dataset. Account for concurrent writes/deletes;
+   if necessary, coordinate a final consistent verification window. Preserve the
+   audit evidence, conflict reviews and release-owner sign-off. If completeness
+   cannot be established, **postpone the frontend/native release** rather than
+   treating partial counts as converged.
+7. Only after the verified gate passes, release/enable the matching frontend and
+   native clients. Maintain the compatibility adapters until supported-client
+   inventory permits their retirement. No deployment or migration is authorized
+   merely by this documentation.
 
 ## History, copies, recurrence and reminted identities
 
@@ -150,25 +180,17 @@ React DOM components with mocked transport, not evidence of production state,
 live WebSocket timing, deployed native clients or completed migration. Confirm
 those release acceptance criteria with approved staging/deployed evidence.
 
-Local delivery checks for this implementation: frozen-lockfile installation with
-lifecycle scripts disabled; 61 focused assignment/replay/modal tests and 424 full
-Bun tests passed; frontend/backend TypeScript, authenticated-client registry
-check, and Vite build with placeholder Convex URLs and Sentry uploads disabled
-passed. Changed-file ESLint reports 39 existing errors on both the base commit
-and this change, with no added diagnostics. Existing React `act(...)` and Vite
-large-chunk warnings remain. Test-generated icon/splash artifacts were restored.
-The coordinating thread independently verified the mocked-transport modal at
-375×812, including multiple assignees and a long-DID removal button remaining
-inside the viewport. No live deployment or native-device validation is claimed.
-
-## Assignment read scaling (PR #263 follow-up)
+## Assignment read scaling
 
 `withAssignmentsBatch` hydrates requested items with at most one assignment index
 query per represented list. It groups live requested item IDs before reading,
 ignores orphan/out-of-subset rows, unions unreconciled scalars, and deduplicates
 membership. Multi-item groups use `itemAssignees.by_list`; a singleton uses the
-narrower `by_item` index. Empty filtered results make no assignment query. Explorer,
-list/replay/API reads, sub-items, due-date and priority results use this path.
+narrower `by_item` index. Empty filtered results make no assignment query.
+List/replay/API reads, sub-items, due-date and priority results use this path.
+Explorer instead reads only compact `itemAssignees.by_list` rows, deduplicating
+DIDs without reading item documents or their description/proof payloads. Its
+legacy scalar/orphan accuracy depends on the mandatory release gate above.
 
 Copying preloads source membership once and inserts the brand-new target's
 primary/revision projection, membership rows and attributed activities directly.
@@ -179,18 +201,11 @@ only source membership; batch recurrence caches assignment and parent-group orde
 state once per list and advances order locally for each new occurrence. Both
 insert new target membership without target reads.
 
-Query-count regressions exercise 4,500-item reads and copies of 1,200 mostly
-unassigned items, with mixed legacy scalars, authoritative rows, duplicate rows,
-and orphans. They assert one assignment query, a fixed read-call budget for copy,
-zero new-target reads, source/history preservation, and correct new activities.
-Subset/singleton/empty results and batch recurrence ordering are also covered.
-These fixtures demonstrate call-count scaling, not unlimited transaction size or
-deployed throughput; data-volume and write budgets still apply.
-
-Follow-up validation: 84 focused tests, 436 full Bun tests, frontend/backend
-TypeScript, auth registry check, frozen-lockfile installation with scripts
-disabled, and Vite build with uploads disabled passed. Changed TypeScript source
-ESLint has zero errors both before and after this follow-up. Existing React
-`act(...)` and bundle-size warnings remain. No deployment, live migration, or
-production read was performed. Integration with the newer SDK/main branch is
-left to the coordinating thread.
+Regression checks should cover large item payloads across multiple lists and
+assert zero item queries, item gets and returned item bytes in Explorer. Check
+both baseline pre-migration counts and exact post-gate counts for scalar-only,
+row-only, matching, conflicting, multi-assignee, duplicate and orphan evidence.
+Retain query-count and no-target-reread tests for copying, filtered item reads and
+recurrence, including source history and new activity attribution. These fixtures
+do not prove deployed throughput or unlimited transaction size; compact assignment
+rows and other Explorer metadata remain subject to normal transaction budgets.

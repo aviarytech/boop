@@ -370,3 +370,14 @@ Legacy scalar edits replace/clear only the primary and preserve other assignees.
 See [assignment reconciliation](docs/assignment-reconciliation.md) for the
 lossless union/conflict policy, inferred pre-migration row shape, bounded internal
 migration, history semantics and release validation requirements.
+
+
+Explorer collaborator counts use distinct DIDs from authoritative assignment rows.
+Before legacy reconciliation/cleanup they retain baseline behavior: scalar-only
+memberships are omitted and old orphan rows may count. Item/API reads continue
+exposing the full live union. The [mandatory release gate](docs/assignment-reconciliation.md#mandatory-backend-first-release-and-reconciliation-gate)
+requires deploying the compatible Convex backend first, reconciling the entire
+target dataset and cleaning all legacy orphans, verifying completeness with no
+unresolved exclusions, then releasing the matching frontend/native clients.
+Railway and Convex deployment ordering must be controlled by the release owner.
+This PR does not run or certify deployment, migration or convergence.
