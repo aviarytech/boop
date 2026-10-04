@@ -71,3 +71,29 @@ test('memory-only note drafts drop cached bases and reject stale base writes jus
     assert.equal(drafts.draftText(key), 'Still independent');
   } finally { Object.defineProperty(globalThis, 'localStorage', descriptor); }
 });
+
+test('quota-exhausted storage cannot hide a newer in-memory denial from a stale editor', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const persisted = new Map();
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem(key) { return persisted.get(key) ?? null; },
+    setItem() { throw new DOMException('Quota exceeded', 'QuotaExceededError'); },
+    removeItem(key) { persisted.delete(key); },
+    key(index) { return [...persisted.keys()][index] ?? null; },
+    get length() { return persisted.size; },
+  } });
+  try {
+    for (const kind of ['note', 'item']) {
+      const document = `did:quota:${kind}:resource`;
+      persisted.set(`boop-note-access:${document}`, JSON.stringify({ canEdit: true, checkedAt: 1 }));
+      drafts.reconcileDraftAccess(document, false, 10);
+      const newSession = `${document}:session:resumed`;
+      drafts.writeDraft(newSession, 'My independent work', 'Private comparison body');
+      assert.equal(drafts.draftIsDetached(newSession), true);
+      assert.equal(drafts.draftBase(newSession), undefined);
+      assert.equal(drafts.draftText(newSession), 'My independent work');
+      drafts.reconcileDraftAccess(document, true, 2);
+      assert.equal(drafts.draftIsDetached(`${document}:session:another`), true);
+    }
+  } finally { Object.defineProperty(globalThis, 'localStorage', descriptor); }
+});

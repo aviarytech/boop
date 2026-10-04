@@ -114,6 +114,9 @@ const accessMemory = new Map<string, { canEdit: boolean; checkedAt: number }>();
 const draftEvent = 'boop-note-drafts-changed';
 function documentOf(key: string) { return key.split(':session:')[0]; }
 function accessFor(key: string): { canEdit: boolean; checkedAt: number } | undefined {
+  // Quota failures can reject writes while reads still return an older grant.
+  const pending = accessMemory.get(documentOf(key));
+  if (pending) return pending;
   try { return JSON.parse(localStorage.getItem(accessPrefix + documentOf(key)) ?? 'null') ?? undefined; }
   catch { return accessMemory.get(documentOf(key)); }
 }
