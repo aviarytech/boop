@@ -20,7 +20,7 @@ Local version strings are not evidence of deployed or active versions. No releas
 - Every protected operation resolves current/legacy identity from server records. Each operation declares its resources and required scope. Internal HTTP registrations use the same authenticated boundary and recheck key revocation in the data transaction.
 - Public operation names remain, with optional legacy assertion fields accepted only when matching the authenticated account. These fields confer no authority. Shared business handlers receive authenticated context and declared business arguments only.
 - OTP/session storage helpers retain rejecting public compatibility names; the verified login HTTP flow uses internal registrations. The public account lookup is limited to the signed-in account. New identity links cannot be established by asserting another current or legacy DID.
-- Public list/resource reads require an active publication. Published lists remain readable without login; editing requires a logged-in human or an appropriately scoped agent. Bookmarks stop exposing a list when it is unpublished.
+- Public list/resource reads require an active publication. Published lists remain readable without login; editing requires ownership or an accepted editor grant, intersected with API-key scopes when applicable (see the #256 foundation cutover below). Bookmarks stop exposing a list when it is unpublished.
 - Site uploads now bind pending object keys to the authenticated account. Finish or restart any pre-cutover pending site uploads; existing stored site files remain readable through authenticated ownership checks. Attachment and site upload references reject path traversal.
 - The generated browser operation registry uses typed Convex references. After adding/renaming an authenticated operation, run `node scripts/generate-auth-client.mjs`; verify with `--check`.
 
@@ -166,3 +166,132 @@ boundary tests and 315 full Bun tests passed; frontend/backend TypeScript and th
 authenticated-client registry check passed. The existing React `act(...)` warning
 remains. Test-generated icons/splashes were restored. These are local handler and
 static checks, not deployed validation; the #236 limitations above still apply.
+
+
+## #256 private-sharing authorization foundation (draft; incomplete acceptance)
+
+This foundation changes backend authorization immediately when deployed. It is
+not the complete private-sharing release, does not complete #256 or #259, and
+includes no deployment, live codegen, migration, or historical auto-grants.
+Coordinate release with #257–#262 and the deployed-client inventory above.
+
+### Authority and internal integration
+
+- `listGrants` holds **accepted** viewer/editor roles against stable `users._id`
+  recipients and the existing list boundary (including notes). Owner identity
+  remains on the list. Pending invitations must use separate state and never
+  enter this table until verified explicit acceptance. Neither a bookmark,
+  public link, item authorship, nor an old collaborator record grants editing.
+- `actorQuery` defaults to read authority; `actorMutation` and `actorAction`
+  default to content-edit authority. Rename, whole-resource delete, publication,
+  account-level list categorization and anchoring writes explicitly require
+  owner authority. Anchor verification explicitly requires read authority and
+  `items:read` scope; it neither signs nor writes. Copy-source reads and public bookmarking explicitly require
+  read authority. Presence writes and comments require owner/editor authority;
+  a revoked comment author cannot delete comments using the old author exemption.
+- API scopes remain necessary in addition to resource authority, including
+  internal HTTP registrations and the action authorization checkpoint.
+  `canEdit` responses also reflect the credential's `items:write` scope.
+  An editor grant never permits owner publication/envelope replacement or access
+  to the owner's signing keys. Key custody and provenance signatures are unchanged.
+- `getListGrants`, `updateListGrant`, and `revokeListGrant` are owner-only and
+  operate only on existing accepted grants. `getMyListAccess` reveals owner DID
+  and the current caller's role; it never reveals other recipients. The backend
+  discovery query includes accepted shares; the dedicated sharing UI is #258.
+- `convex/lib/listGrants.ts:recordAcceptedListGrant` is a server library helper,
+  **not a callable Convex endpoint**. The #257 invitation-acceptance mutation must
+  verify the current invitation, expiry, matching verified email/account and
+  explicit acceptance in the same transaction, then consume that invitation and
+  call the helper. Existing grants are rejected rather than overwritten. Invite
+  replay/revocation/role changes must be resolved by that invitation state machine;
+  calling this helper alone is not proof of invitation acceptance.
+- Grants are read in the same query/mutation as resource authorization. Fresh
+  offline replays check access before inspecting resource revisions. Existing
+  receipts only acknowledge an already-completed operation. Grant deletion or
+  downgrade changes subsequent query results/writes; cached client data and
+  live transport invalidation timing are not proven by the local fixtures.
+- List deletion removes its accepted grants. Bounded account erasure drains
+  both grants on owned resources and grants received by the account. Marking an
+  owner for deletion immediately denies recipient reads/writes while cleanup runs.
+
+### Copies: explicit remaining #256 acceptance work
+
+Attachment-free list copies are owned by the copier, private, and grant-free.
+They retain independent items with remapped parent/tag IDs, omit the source
+owner's private category reference for recipients, and do not alter source
+ownership or carry source provenance proofs. They survive source revocation or
+resource deletion. A viewer/editor still needs `items:write` scope to create a
+server copy; existing readable exports use their normal read scopes.
+
+**Copies containing any attachments are rejected before destination, envelope,
+quota-reward, or item writes**, including legacy and mixed attachment arrays.
+The error tells the caller attachments must be exported separately and that the
+source is unchanged. Empty attachment arrays remain copyable. This is an interim
+safety restriction, not satisfaction or reinterpretation of the independent-copy
+criterion. Notes copying remains unsupported as before. A complete attachment
+copy requires staged physical object copies or a fully versioned, immutable
+storage/reference lifecycle. Reusing mutable bucket keys or a small reference
+counter is unsafe because old copies and reusable PUT URLs already exist.
+Historical copies are not migrated. Removing an attachment whose key belongs to
+another item is now rejected before storage deletion. Existing row/list/account
+erasure does not physically delete these bucket objects; explicit attachment
+removal does. No claim is made that historical copied attachments are independent.
+
+### Required #259 compatibility cutover
+
+Existing public reads remain available. **Signed-in public-link visitors lose
+editing unless they have an accepted editor grant.** Old browser/native clients
+may still offer edit controls or call these operations; the same retained legacy
+names now reject unauthorized writes. `SharedListResource` currently promises
+that signing in permits edits, and `ShareModal` still conflates sharing with
+publication. `NoteView` currently uses content `canEdit` for rename/delete
+controls, which a granted editor will see but the server rejects. The #259/#258
+client changes must use owner authority for those controls and clearly distinguish
+public reading from named access. Invitation acceptance and owner-facing grant
+creation are not included here, so deploying this foundation alone removes the
+old collaborator UX without providing its replacement. Do not ship it silently
+as a complete sharing experience; keep the PR draft pending coordinated review.
+Do not restore implicit public editing as a compatibility fallback.
+
+### Attachment and notification limits (#260 / authentication action follow-up)
+
+Attachment fetches authorize the current resource before issuing URLs, and new
+upload/removal actions require current edit authority and scope. The internal
+attachment checkpoints reauthenticate. Already-issued GET/PUT URLs remain bearer
+capabilities for up to 600 seconds; this foundation does not revoke them. There
+is still a gap between an action's authorization query and external storage I/O.
+A test explicitly demonstrates revocation after byte deletion rejecting the final
+metadata write while the external deletion has already happened. Resolving this
+requires the separate action/storage protocol; these checks are not atomic.
+
+Notification recipient lookup now filters current read access at scheduled send
+lookup, including grants, migrated accounts, and historical bookmarks after
+unpublishing. Bookmark-generated per-user notifications carry a list ID so they
+receive the same check. A revocation after token lookup can still race external
+push delivery. Client cache clearing, queued-draft recovery, invitation mail,
+unsent-work UX, and stale-save changes belong to the dependent issues.
+
+### Local verification scope
+
+The private-sharing suite calls real exported direct/legacy, internal, HTTP and
+action handlers with signed fixture JWTs and hashed API keys. It covers the
+owner/editor/viewer/outsider/anonymous matrix (plus pending-only accounts), metadata,
+notes/cards, attachment checks, ID substitution even across two authorized lists,
+API scope intersection, grant changes, copies, notification lookup and erasure.
+Storage signing/deletion is stubbed; no network side effects or live credentials
+are used. Fixture re-execution and observed grant-index reads demonstrate query
+logic and dependencies, not live WebSocket behavior. Convex schema validation/OCC,
+presigned URL revocation, actual bucket/push operations and web/iOS/Android
+cross-platform release behavior still need isolated integration/staging evidence.
+
+Foundation validation in the isolated worktree (checked-in Convex declarations,
+no live codegen): `node --test scripts/private-sharing.test.mjs` **52 passed**;
+`bun test` **446 passed, 0 failed** across 49 files; frontend `tsc -b`, backend
+`tsc -p convex/tsconfig.json`, generated auth registry `--check`, and ESLint on
+29 changed source/test files passed (generated declarations excluded). Vite build
+passed with Sentry uploads/analytics disabled and placeholder client environment.
+Existing large-chunk and React `act(...)` warnings remain. Test-generated icon and
+splash artifacts were restored. Independent review identified read-only anchor
+verification and accepted-share profile statistics; both corrections and their
+handler regressions are included. Formal review of the final commit and the
+integration/platform evidence above remain the coordinator's next steps.

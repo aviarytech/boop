@@ -19,6 +19,7 @@ export async function replayFixture(modules) {
     lists: [{ _id: 'L1', _creationTime: 1, assetDid: 'did:list', name: 'Groceries', ownerDid: owner.user.did, createdAt: 1 }],
     items: [{ _id: 'I1', _creationTime: 1, listId: 'L1', name: 'Milk', checked: false, createdByDid: owner.user.did, createdAt: 1, updatedAt: 1, vcProofs: [{ type: 'ExistingSignedProof', proof: 'do-not-replace', issuer: owner.user.did }] }],
     publications: [{ _id: 'P1', listId: 'L1', status: 'active' }], offlineReceipts: [],
+    listGrants: [{ _id: 'G1', listId: 'L1', recipientId: collaborator.user._id, role: 'editor', acceptedAt: 1 }],
   };
   let sequence = 0;
   const effects = [];

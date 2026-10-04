@@ -3,7 +3,7 @@ import { requireSession } from "./lib/session";
 import { v } from "convex/values";
 import { internalQuery, internalMutation, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { authenticate, type ResolvedActor } from "./lib/actor";
+import { requireScope, authenticate, type ResolvedActor } from "./lib/actor";
 import { verifyAuthToken } from "./lib/jwt";
 import { hashApiKey } from "./lib/apiKeyHelpers";
 import { AuthError } from "./lib/auth";
@@ -83,6 +83,8 @@ export const identity = internalQuery({
 export const authorize = internalQuery({
   args: {
     authToken: v.optional(v.string()), apiKey: v.optional(v.string()),
+    authority: v.union(v.literal("read"), v.literal("edit"), v.literal("owner")),
+    scope: v.union(v.literal("lists:read"), v.literal("items:read"), v.literal("items:write"), v.literal("*")),
     resources: v.object({
       lists: v.optional(v.array(v.union(v.id("lists"), v.null()))),
       items: v.optional(v.array(v.union(v.id("items"), v.null()))),
@@ -92,11 +94,12 @@ export const authorize = internalQuery({
   },
   handler: async (ctx, args): Promise<void> => {
     const actor = await authenticate(ctx, args);
+    requireScope(actor, args.scope);
     await authorizeResources(ctx, actor, {
       lists: args.resources.lists?.filter(id => id !== null),
       items: args.resources.items?.filter(id => id !== null),
       anchors: args.resources.anchors?.filter(id => id !== null),
       accounts: args.resources.accounts?.filter(id => id !== null),
-    });
+    }, args.authority);
   },
 });

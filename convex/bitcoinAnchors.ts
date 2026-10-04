@@ -84,6 +84,7 @@ function buildCanonicalState(
  * Called by the action after computing the hash.
  */
 export const { public: createAnchorRecord, internal: createAnchorRecordInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -108,6 +109,7 @@ export const { public: createAnchorRecord, internal: createAnchorRecordInternal 
  * Update anchor status after Bitcoin inscription.
  */
 export const { public: updateAnchorStatus, internal: updateAnchorStatusInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ anchors: [args.anchorId] }),
   scope: "items:write",
   args: {
@@ -172,6 +174,7 @@ export const { public: getListDataForAnchor, internal: getListDataForAnchorInter
  * @returns The anchor record ID
  */
 export const { public: anchorListState, internal: anchorListStateInternal } = actorAction({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -309,7 +312,10 @@ export const { public: getAnchorByTxid, internal: getAnchorByTxidInternal } = ac
       .withIndex("by_txid", (q) => q.eq("txid", txid))
       .first();
     
-    if (anchor) await authorizeResources(ctx, ctx.actor, { anchors: [anchor._id] });
+    if (anchor) {
+      try { await authorizeResources(ctx, ctx.actor, { anchors: [anchor._id] }); }
+      catch { return null; }
+    }
     return anchor;
   },
 });
@@ -368,8 +374,9 @@ export const { public: getAnchor, internal: getAnchorInternal } = actorQuery({
  * Verify anchor against current list state.
  */
 export const { public: verifyAnchorState, internal: verifyAnchorStateInternal } = actorAction({
+  authority: "read",
   resources: args => ({ anchors: [args.anchorId] }),
-  scope: "items:write",
+  scope: "items:read",
   args: {
     anchorId: v.id("bitcoinAnchors"),
   },

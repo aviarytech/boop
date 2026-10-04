@@ -193,6 +193,7 @@ export const { public: createList, internal: createListInternal, replay: createL
  * no claim to the original's history. The source list is left untouched.
  */
 export const { public: copyList, internal: copyListInternal } = actorMutation({
+  authority: "read",
   resources: args => ({ lists: [args.sourceListId] }),
   scope: "items:write",
   args: {
@@ -211,10 +212,12 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
     const source = await ctx.db.get(args.sourceListId);
     if (!source) throw new Error("List not found");
     if (isNote(source)) throw new Error("Notes cannot be copied");
-    // Copying mints a new identity naming this owner, so viewers who can merely
-    // read a shared list must not be able to do it.
-    if (![ctx.actor.did, ctx.actor.legacyDid].includes(source.ownerDid)) {
-      throw resourceUnavailable();
+    const items = await ctx.db.query("items")
+      .withIndex("by_list", q => q.eq("listId", args.sourceListId)).collect();
+    // A mutation cannot clone bucket bytes. Fail before creating a partial copy;
+    // shared keys would let either resource delete the other's attachment bytes.
+    if (items.some(item => item.attachments?.length)) {
+      throw new Error("Copying lists with attachments is not supported yet. Export attachments separately; the source has not been changed.");
     }
 
     const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
@@ -223,7 +226,7 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
       assetDid: args.assetDid,
       name: args.name,
       ownerDid: ctx.actor.did,
-      categoryId: source.categoryId,
+      categoryId: [ctx.actor.did, ctx.actor.legacyDid].includes(source.ownerDid) ? source.categoryId : undefined,
       createdAt: args.createdAt,
       // Presentation settings belong to the list, so the copy should look like
       // the original rather than reverting to the built-in defaults.
@@ -238,10 +241,13 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
 
     await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
 
-    const items = await ctx.db
-      .query("items")
-      .withIndex("by_list", (q) => q.eq("listId", args.sourceListId))
-      .collect();
+    const tagMap = new Map<Id<"tags">, Id<"tags">>();
+    const tags = await ctx.db.query("tags").withIndex("by_list", q => q.eq("listId", args.sourceListId)).collect();
+    for (const tag of tags) {
+      tagMap.set(tag._id, await ctx.db.insert("tags", {
+        listId, name: tag.name, color: tag.color, createdByDid: ctx.actor.did, createdAt: args.createdAt,
+      }));
+    }
 
     // Two passes: parentId points at a sibling item, so every row needs an id
     // before any parent link can be rewritten.
@@ -253,7 +259,8 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
     // in the second pass below, and vcProofs attest actions taken against the
     // SOURCE asset's DID — carrying them would attribute one asset's provenance
     // to another, the exact claim this copy exists to avoid making. Assignment
-    // projections/revisions are rebuilt from the source memberships below.
+    // projections/revisions are rebuilt; tag IDs are remapped, and attachments
+    // were rejected before any writes.
     const DROP = ["_id", "_creationTime", "parentId", "vcProofs", "assigneeDid", "assignmentsVersion"] as const;
 
     for (const item of items) {
@@ -261,7 +268,7 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
       for (const field of DROP) delete payload[field];
       const newId = await ctx.db.insert(
         "items",
-        { ...payload, listId, assignmentsVersion: 1 } as Omit<Doc<"items">, "_id" | "_creationTime">
+        { ...payload, listId, assignmentsVersion: 1, tags: item.tags?.flatMap(id => tagMap.has(id) ? [tagMap.get(id)!] : []) } as Omit<Doc<"items">, "_id" | "_creationTime">
       );
       await inheritAssignments(ctx, item, newId, ctx.actor.did, "copy");
       idMap.set(item._id, newId);
@@ -296,6 +303,7 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
  * Rename a list. Only the owner can rename.
  */
 export const { public: renameList, internal: renameListInternal, replay: renameListReplay } = actorMutation({
+  authority: "owner",
   offlineOperation: "renameList",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
@@ -330,6 +338,7 @@ export const { public: renameList, internal: renameListInternal, replay: renameL
  * Update the category of a list. Only owner can change.
  */
 export const { public: updateListCategory, internal: updateListCategoryInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -392,7 +401,7 @@ export const { public: getListEnvelope, internal: getListEnvelopeInternal } = ac
 
 /**
  * Get a list plus its items, but only if the viewer may access it (list owner
- * by current or legacy DID, or an actively published list). Returns null when
+ * by current or legacy DID, accepted recipient, or public reader). Returns null when
  * the list is missing OR access is denied — callers should surface null as a
  * 404 so a caller can't probe which list IDs exist. Used by the agent read API.
  * Internal: only the server-side agent read handler may call it, so the viewer
@@ -430,7 +439,7 @@ const listWithItemsOperation = actorQuery({
 });
 
 /**
- * Get all lists where user is the owner, plus any bookmarked published lists.
+ * Discover owned lists, accepted shares, and currently readable bookmarks.
  */
 export const { public: getUserLists, internal: getUserListsInternal } = actorQuery({
   resources: () => ({}),
@@ -453,6 +462,15 @@ export const { public: getUserLists, internal: getUserListsInternal } = actorQue
         if (!listMap.has(list._id.toString())) {
           listMap.set(list._id.toString(), list);
         }
+      }
+    }
+
+    const grants = await ctx.db.query("listGrants")
+      .withIndex("by_recipient", q => q.eq("recipientId", ctx.actor.userId)).collect();
+    for (const grant of grants) {
+      const list = await ctx.db.get(grant.listId);
+      if (list && await canUserViewList(ctx, list._id, ctx.actor.did, ctx.actor.legacyDid)) {
+        listMap.set(list._id.toString(), list);
       }
     }
 
@@ -521,6 +539,7 @@ export const { public: getLegacyListIds, internal: getLegacyListIdsInternal } = 
  * Only the owner can delete a list.
  */
 export const { public: deleteList, internal: deleteListInternal, replay: deleteListReplay } = actorMutation({
+  authority: "owner",
   offlineOperation: "deleteList",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
@@ -573,6 +592,9 @@ export const { public: deleteList, internal: deleteListInternal, replay: deleteL
       }
     }
 
+    const grants = await ctx.db.query("listGrants")
+      .withIndex("by_list_recipient", q => q.eq("listId", args.listId)).collect();
+    for (const grant of grants) await ctx.db.delete(grant._id);
     await ctx.db.delete(args.listId);
   },
 });
@@ -582,6 +604,7 @@ export const { public: deleteList, internal: deleteListInternal, replay: deleteL
  * Only the list owner can add custom aisles.
  */
 export const { public: addCustomAisle, internal: addCustomAisleInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -616,6 +639,7 @@ export const { public: addCustomAisle, internal: addCustomAisleInternal } = acto
  * Only the list owner can change view mode.
  */
 export const { public: updateItemViewMode, internal: updateItemViewModeInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {
@@ -641,6 +665,7 @@ export const { public: updateItemViewMode, internal: updateItemViewModeInternal 
  * Only the list owner can remove custom aisles.
  */
 export const { public: removeCustomAisle, internal: removeCustomAisleInternal } = actorMutation({
+  authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
   args: {

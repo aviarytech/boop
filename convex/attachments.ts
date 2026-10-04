@@ -7,7 +7,6 @@ import { actorAction, actorMutation, actorQuery } from "./lib/authenticated";
  */
 
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
   bucketKey as makeBucketKey,
@@ -54,8 +53,7 @@ export const { public: generateUploadUrl, internal: generateUploadUrlInternal } 
 
     const owned = await ctx.runQuery(internal.attachments.assertItemEditable, {
       itemId: args.itemId,
-      userDid: ctx.actor.did,
-      legacyDid: ctx.actor.legacyDid,
+      ...ctx.credentials,
     });
     if (!owned) {
       throw resourceUnavailable();
@@ -120,18 +118,18 @@ export const { public: removeAttachment, internal: removeAttachmentInternal } = 
   handler: async (ctx, args): Promise<void> => {
     const owned = await ctx.runQuery(internal.attachments.assertItemEditable, {
       itemId: args.itemId,
-      userDid: ctx.actor.did,
-      legacyDid: ctx.actor.legacyDid,
+      ...ctx.credentials,
     });
     if (!owned) {
       throw resourceUnavailable();
     }
 
-    if (!owned.keys.includes(args.bucketKey)) throw new Error("Attachment not found on this item");
+    if (!owned.keys.includes(args.bucketKey) || !isDirectChildKey(args.bucketKey, `attachments/${args.itemId}`)) throw resourceUnavailable();
     await deleteObject(args.bucketKey);
     await ctx.runMutation(internal.attachments.dropAttachment, {
       itemId: args.itemId,
       bucketKey: args.bucketKey,
+      ...ctx.credentials,
     });
   },
 });
@@ -162,25 +160,23 @@ export const { public: getAttachmentUrls, internal: getAttachmentUrlsInternal } 
   },
 });
 
-export const assertItemEditable = internalQuery({
-  args: {
-    itemId: v.id("items"),
-    userDid: v.string(),
-    legacyDid: v.optional(v.string()),
-  },
+// Internal action checkpoints reauthenticate current credentials and scopes.
+export const { internal: assertItemEditable } = actorQuery({
+  authority: "edit", scope: "items:write",
+  resources: args => ({ items: [args.itemId] }),
+  args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
-    if (!item) return null;
-    const canEdit = await canUserEditList(ctx, item.listId, args.userDid, args.legacyDid);
-    return canEdit ? { itemId: item._id, keys: (item.attachments ?? []).filter(entry => typeof entry === "object").map(entry => entry.key) } : null;
+    return item ? { itemId: item._id, keys: (item.attachments ?? []).filter(entry => typeof entry === "object").map(entry => entry.key) } : null;
   },
 });
 
-export const dropAttachment = internalMutation({
+export const { internal: dropAttachment } = actorMutation({
+  scope: "items:write", resources: args => ({ items: [args.itemId] }),
   args: { itemId: v.id("items"), bucketKey: v.string() },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
-    if (!item) return;
+    if (!item || !isDirectChildKey(args.bucketKey, `attachments/${args.itemId}`)) throw resourceUnavailable();
     const current = item.attachments ?? [];
     const remaining = current.filter(
       (entry) => typeof entry !== "object" || entry.key !== args.bucketKey

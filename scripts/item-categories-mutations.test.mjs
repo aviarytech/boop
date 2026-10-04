@@ -64,6 +64,7 @@ function makeCtx({ list, items = [] } = {}) {
           },
           collect: async () => working,
           first: async () => working[0] ?? null,
+          unique: async () => working[0] ?? null,
         };
         return result;
       },

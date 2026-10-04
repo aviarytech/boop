@@ -85,6 +85,7 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     for (const table of ["itemAssignees", "tags", "activities", "presence", "publications", "bookmarks", "bitcoinAnchors", "noteBodies", "listEnvelopes"] as const) {
       if (await drain(ctx.db.query(table).withIndex("by_list", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     }
+    if (await drain(ctx.db.query("listGrants").withIndex("by_list_recipient", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     await ctx.db.delete(listId);
     return false;
   }
@@ -98,6 +99,7 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     }
     if (await drain(ctx.db.query("didLogs").withIndex("by_user_did", q => q.eq("userDid", did)).take(DELETE_BATCH_SIZE))) return false;
   }
+  if (await drain(ctx.db.query("listGrants").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
   const code = await ctx.db.query("referralCodes").withIndex("by_user", q => q.eq("userId", userId)).first();
   if (code) {
     if (await drain(ctx.db.query("referrals").withIndex("by_code", q => q.eq("referralCodeId", code._id)).take(DELETE_BATCH_SIZE))) return false;
@@ -187,12 +189,16 @@ export const { public: getUserStats, internal: getUserStatsInternal } = actorQue
       bookmarkedListIds.push(...bookmarks.map((b) => b.listId));
     }
 
-    const ownedListIds = new Set(ownedLists.map((l) => l._id));
+    const grants = await ctx.db.query("listGrants")
+      .withIndex("by_recipient", q => q.eq("recipientId", ctx.actor.userId)).collect();
+    const ownedCandidates = new Set(ownedLists.map(list => list._id));
+    const candidates = new Set([...ownedCandidates, ...bookmarkedListIds, ...grants.map(grant => grant.listId)]);
+    const ownedListIds: Id<"lists">[] = [];
     const sharedListIds: Id<"lists">[] = [];
-    for (const id of new Set(bookmarkedListIds)) {
-      if (!ownedListIds.has(id) && await canUserViewList(ctx, id, userDid, legacyDid)) sharedListIds.push(id);
+    for (const id of candidates) {
+      if (!await canUserViewList(ctx, id, userDid, legacyDid)) continue;
+      (ownedCandidates.has(id) ? ownedListIds : sharedListIds).push(id);
     }
-    
     const allListIds = [...ownedListIds, ...sharedListIds];
 
     // Count items across all lists
@@ -211,7 +217,7 @@ export const { public: getUserStats, internal: getUserStatsInternal } = actorQue
 
     return {
       totalLists: allListIds.length,
-      ownedLists: ownedLists.length,
+      ownedLists: ownedListIds.length,
       sharedLists: sharedListIds.length,
       totalItems,
       completedItems,
