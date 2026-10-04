@@ -93,7 +93,8 @@ test("a 401 rolls back the optimistic check and shows a visible error", async ()
   assert.equal(item.querySelector("p").className.includes("line-through"), false);
 });
 
-for (const role of ["nonmember", "viewer", "pending invitee"]) test(`${role}: signing in never enables public-list writes`, async () => {
+// The backend suite covers individual roles; this fixture covers a denied capability.
+test("a signed-in reader without edit capability cannot send public-list writes", async () => {
   state.token = "session-token";
   state.did = "did:reader";
   const calls = await renderLoaded();
@@ -115,7 +116,9 @@ test("revoked editor receives actionable denial and optimistic state rolls back"
 });
 
 
-test("the next public poll removes rendered content after unpublishing", async () => {
+// Compatibility coverage for the visible 404 behavior, which also existed before #259.
+// This does not claim to observe whether React retained the prior resource in memory.
+test("public polling continues to hide content after a 404", async () => {
   const originalInterval = globalThis.setInterval;
   let poll;
   globalThis.setInterval = (callback, delay) => { if (delay === 5000) poll = callback; return originalInterval(callback, delay); };
