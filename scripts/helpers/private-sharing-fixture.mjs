@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { getFunctionName } from "convex/server";
-import { createAuthFixture } from "./auth-fixture.mjs";
+import { AUTH_FIXTURE_SECRET, createAuthFixture } from "./auth-fixture.mjs";
+
+// Sessions are cached across test files in Bun. Their verifier must use the same
+// immutable secret even when another suite changes the process environment.
+export const PRIVATE_SHARING_JWT_SECRET = AUTH_FIXTURE_SECRET;
 
 export const sessions = Object.fromEntries(await Promise.all(
   ["owner", "editor", "viewer", "outsider", "pending"].map(async name => [name,
-    await createAuthFixture(`did:${name}`, { _id: `U-${name}`, email: `${name}@example.test`, displayName: name, createdAt: 1 }),
+    await createAuthFixture(`did:${name}`, { _id: `U-${name}`, email: `${name}@example.test`, displayName: name, createdAt: 1 }, PRIVATE_SHARING_JWT_SECRET),
   ]),
 ));
 export const credentials = name => name === "anonymous" ? {} : { authToken: sessions[name].authToken };

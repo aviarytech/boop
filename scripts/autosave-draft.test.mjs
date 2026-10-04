@@ -262,3 +262,51 @@ test('draft sessions and edits work without crypto.randomUUID (iOS 15)', async (
     else delete crypto.randomUUID;
   }
 });
+
+test('offline reconnect sends the original base and preserves a conflicting draft until explicit reconciliation', async () => {
+  let reconnect;
+  let server = 'base';
+  const writes = [];
+  const { result, rerender, unmount } = renderHook(({ saved }) => useAutosaveDraft({
+    saved, canEdit: true, draftKey: 'editor:note:offline-cas',
+    persist: async (text, base) => {
+      writes.push({ text, base });
+      if (writes.length === 1) await new Promise(resolve => { reconnect = resolve; });
+      if (base !== server) throw Object.assign(Error('Server Error'), { data: { code: 'NOTE_CONFLICT' } });
+      server = text;
+    },
+  }), { initialProps: { saved: server } });
+  try {
+    await act(async () => result.current.onChange('offline work'));
+    let pending;
+    await act(async () => { pending = result.current.retry(); });
+    server = 'someone else changed the note';
+    await act(async () => { rerender({ saved: server }); reconnect(); await pending; });
+    assert.equal(result.current.status, 'conflict');
+    assert.equal(result.current.value, 'offline work');
+    assert.equal(server, 'someone else changed the note');
+    await act(async () => result.current.retry());
+    assert.equal(writes.length, 1);
+    await act(async () => result.current.saveDraft());
+    assert.deepEqual(writes[1], { text: 'offline work', base: 'someone else changed the note' });
+    assert.equal(server, 'offline work');
+  } finally { unmount(); }
+});
+
+test('permission rejection is distinct from conflict, keeps draft and blocks retries/reconciliation', async () => {
+  let writes = 0;
+  const key = 'editor:note:denied';
+  const { result, unmount } = renderHook(() => useAutosaveDraft({ saved: 'base', canEdit: true, draftKey: key,
+    persist: async () => { writes++; throw Object.assign(Error('Server Error'), {
+      data: { kind: 'auth', code: 'FORBIDDEN', message: 'Resource unavailable' },
+    }); },
+  }));
+  await act(async () => result.current.onChange('independent unsent text'));
+  await act(async () => result.current.retry());
+  assert.equal(result.current.status, 'denied');
+  await act(async () => { result.current.retry(); result.current.saveDraft(); });
+  assert.equal(writes, 1);
+  assert.ok(durableDrafts(key).some(d => d.text === 'independent unsent text'));
+  await act(async () => unmount());
+  assert.equal(writes, 1);
+});

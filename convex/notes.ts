@@ -81,7 +81,9 @@ export const { public: updateNoteBody, internal: updateNoteBodyInternal } = acto
       throw resourceUnavailable();
     }
     const row = await getBodyRow(ctx, args.listId);
-    if (args.expectedBody !== undefined && (row?.body ?? "") !== args.expectedBody) {
+    // Optional on the wire so legacy requests get a recoverable conflict,
+    // never an unconditional write. Authorization must precede this check.
+    if (args.expectedBody === undefined || (row?.body ?? "") !== args.expectedBody) {
       throw noteConflict();
     }
     const updatedAt = Date.now();

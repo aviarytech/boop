@@ -24,13 +24,14 @@ export function draftText(key: string): string | null {
   } catch { return null; }
 }
 export function clearDraft(key: string, record: string | null) {
-  if (record === null || readDraft(key) !== record) return;
+  if (record === null || readDraft(key) !== record) return false;
   memory.delete(key);
   released.delete(key);
   try {
     localStorage.removeItem(prefix + key);
     localStorage.removeItem(releasePrefix + key);
   } catch { /* SPA fallback */ }
+  return true;
 }
 
 export function draftBase(key: string): string | undefined {
@@ -43,7 +44,10 @@ export function draftBase(key: string): string | undefined {
 
 export type StoredDraft = { key: string; record: string; text: string; base?: string; updatedAt: number };
 /** Include legacy single-slot drafts, but keep every editing session separate. */
-export function listDrafts(documentKey: string): StoredDraft[] {
+// Aliases must come from verified identities of the current account, never
+// from a shared resource owner. Writes continue under the canonical key.
+export function listDrafts(documentKey: string, aliases: readonly string[] = []): StoredDraft[] {
+  const documentKeys = new Set([documentKey, ...aliases]);
   const keys = new Set(memory.keys());
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -51,7 +55,7 @@ export function listDrafts(documentKey: string): StoredDraft[] {
       if (key?.startsWith(prefix)) keys.add(key.slice(prefix.length));
     }
   } catch { /* memory-only browser */ }
-  return [...keys].filter(key => key === documentKey || key.startsWith(documentKey + ":session:"))
+  return [...keys].filter(key => [...documentKeys].some(documentKey => key === documentKey || key.startsWith(documentKey + ":session:")))
     .flatMap(key => {
       const record = readDraft(key);
       try {

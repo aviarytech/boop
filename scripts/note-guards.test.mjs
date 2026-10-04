@@ -94,7 +94,7 @@ test('generated api.d.ts registers every Convex module', async () => {
 
 test('body writes maintain summaries and summary reads never load full bodies', async () => {
   const ctx = fixture();
-  await call('notes', 'updateNoteBody', ctx, { authToken, listId: 'N1', body: '# Hello world' });
+  await call('notes', 'updateNoteBody', ctx, { authToken, listId: 'N1', body: '# Hello world', expectedBody: 'secret thoughts' });
   assert.equal(ctx.rows.noteBodies[0].body, '# Hello world');
   assert.equal(ctx.rows.lists[0].noteSummary.excerpt, 'Hello world');
   assert.equal(ctx.rows.lists[0].noteSummary.wordCount, 3);
