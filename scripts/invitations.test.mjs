@@ -167,7 +167,7 @@ test("generic mail, stable provider idempotency, failure visibility, and obsolet
     assert.equal((await call("getListInvitations", ctx, { ...owner, listId: "L" }))[0].delivery, "failed");
     const sent = JSON.parse(calls[0].options.body);
     assert.equal(sent.to, "recipient@example.test");
-    assert.equal(sent.text.split("\n")[0], 'An account named "owner Friend" invited you to collaborate on boop.');
+    assert.equal(sent.text.split("\n")[0], 'An account named “owner Friend” invited you to collaborate on boop.');
     for (const secret of ["Private list", "Secret item", "Private note", "attachments", "owner@example.test", '"listId"']) assert.equal(JSON.stringify(sent).includes(secret), false);
     assert.equal(calls[0].options.headers["Idempotency-Key"], `private-invitation/${invite.invitationId}/1`);
     const fresh = await call("resendInvitation", ctx, { ...manage(invite), requestId: "delivery_retry" });
@@ -400,7 +400,7 @@ test("realistic public names retain punctuation and appear as quoted account att
       globalThis.fetch = originalFetch;
       if (originalKey === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = originalKey;
     }
-    assert.equal(message.text.split("\n")[0], `An account named ${JSON.stringify(name)} invited you to collaborate on boop.`);
+    assert.equal(message.text.split("\n")[0], `An account named “${name}” invited you to collaborate on boop.`);
     assert.deepEqual(message.text.match(/https?:\/\/\S+/g), [`https://boop.ad/invitations/${invite.invitationId}/1`]);
     assert.equal(JSON.stringify(message).includes("owner@example.test"), false);
   }

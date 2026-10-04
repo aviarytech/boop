@@ -19,7 +19,7 @@ export const deliver = internalAction({
         headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `private-invitation/${args.invitationId}/${args.version}` },
         body: JSON.stringify({ from: "brian@boop.ad", to: payload.email,
           subject: "You have a private invitation on boop",
-          text: `An account named ${JSON.stringify(payload.inviter)} invited you to collaborate on boop.\n\nSign in with this email address to review and explicitly accept your invitation. Invitations expire after seven days.\n\n${url}\n\nYou can also find pending invitations in boop after signing in.`,
+          text: `An account named “${payload.inviter}” invited you to collaborate on boop.\n\nSign in with this email address to review and explicitly accept your invitation. Invitations expire after seven days.\n\n${url}\n\nYou can also find pending invitations in boop after signing in.`,
         }),
       });
       if (response.ok) delivery = "sent";
