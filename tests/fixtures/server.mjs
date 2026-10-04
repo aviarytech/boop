@@ -67,6 +67,10 @@ function query(account, path, args) {
     case 'referrals:getReferralCode': return { code: 'e2e-code' };
     case 'notifications:hasSubscription': return false;
     case 'lists:getListEnvelope': return null;
+    case 'listGrants:getSharedWithMe':
+    case 'listGrants:getListGrants':
+    case 'invitations:getListInvitations':
+    case 'invitations:getPendingInvitations':
     case 'lists:getLegacyListIds':
     case 'publication:getUserBookmarkIds':
     case 'categories:getUserCategories':

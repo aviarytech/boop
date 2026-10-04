@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { OwnerInvitations } from "./SharingControls";
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -172,9 +172,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Invite someone by email as a viewer or editor. They must accept the invitation. Adding or removing named access does not change public publication.
           </p>
-          <Link to={`/invitations?listId=${encodeURIComponent(list._id)}`} className="inline-block px-4 py-3 rounded-xl bg-amber-500 text-white font-semibold">
-            Invite people and manage access
-          </Link>
+          <OwnerInvitations key={list._id} listId={list._id} embedded />
         </section>
         <section aria-labelledby="share-public-title" className="space-y-5 border-t border-gray-200 dark:border-gray-700 pt-5">
           <h3 id="share-public-title" className="font-semibold text-gray-900 dark:text-gray-100">Publish publicly</h3>

@@ -78,6 +78,7 @@ export const authenticatedOperations = new Set([
   api.items.updateItem,
   api.listGrants.getListGrants,
   api.listGrants.getMyListAccess,
+  api.listGrants.getSharedWithMe,
   api.listGrants.leaveList,
   api.listGrants.revokeListGrant,
   api.listGrants.updateListGrant,

@@ -684,6 +684,7 @@ export function ListView() {
 
       className="max-w-3xl mx-auto"
     >
+      {(access?.role === "viewer" || access?.role === "editor") && <Link to="/shared" className="inline-block mb-4 underline">Your access · Shared with me</Link>}
       {/* Header - Redesigned for less crowding */}
       <div className="mb-6">
         <div className="flex items-start gap-3">

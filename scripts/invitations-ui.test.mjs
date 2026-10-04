@@ -225,3 +225,11 @@ test("Share with people preselects only an owned list and reports public access 
   assert.equal(screen.getByLabelText("Your list or note").value, "");
   assert.equal(screen.queryByLabelText("Recipient email"), null);
 });
+
+test("historically accepted invitation identifies ended access without claiming a current grant", () => {
+  reset(); state.invitations = [{ ...pending, status: "accepted", delivery: "sent", email: "former@example.test", grantId: "old-grant" }];
+  mount("/invitations?listId=L");
+  assert.ok(screen.getByText(/Access ended \(revoked or left\)/));
+  assert.ok(screen.getByRole("button", { name: "Resend" }));
+  assert.equal(screen.queryByRole("button", { name: "Revoke access" }), null);
+});

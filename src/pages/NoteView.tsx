@@ -72,6 +72,8 @@ export function NoteView() {
 // Split out so the initial mode can be derived once from the first loaded body.
 function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">; note: NoteBody; draftKey?: string; draftAliases: readonly string[] }) {
   const navigate = useNavigate();
+  const { did, legacyDid } = useCurrentUser();
+  const isOwner = list.ownerDid === did || list.ownerDid === legacyDid;
   const { haptic } = useSettings();
   const { isOnline } = useOffline();
   const { categories } = useCategories();
@@ -188,15 +190,15 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
 
             <HeaderActionsMenu
               subject="note"
-              canShare={false}
+              canShare={isOwner}
               canPublish={false}
               canSaveTemplate={false}
-              canRename={note.canEdit}
-              canChangeCategory={note.canEdit}
-              canDelete={note.canEdit}
+              canRename={isOwner}
+              canChangeCategory={isOwner}
+              canDelete={isOwner}
               isOnline={isOnline}
               isPublished={false}
-              onShare={() => {}}
+              onShare={() => navigate(`/invitations?listId=${encodeURIComponent(list._id)}`)}
               onPublish={() => {}}
               onSaveTemplate={() => {}}
               onRename={() => setDialog("rename")}
@@ -208,6 +210,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
         </div>
       </div>
 
+      {!isOwner && <Link to="/shared" className="inline-block mb-4 underline">Your access · Shared with me</Link>}
       {editingUnavailable
         ? <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} onDiscard={discardStoredDraft} />
         : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
@@ -237,13 +240,13 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
       )}
 
       <Suspense fallback={null}>
-        {dialog === "delete" && (
+        {isOwner && dialog === "delete" && (
           <DeleteListDialog list={list} onClose={() => setDialog(null)} onDeleted={() => navigate("/d")} />
         )}
-        {dialog === "rename" && (
+        {isOwner && dialog === "rename" && (
           <RenameListDialog list={list} onClose={() => setDialog(null)} />
         )}
-        {dialog === "category" && (
+        {isOwner && dialog === "category" && (
           <ChangeCategoryDialog listId={list._id} currentCategoryId={list.categoryId} onClose={() => setDialog(null)} />
         )}
       </Suspense>

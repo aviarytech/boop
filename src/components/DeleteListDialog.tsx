@@ -55,7 +55,7 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
       >
         <h2 id="delete-dialog-title" className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Delete {subject === "note" ? "Note" : "List"}</h2>
         <p id="delete-dialog-description" className="text-gray-600 dark:text-gray-300 mb-4">
-          Are you sure you want to delete "{list.name}"? This will permanently delete the {subject}{subject === "list" ? " and all its items" : ""}. This action cannot be undone.
+          Are you sure you want to delete "{list.name}"? This will permanently delete the {subject}{subject === "list" ? " and all its items" : ""}. This action cannot be undone. Everyone loses access. Independent copies and exports remain and cannot be recalled.
         </p>
 
         {error && (

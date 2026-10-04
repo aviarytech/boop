@@ -4,6 +4,7 @@
       {
         "appIDs": ["8DHAG5YC38.ad.boop.app"],
         "components": [
+          { "/": "/invitations/*/*", "comment": "Review a private invitation after sign-in" },
           { "/": "/list/*", "comment": "Individual list view" },
           { "/": "/join/*/*", "comment": "Join list via invite" },
           { "/": "/public/*", "comment": "Public list view" }

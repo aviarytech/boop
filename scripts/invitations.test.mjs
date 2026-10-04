@@ -435,3 +435,49 @@ test("recipient leave requires grant-management scope, blocks old acceptance rep
   const fresh = await call('resendInvitation', ctx, { ...manage(invite), requestId: 'fresh_after_leave' });
   assert.equal((await accept(ctx, fresh, auth)).role, 'viewer');
 });
+
+test("accepted lists and notes appear in private discovery; leave removes only own access and prevents replay", async () => {
+  const ctx = make();
+  const recipient = await login(ctx);
+  for (const listId of ["L", "N"]) {
+    const invite = await create(ctx, { listId });
+    await call("acceptInvitation", ctx, { ...recipient, ...invite, accept: true });
+    const shared = await modules.listGrants.getSharedWithMe._handler(ctx, recipient);
+    assert.ok(shared.some(row => row.listId === listId));
+    const row = shared.find(row => row.listId === listId);
+    assert.deepEqual(Object.keys(row).sort(), ["acceptedAt", "kind", "listId", "name", "owner", "published", "role"]);
+    assert.equal(row.role, "viewer");
+    assert.equal(row.published, false);
+    assert.equal(ctx.rows.bookmarks.length, 0);
+    await modules.listGrants.leaveList._handler(ctx, { ...recipient, listId });
+    assert.equal((await modules.listGrants.getSharedWithMe._handler(ctx, recipient)).some(row => row.listId === listId), false);
+    assert.ok(ctx.rows.lists.some(row => row._id === listId));
+    await assert.rejects(call("acceptInvitation", ctx, { ...recipient, ...invite, accept: true }));
+    assert.ok(ctx.rows.listGrants.some(row => row.listId === listId && row.recipientId === "U-editor"));
+  }
+});
+
+test("discovery excludes pending, bookmarks, deleted resources and other recipients, masks owner private identity", async () => {
+  const ctx = make();
+  ctx.rows.users.find(row => row._id === "U-owner").displayNameChosenAt = undefined;
+  ctx.rows.publications.push({ _id: "P", listId: "L", status: "active" });
+  const shared = await modules.listGrants.getSharedWithMe._handler(ctx, credentials("viewer"));
+  assert.equal(shared.length, 2);
+  assert.ok(shared.every(row => row.role === "viewer" && row.owner === "Owner"));
+  assert.equal(shared.find(row => row.listId === "L").published, true);
+  assert.deepEqual(await modules.listGrants.getSharedWithMe._handler(ctx, credentials("pending")), []);
+  await ctx.db.delete("N");
+  assert.equal((await modules.listGrants.getSharedWithMe._handler(ctx, credentials("viewer"))).length, 1);
+  await assert.rejects(modules.listGrants.getSharedWithMe._handler(ctx, {}));
+});
+
+test("private discovery respects the owner's deletion barrier before bounded cleanup removes resources", async () => {
+  const ctx = make(), auth = credentials("viewer");
+  assert.equal((await modules.listGrants.getSharedWithMe._handler(ctx, auth)).length, 2);
+  ctx.rows.users.find(user => user._id === "U-owner").deletionRequestedAt = Date.now();
+  ctx.rows.publications.push({ _id: "P-deleting", listId: "L", status: "active" });
+  // Rows and grants deliberately remain: erasure is asynchronous, denial is immediate.
+  assert.ok(ctx.rows.lists.some(list => list._id === "L"));
+  assert.deepEqual(await modules.listGrants.getSharedWithMe._handler(ctx, auth), []);
+  assert.deepEqual(await modules.listGrants.getSharedWithMeInternal._handler(ctx, { apiKey: "key-viewer" }), []);
+});
