@@ -150,7 +150,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
               >
                 {list.name}
               </h1>
-              <ListVerificationBadge hasVC={!!list.assetDid} anchorStatus="none" did={list.assetDid} />
+              <ListVerificationBadge anchorStatus="none" did={list.assetDid} />
             </div>
             <div
               className="flex items-center gap-2 text-[12px] mt-1 text-stone-500 dark:text-stone-400 flex-wrap"

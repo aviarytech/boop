@@ -719,7 +719,6 @@ export function ListView() {
             {isLegacyList && <LegacyBadge />}
             {/* Verification badge for list */}
             <ListVerificationBadge
-              hasVC={!!list.assetDid}
               anchorStatus={(publicationStatus?.anchorStatus as VerificationState) ?? "none"}
               did={list.assetDid}
               anchorBlockHeight={publicationStatus?.anchorBlockHeight}

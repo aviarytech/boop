@@ -1,8 +1,8 @@
 /**
- * VerificationBadge - Shows verification status for data authenticity
+ * VerificationBadge - Shows identifier presence and separate anchor status
  * 
  * Displays visual indicators for:
- * - ✓ Has VC (ownership/authorship proof via DID)
+ * - DID present (unverified identifier, not ownership/authorship proof)
  * - ⚓ Anchored to Bitcoin (if anchor proof exists)
  * 
  * Used on both list headers and individual items.
@@ -13,11 +13,9 @@ import { useState } from "react";
 export type VerificationState = "verified" | "pending" | "none";
 
 export interface VerificationStatus {
-  /** Whether the data has a verifiable credential (DID-backed proof) */
-  hasVC: boolean;
   /** Anchor status: verified (confirmed on chain), pending (submitted), or none */
   anchorStatus: VerificationState;
-  /** Optional: The DID backing this data */
+  /** Optional: An identifier associated with this data; presence is not verification */
   did?: string;
   /** Optional: Block height where anchor was confirmed */
   anchorBlockHeight?: number;
@@ -34,9 +32,9 @@ interface VerificationBadgeProps {
 }
 
 /**
- * Icon component for the verified checkmark
+ * Neutral information icon for identifier metadata
  */
-function VerifiedIcon({ className }: { className?: string }) {
+function IdentifierIcon({ className }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -48,7 +46,7 @@ function VerifiedIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={2}
-        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+        d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0"
       />
     </svg>
   );
@@ -121,7 +119,7 @@ function BadgeIndicator({
 }: {
   icon: React.ReactNode;
   label: string;
-  state: VerificationState;
+  state: VerificationState | "unverified";
   compact?: boolean;
   size?: "sm" | "md";
   tooltip: React.ReactNode;
@@ -134,6 +132,7 @@ function BadgeIndicator({
 
   const stateStyles = {
     verified: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700",
+    unverified: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700",
     pending: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
     none: "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700",
   };
@@ -145,6 +144,7 @@ function BadgeIndicator({
   return (
     <BadgeTooltip content={tooltip}>
       <span
+        aria-label={label}
         className={`inline-flex items-center gap-1 rounded-full border font-medium ${sizeClasses} ${stateStyles[state]}`}
       >
         <span className={iconSize}>{icon}</span>
@@ -162,13 +162,13 @@ export function VerificationBadge({
   compact = false,
   size = "sm",
 }: VerificationBadgeProps) {
-  const vcState: VerificationState = status.hasVC ? "verified" : "none";
+  const hasDid = Boolean(status.did);
   
-  const vcTooltip = status.hasVC ? (
+  const identifierTooltip = hasDid ? (
     <div>
-      <div className="font-semibold mb-1">✓ Verifiable Credential</div>
+      <div className="font-semibold mb-1">DID (unverified)</div>
       <div className="text-gray-300">
-        This data has cryptographic proof of ownership via a Decentralized Identifier (DID).
+        An identifier is recorded for this data. Its presence does not verify authenticity, ownership, or authorship.
       </div>
       {status.did && (
         <div className="mt-1 text-gray-400 text-[10px] font-mono truncate max-w-[200px]">
@@ -178,9 +178,9 @@ export function VerificationBadge({
     </div>
   ) : (
     <div>
-      <div className="font-semibold mb-1">No Credential</div>
+      <div className="font-semibold mb-1">No DID</div>
       <div className="text-gray-300">
-        This data does not have a verifiable credential attached.
+        No decentralized identifier is recorded for this data.
       </div>
     </div>
   );
@@ -223,23 +223,23 @@ export function VerificationBadge({
   };
 
   // In compact mode with nothing to show, return null
-  if (compact && !status.hasVC && status.anchorStatus === "none") {
+  if (compact && !hasDid && status.anchorStatus === "none") {
     return null;
   }
 
   return (
     <div className="inline-flex items-center gap-1">
       <BadgeIndicator
-        icon={<VerifiedIcon className="w-full h-full" />}
-        label="VC"
-        state={vcState}
+        icon={<IdentifierIcon className="w-full h-full" />}
+        label={hasDid ? "DID (unverified)" : "No DID"}
+        state={hasDid ? "unverified" : "none"}
         compact={compact}
         size={size}
-        tooltip={vcTooltip}
+        tooltip={identifierTooltip}
       />
       <BadgeIndicator
         icon={<AnchorIcon className="w-full h-full" />}
-        label={status.anchorStatus === "pending" ? "Pending" : "Anchored"}
+        label={status.anchorStatus === "verified" ? "Anchored" : status.anchorStatus === "pending" ? "Pending" : "Not anchored"}
         state={status.anchorStatus}
         compact={compact}
         size={size}
@@ -250,25 +250,23 @@ export function VerificationBadge({
 }
 
 /**
- * Compact inline badge for items - shows only when verified
+ * Compact inline badge for items - shows identifier metadata or anchor status
  */
 export function ItemVerificationBadge({
-  hasVC,
   anchorStatus = "none",
   did,
 }: {
-  hasVC: boolean;
   anchorStatus?: VerificationState;
   did?: string;
 }) {
-  // Only show if there's something to verify
-  if (!hasVC && anchorStatus === "none") {
+  // Only show if identifier metadata or anchor status is available
+  if (!did && anchorStatus === "none") {
     return null;
   }
 
   return (
     <VerificationBadge
-      status={{ hasVC, anchorStatus, did }}
+      status={{ anchorStatus, did }}
       compact
       size="sm"
     />
@@ -279,13 +277,11 @@ export function ItemVerificationBadge({
  * Full badge for list headers - always shows status
  */
 export function ListVerificationBadge({
-  hasVC,
   anchorStatus = "none",
   did,
   anchorBlockHeight,
   anchorTxId,
 }: {
-  hasVC: boolean;
   anchorStatus?: VerificationState;
   did?: string;
   anchorBlockHeight?: number;
@@ -293,7 +289,7 @@ export function ListVerificationBadge({
 }) {
   return (
     <VerificationBadge
-      status={{ hasVC, anchorStatus, did, anchorBlockHeight, anchorTxId }}
+      status={{ anchorStatus, did, anchorBlockHeight, anchorTxId }}
       compact={false}
       size="md"
     />
