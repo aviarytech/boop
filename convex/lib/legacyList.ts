@@ -18,7 +18,8 @@ export const RETROACTIVE_GENESIS_MS = 60_000;
 /** When the genesis event's proof was signed, or null if unreadable. */
 export function genesisSealedAt(envelope: string): number | null {
   try {
-    const proof = JSON.parse(envelope)?.eventLog?.events?.[0]?.proof;
+    const log = JSON.parse(envelope)?.eventLog;
+    const proof = log?.log?.[0]?.proof ?? log?.events?.[0]?.proof;
     const created = (Array.isArray(proof) ? proof[0] : proof)?.created;
     const ms = created ? Date.parse(created) : NaN;
     return Number.isNaN(ms) ? null : ms;
