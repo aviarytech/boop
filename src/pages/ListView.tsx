@@ -87,6 +87,11 @@ export function ListView() {
 
   const listId = id as Id<"lists">;
   const list = useQuery(api.lists.getList, { listId });
+  const access = useQuery(api.listGrants.getMyListAccess, list ? { listId } : "skip");
+  // getList already enforces read authority, including accepted private grants.
+  // Publication alone never confers content-editing or management capabilities.
+  const userIsOwner = access?.role === "owner";
+  const canUserEdit = userIsOwner || access?.role === "editor";
 
   // Same source of truth as the list index, asked for one id.
   const legacyIds = useQuery(
@@ -142,13 +147,14 @@ export function ListView() {
   // Wrap checkItem to also record streak
   const checkItemWithStreak = useCallback(
     async (itemId: Id<"items">, checkedByDid: string, legacyDid?: string) => {
+      if (!canUserEdit) return;
       await checkItem(itemId, checkedByDid, legacyDid);
       const milestone = recordTaskCompletion();
       if (milestone !== null) {
         setCelebrationMilestone(milestone);
       }
     },
-    [checkItem, recordTaskCompletion]
+    [canUserEdit, checkItem, recordTaskCompletion]
   );
 
   // Mutation for removing items via keyboard
@@ -165,6 +171,7 @@ export function ListView() {
 
   // Multi-select callbacks (after items is defined)
   const toggleSelection = useCallback((itemId: Id<"items">) => {
+    if (!canUserEdit) return;
     haptic('light');
     setSelectedIds(prev => {
       const newSet = new Set(prev);
@@ -179,13 +186,14 @@ export function ListView() {
       }
       return newSet;
     });
-  }, [haptic]);
+  }, [canUserEdit, haptic]);
 
   const enterSelectMode = useCallback((itemId: Id<"items">) => {
+    if (!canUserEdit) return;
     haptic('medium');
     setIsSelectMode(true);
     setSelectedIds(new Set([itemId]));
-  }, [haptic]);
+  }, [canUserEdit, haptic]);
 
   const selectAll = useCallback(() => {
     haptic('light');
@@ -225,7 +233,7 @@ export function ListView() {
 
   // Item view mode (alphabetical vs categorized) — local state for instant feedback, persisted to list doc
   const updateItemViewModeMutation = useMutation(api.lists.updateItemViewMode);
-  const serverItemViewMode: ItemViewMode = (list as any)?.itemViewMode ?? (isGroceryList ? "categorized" : "alphabetical");
+  const serverItemViewMode: ItemViewMode = list?.itemViewMode ?? (isGroceryList ? "categorized" : "alphabetical");
   const [localItemViewMode, setLocalItemViewMode] = useState<ItemViewMode | null>(null);
   const itemViewMode: ItemViewMode = localItemViewMode ?? serverItemViewMode;
 
@@ -311,9 +319,10 @@ export function ListView() {
   }, [items, notificationsEnabled, scheduleItemsNotifications]);
 
   const handleDragStart = useCallback((itemId: Id<"items">) => {
+    if (!canUserEdit) return;
     haptic('light');
     setDraggedItemId(itemId);
-  }, [haptic]);
+  }, [canUserEdit, haptic]);
 
   const handleDragOver = useCallback(
     (e: React.DragEvent, itemId: Id<"items">) => {
@@ -326,7 +335,7 @@ export function ListView() {
   );
 
   const handleDragEnd = useCallback(async () => {
-    if (!draggedItemId || !dragOverItemId || items.length === 0 || !did) {
+    if (!canUserEdit || !draggedItemId || !dragOverItemId || items.length === 0 || !did) {
       setDraggedItemId(null);
       setDragOverItemId(null);
       return;
@@ -350,11 +359,11 @@ export function ListView() {
 
     setDraggedItemId(null);
     setDragOverItemId(null);
-  }, [draggedItemId, dragOverItemId, items, did, legacyDid, reorderItems, haptic]);
+  }, [canUserEdit, draggedItemId, dragOverItemId, items, did, legacyDid, reorderItems, haptic]);
 
   // Touch drag reorder handler
   const handleTouchReorder = useCallback(async (draggedId: string, targetId: string) => {
-    if (items.length === 0 || !did) return;
+    if (!canUserEdit || items.length === 0 || !did) return;
 
     const itemIds = items.map((item) => item._id);
     const draggedIndex = itemIds.indexOf(draggedId as Id<"items">);
@@ -367,7 +376,7 @@ export function ListView() {
       newItemIds.splice(targetIndex, 0, draggedId as Id<"items">);
       await reorderItems(newItemIds, did, legacyDid ?? undefined);
     }
-  }, [items, did, legacyDid, reorderItems, haptic]);
+  }, [canUserEdit, items, did, legacyDid, reorderItems, haptic]);
 
   // Touch drag hook for mobile support
   const touchDrag = useTouchDrag({
@@ -377,7 +386,7 @@ export function ListView() {
 
   // Grocery aisle drag — detect which aisle section a dragged item lands in
   const handleGroceryTouchReorder = useCallback(async (draggedId: string, _targetId: string) => {
-    if (!did || !itemsContainerRef.current) return;
+    if (!canUserEdit || !did || !itemsContainerRef.current) return;
     // Find which aisle the target item belongs to by walking up the DOM
     const targetEl = itemsContainerRef.current.querySelector(`[data-item-id="${_targetId}"]`);
     if (!targetEl) return;
@@ -399,7 +408,7 @@ export function ListView() {
       itemId: draggedId as Id<"items">,
       groceryAisle: targetAisleId,
     });
-  }, [did, legacyDid, sortedItems, haptic, updateItem]);
+  }, [canUserEdit, did, sortedItems, haptic, updateItem]);
 
   const groceryTouchDrag = useTouchDrag({
     onReorder: handleGroceryTouchReorder,
@@ -434,7 +443,7 @@ export function ListView() {
 
   // Keyboard shortcuts for power users
   const shortcuts: Shortcut[] = useMemo(() => {
-    const canUserEditNow = true; // Published lists or owned = can edit
+    const canUserEditNow = canUserEdit;
     
     return [
       {
@@ -531,7 +540,7 @@ export function ListView() {
       },
       {
         key: "e",
-        description: "Edit focused item",
+        description: canUserEdit ? "Edit focused item" : "View focused item",
         action: () => {
           if (focusedIndex === null) return;
           const item = sortedItems[focusedIndex];
@@ -542,7 +551,7 @@ export function ListView() {
       },
       {
         key: "Enter",
-        description: "Edit focused item",
+        description: canUserEdit ? "Edit focused item" : "View focused item",
         action: () => {
           if (focusedIndex === null) return;
           const item = sortedItems[focusedIndex];
@@ -611,7 +620,7 @@ export function ListView() {
         },
       },
     ];
-  }, [sortedItems, focusedIndex, did, legacyDid, checkItemWithStreak, uncheckItem, removeItem, haptic, isSelectMode, clearSelection]);
+  }, [canUserEdit, sortedItems, focusedIndex, did, legacyDid, checkItemWithStreak, uncheckItem, removeItem, haptic, isSelectMode, clearSelection]);
 
   const { showHelp, setShowHelp } = useKeyboardShortcuts({
     enabled: viewMode === "list" && !editingItem,
@@ -630,7 +639,8 @@ export function ListView() {
     userLoading ||
     !did ||
     list === undefined ||
-    itemsLoading
+    (list !== null && access === undefined) ||
+    (list !== null && itemsLoading)
   ) {
     return <ListViewSkeleton />;
   }
@@ -660,36 +670,7 @@ export function ListView() {
 
   if (isNote(list)) return <Navigate to={`/n/${list._id}`} replace />;
 
-  // Check authorization: owner always has access, published lists are open
-  const userDids = [did, legacyDid].filter(Boolean) as string[];
-  const userIsOwner = userDids.includes(list.ownerDid);
   const isPublished = publicationStatus?.status === "active";
-
-  if (!userIsOwner && !isPublished) {
-    return (
-      <div className="text-center py-16">
-        <div className="text-6xl mb-4">🔒</div>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-          Access denied
-        </h2>
-        <p className="text-gray-500 dark:text-gray-400 mb-6">
-          This list is not shared. Ask the owner to publish it.
-        </p>
-        <Link 
-          to="/d"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          Back to lists
-        </Link>
-      </div>
-    );
-  }
-
-  // Everyone with access can edit (owner or published list visitor)
-  const canUserEdit = true;
   const canUserInvite = userIsOwner;
   const canUserDelete = userIsOwner;
 
@@ -811,7 +792,7 @@ export function ListView() {
                 setViewMode("list");
                 if (itemViewMode !== "alphabetical") {
                   setLocalItemViewMode("alphabetical");
-                  updateItemViewModeMutation({ listId, itemViewMode: "alphabetical" });
+                  if (userIsOwner) updateItemViewModeMutation({ listId, itemViewMode: "alphabetical" });
                 }
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
@@ -832,7 +813,7 @@ export function ListView() {
                 setViewMode("list");
                 if (itemViewMode !== "categorized") {
                   setLocalItemViewMode("categorized");
-                  updateItemViewModeMutation({ listId, itemViewMode: "categorized" });
+                  if (userIsOwner) updateItemViewModeMutation({ listId, itemViewMode: "categorized" });
                 }
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
@@ -910,7 +891,7 @@ export function ListView() {
             isOnline={isOnline}
             isPublished={publicationStatus?.status === "active"}
             onShare={() => setIsShareModalOpen(true)}
-            onNativeShare={handleNativeShare}
+            onNativeShare={userIsOwner || isPublished ? handleNativeShare : undefined}
             onPublish={() => setIsPublishModalOpen(true)}
             onSaveTemplate={() => setIsSaveTemplateModalOpen(true)}
             onDelete={() => setIsDeleteDialogOpen(true)}
@@ -994,13 +975,13 @@ export function ListView() {
             /* Categorized view — items grouped by category/aisle */
             <div
               ref={itemsContainerRef}
-              onTouchMove={groceryTouchDrag.handleTouchMove}
-              onTouchEnd={groceryTouchDrag.handleTouchEnd}
+              onTouchMove={canUserEdit ? groceryTouchDrag.handleTouchMove : undefined}
+              onTouchEnd={canUserEdit ? groceryTouchDrag.handleTouchEnd : undefined}
             >
-              <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 mb-2 text-xs text-gray-400 dark:text-gray-500">
+              {canUserEdit && <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 mb-2 text-xs text-gray-400 dark:text-gray-500">
                 <span>✨</span>
                 <span>Drag items between aisles to reclassify</span>
-              </div>
+              </div>}
               {aisleGroups.groups.map(({ category: aisle, items: aisleItems }, groupIndex) => (
                 <div key={aisle.id} className="mb-3" data-aisle-id={aisle.id}>
                   {/* Aisle section header — highlights when dragging over */}
@@ -1050,10 +1031,10 @@ export function ListView() {
                             isDragging={groceryTouchDrag.state.draggedId === item._id}
                             isDragOver={groceryTouchDrag.state.dragOverId === item._id}
                             isFocused={focusedIndex === globalIndex}
-                            onTouchStart={groceryTouchDrag.handleTouchStart}
+                            onTouchStart={canUserEdit ? groceryTouchDrag.handleTouchStart : undefined}
                             onCheck={checkItemWithStreak}
                             onUncheck={uncheckItem}
-                            isSelectMode={isSelectMode}
+                            isSelectMode={canUserEdit && isSelectMode}
                             isSelected={selectedIds.has(item._id)}
                             onToggleSelect={() => toggleSelection(item._id)}
                           />
@@ -1158,7 +1139,7 @@ export function ListView() {
                             isFocused={focusedIndex === globalIndex}
                             onCheck={checkItemWithStreak}
                             onUncheck={uncheckItem}
-                            isSelectMode={isSelectMode}
+                            isSelectMode={canUserEdit && isSelectMode}
                             isSelected={selectedIds.has(item._id)}
                             onToggleSelect={() => toggleSelection(item._id)}
                           />
@@ -1173,8 +1154,8 @@ export function ListView() {
             /* Standard flat list view — rounded cards with collapsed Done section */
             <div
               ref={itemsContainerRef}
-              onTouchMove={touchDrag.handleTouchMove}
-              onTouchEnd={touchDrag.handleTouchEnd}
+              onTouchMove={canUserEdit ? touchDrag.handleTouchMove : undefined}
+              onTouchEnd={canUserEdit ? touchDrag.handleTouchEnd : undefined}
             >
               {/* Active (unchecked) items as rounded cards - only top-level items (no parentId) */}
               <div className="space-y-2">
@@ -1197,10 +1178,10 @@ export function ListView() {
                         onDragStart={() => handleDragStart(item._id)}
                         onDragOver={(e) => handleDragOver(e, item._id)}
                         onDragEnd={handleDragEnd}
-                        onTouchStart={touchDrag.handleTouchStart}
+                        onTouchStart={canUserEdit ? touchDrag.handleTouchStart : undefined}
                         onCheck={checkItemWithStreak}
                         onUncheck={uncheckItem}
-                        isSelectMode={isSelectMode}
+                        isSelectMode={canUserEdit && isSelectMode}
                         isSelected={selectedIds.has(item._id)}
                         onToggleSelect={() => toggleSelection(item._id)}
                         onLongPress={() => enterSelectMode(item._id)}
@@ -1254,10 +1235,10 @@ export function ListView() {
                               onDragStart={() => handleDragStart(item._id)}
                               onDragOver={(e) => handleDragOver(e, item._id)}
                               onDragEnd={handleDragEnd}
-                              onTouchStart={touchDrag.handleTouchStart}
+                              onTouchStart={canUserEdit ? touchDrag.handleTouchStart : undefined}
                               onCheck={checkItemWithStreak}
                               onUncheck={uncheckItem}
-                              isSelectMode={isSelectMode}
+                              isSelectMode={canUserEdit && isSelectMode}
                               isSelected={selectedIds.has(item._id)}
                               onToggleSelect={() => toggleSelection(item._id)}
                               onLongPress={() => enterSelectMode(item._id)}
@@ -1306,7 +1287,7 @@ export function ListView() {
 
       {/* Modals - lazy-loaded with Suspense */}
       <Suspense fallback={null}>
-        {isDeleteDialogOpen && (
+        {userIsOwner && isDeleteDialogOpen && (
           <DeleteListDialog
             list={list}
             onClose={() => setIsDeleteDialogOpen(false)}
@@ -1314,22 +1295,22 @@ export function ListView() {
           />
         )}
 
-        {isShareModalOpen && (
+        {userIsOwner && isShareModalOpen && (
           <ShareModal list={list} onClose={() => setIsShareModalOpen(false)} />
         )}
 
-        {isPublishModalOpen && (
+        {userIsOwner && isPublishModalOpen && (
           <PublishModal list={list} onClose={() => setIsPublishModalOpen(false)} />
         )}
 
-        {isRenameDialogOpen && (
+        {userIsOwner && isRenameDialogOpen && (
           <RenameListDialog
             list={list}
             onClose={() => setIsRenameDialogOpen(false)}
           />
         )}
 
-        {isCategoryDialogOpen && (
+        {userIsOwner && isCategoryDialogOpen && (
           <ChangeCategoryDialog
             listId={listId}
             currentCategoryId={list.categoryId}
@@ -1337,7 +1318,7 @@ export function ListView() {
           />
         )}
 
-        {isSaveTemplateModalOpen && (
+        {canUserEdit && isSaveTemplateModalOpen && (
           <SaveAsTemplateModal
             listId={listId}
             listName={list.name}

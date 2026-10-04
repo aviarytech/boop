@@ -35,7 +35,7 @@ function truncateDid(did: string): string {
   return `${did.slice(0, 12)}...${did.slice(-6)}`;
 }
 
-export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps) {
+export function Comments({ itemId, canEdit }: CommentsProps) {
   const { haptic } = useSettings();
   const [newComment, setNewComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,7 +51,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || isSubmitting) return;
+    if (!canEdit || !newComment.trim() || isSubmitting) return;
 
     haptic("light");
     setIsSubmitting(true);
@@ -73,7 +73,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
   };
 
   const handleDelete = async (commentId: Id<"comments">) => {
-    if (deletingId) return;
+    if (!canEdit || deletingId) return;
 
     haptic("medium");
     setDeletingId(commentId);
@@ -90,15 +90,6 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
     } finally {
       setDeletingId(null);
     }
-  };
-
-  const canDeleteComment = (commentUserDid: string) => {
-    // Author can always delete their own comments
-    if (commentUserDid === userDid || commentUserDid === legacyDid) {
-      return true;
-    }
-    // Editors and owners can delete any comment
-    return canEdit;
   };
 
   if (comments === undefined) {
@@ -135,7 +126,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
                     {comment.text}
                   </p>
                 </div>
-                {canDeleteComment(comment.userDid) && (
+                {canEdit && (
                   <button
                     onClick={() => handleDelete(comment._id)}
                     disabled={deletingId === comment._id}
@@ -181,7 +172,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
       )}
 
       {/* Add comment form */}
-      <form onSubmit={handleSubmit} className="flex gap-2">
+      {canEdit && <form onSubmit={handleSubmit} className="flex gap-2">
         <input
           type="text"
           value={newComment}
@@ -221,7 +212,7 @@ export function Comments({ itemId, userDid, legacyDid, canEdit }: CommentsProps)
             </svg>
           )}
         </button>
-      </form>
+      </form>}
     </div>
   );
 }

@@ -19,6 +19,11 @@ on that same route using the existing embedded OTP login, then review and click
 Invalid, mismatched, expired, superseded and already-accepted links show an
 unavailable message; the pending inbox remains accessible. Acceptance opens the
 resource through `/list/:id` (the existing ListView redirects notes to `/n/:id`).
+ListView uses the server's accepted role for content and owner capabilities. Viewers
+and public readers cannot edit rows, comments, details, categories or use modifying
+keyboard/batch/drag controls. Editors can edit content; naming, publication, list
+deletion and persisted list view preferences remain owner-only. Non-owner view-mode
+switches are local presentation changes. Role changes update open details and menus.
 Public-link access remains independent; an invitation does not unpublish content.
 Broader sharing discovery and Shared with me remain #258.
 
@@ -119,7 +124,10 @@ The handler fixture does not implement Convex schema validation, transactional
 rollback/OCC, scheduler timing or reactive subscription transport. Repeated and
 ordered handler calls verify state transitions; real simultaneous-request OCC still
 needs isolated deployment integration coverage. UI tests mock reactive queries and
-mutations; real OTP/mail delivery and native universal-link release configuration
+mutations; the mounted destination suite additionally runs production invitation
+acceptance/read/role handlers and mounts actual ListView rows, menus, keyboard
+shortcuts, calendar, details and comments. Device/offline transport is still a
+fixture. Real OTP/mail delivery and native universal-link release configuration
 remain integration checks. The local collaborative browser exercised the actual
 page with fixture data at desktop/mobile widths, with no live backend. Its snapshot
 and click automation failed; DOM evaluation and React interaction tests supplied
