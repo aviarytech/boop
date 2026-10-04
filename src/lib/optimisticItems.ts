@@ -15,6 +15,7 @@ export function projectItems(base: OfflineItem[], operations: QueuedMutation[], 
   for (const [id, key] of localKeys) ids.set(`temp-${key}`, id);
   const retained = new Set(proof?.retainedOperationIds);
   for (const m of operations) {
+    if (m.denied) continue;
     if (m.id !== undefined && m.id <= (proof?.retiredThrough ?? 0) && !retained.has(m.operationId)) continue;
     const sequence = receipts.get(m.operationId)?.sequence;
     if (sequence !== undefined && proof?.sequence !== undefined && sequence <= proof.sequence) continue;

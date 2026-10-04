@@ -49,3 +49,21 @@ export const { public: revokeListGrant, internal: revokeListGrantInternal } = ac
     await ctx.db.delete(grant._id);
   },
 });
+
+/** Leaving removes only this authenticated recipient's accepted grant. The
+ * revocation tombstone prevents an old accepted invitation from restoring it.
+ * Publication, ownership and independent copies are deliberately unaffected. */
+export const { public: leaveList, internal: leaveListInternal } = actorMutation({
+  scope: "*", resources: () => ({}),
+  args: { listId: v.id("lists") },
+  handler: async (ctx, args) => {
+    const grant = await ctx.db.query("listGrants")
+      .withIndex("by_list_recipient", q => q.eq("listId", args.listId).eq("recipientId", ctx.actor.userId)).unique();
+    if (!grant) return;
+    const previous = await ctx.db.query("listGrantRevocations")
+      .withIndex("by_list_recipient", q => q.eq("listId", args.listId).eq("recipientId", ctx.actor.userId)).unique();
+    if (previous) await ctx.db.patch(previous._id, { revokedAt: Date.now() });
+    else await ctx.db.insert("listGrantRevocations", { listId: args.listId, recipientId: ctx.actor.userId, revokedAt: Date.now() });
+    await ctx.db.delete(grant._id);
+  },
+});

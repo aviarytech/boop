@@ -30,7 +30,7 @@ const ChangeCategoryDialog = lazy(() => import("../components/ChangeCategoryDial
 const MONO = 'Geist Mono, ui-monospace, monospace';
 
 type Mode = "edit" | "preview";
-type NoteBody = { body: string; updatedAt: number; canEdit: boolean };
+type NoteBody = { body: string; updatedAt: number; canEdit: boolean; accessCheckedAt: number };
 
 export function NoteView() {
   const { id } = useParams<{ id: string }>();
@@ -86,6 +86,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
     draftKey,
     draftAliases,
     canEdit: note.canEdit && !!draftKey,
+    accessCheckedAt: note.accessCheckedAt,
     persist: async (text, expectedBody) => {
       await updateNoteBody({ listId: list._id, body: text, expectedBody });
     },

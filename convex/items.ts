@@ -648,6 +648,7 @@ export const { public: getItemForEditor, internal: getItemForEditorInternal } = 
 
     return {
       itemId: item._id,
+      accessCheckedAt: Date.now(),
       name: item.name,
       description: item.description ?? "",
       canEdit,
@@ -1060,4 +1061,43 @@ export const { public: getListItemsForReplay } = actorQuery({
 export const { public: getOfflineAccount } = actorQuery({
   resources: () => ({}), scope: "items:read", args: {},
   handler: async ctx => ({ accountId: ctx.actor.turnkeySubOrgId, did: ctx.actor.did, legacyDid: ctx.actor.legacyDid }),
+});
+
+/** Reactive access manifest contains no resource content, including for missing IDs.
+ * It stays subscribed when a content query is denied and its view unmounts. */
+export const { public: getOfflineAccess } = actorQuery({
+  resources: () => ({}), scope: "items:read",
+  args: { listIds: v.array(v.id("lists")), items: v.optional(v.array(v.object({ itemId: v.id("items"), listId: v.id("lists") }))) },
+  handler: async (ctx, args) => {
+    if (args.listIds.length > 128 || (args.items?.length ?? 0) > 128) throw new Error("Too many resources");
+    return Promise.all([...new Set([...args.listIds, ...(args.items ?? []).map(i => i.listId)])].map(async listId => {
+      const canRead = await canUserViewList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid);
+      const canEdit = hasScope(ctx.actor.scopes, "items:write") && await canUserEditList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid);
+      const missingItemIds: Id<"items">[] = [];
+      const presentItemIds: Id<"items">[] = [];
+      for (const entry of (args.items ?? []).filter(item => item.listId === listId)) {
+        // Never inspect membership of inaccessible items: all caller-supplied
+        // locators receive the same unavailable answer, existing or otherwise.
+        if (!canRead) { missingItemIds.push(entry.itemId); continue; }
+        const item = await ctx.db.get(entry.itemId);
+        if (!item || item.listId !== listId) missingItemIds.push(entry.itemId);
+        else presentItemIds.push(entry.itemId);
+      }
+      return { listId, checkedAt: Date.now(), canRead, canEdit, missingItemIds, presentItemIds };
+    }));
+  },
+});
+
+/** Draft locators reveal no resource content and survive content-query denial. */
+export const { public: getOfflineDraftAccess } = actorQuery({
+  resources: () => ({}), scope: "items:read",
+  args: { resources: v.array(v.object({ kind: v.union(v.literal("note"), v.literal("item")), id: v.string() })) },
+  handler: async (ctx, args) => {
+    if (args.resources.length > 128) throw new Error("Too many drafts");
+    return Promise.all(args.resources.map(async resource => {
+      const itemId = resource.kind === "item" ? ctx.db.normalizeId("items", resource.id) : null;
+      const listId = resource.kind === "note" ? ctx.db.normalizeId("lists", resource.id) : itemId ? (await ctx.db.get(itemId))?.listId : null;
+      return { ...resource, checkedAt: Date.now(), canEdit: hasScope(ctx.actor.scopes, "items:write") && !!listId && await canUserEditList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid) };
+    }));
+  },
 });

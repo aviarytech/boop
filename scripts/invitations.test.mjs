@@ -419,3 +419,19 @@ test("invalid recipient email and rate limits expose actionable ConvexError stri
   for (let i = 0; i < 2; i++) invite = await call("resendInvitation", ctx, { ...manage(invite), requestId: `rate_error_${i}` });
   await assert.rejects(() => call("resendInvitation", ctx, { ...manage(invite), requestId: "rate_error_more" }), isActionable("Invitation rate limit reached. Try again later."));
 });
+
+
+test("recipient leave requires grant-management scope, blocks old acceptance replay, and permits a fresh owner reinvitation", async () => {
+  const ctx = make(), invite = await create(ctx), auth = await login(ctx);
+  const accepted = await accept(ctx, invite, auth);
+  const before = JSON.stringify(ctx.rows);
+  for (const suffix of ['', 'Internal']) await assert.rejects(() => modules.listGrants[`leaveList${suffix}`]._handler(ctx, { listId: 'L', apiKey: 'key-viewer' }), /Missing scope/);
+  assert.equal(JSON.stringify(ctx.rows), before);
+  await modules.listGrants.leaveList._handler(ctx, { ...auth, listId: 'L' });
+  await modules.listGrants.leaveList._handler(ctx, { ...auth, listId: 'L' });
+  assert.ok(!ctx.rows.listGrants.some(g => g._id === accepted.grantId));
+  await assert.rejects(() => accept(ctx, invite, auth), unavailable);
+  ctx.rows.listGrantRevocations[0].revokedAt -= 1;
+  const fresh = await call('resendInvitation', ctx, { ...manage(invite), requestId: 'fresh_after_leave' });
+  assert.equal((await accept(ctx, fresh, auth)).role, 'viewer');
+});

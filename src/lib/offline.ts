@@ -1,7 +1,7 @@
 import { randomId } from "./randomId";
 import { openDB, type DBSchema } from 'idb';
 import type { Doc } from '../../convex/_generated/dataModel';
-import { revision, replayTargets, type ExpectedRevision, type ReplayAck } from '../../shared/replay';
+import { canonical, revision, replayTargets, type ExpectedRevision, type ReplayAck } from '../../shared/replay';
 export type OfflineItem = Doc<'items'> & { assigneeDids?: string[]; _localKey?: string };
 export type OfflineList = Doc<'lists'>;
 export type MutationType = 'addItem' | 'checkItem' | 'uncheckItem' | 'reorderItem' | 'updateItem' | 'removeItem' | 'batchCheckItems' | 'batchUncheckItems' | 'batchDeleteItems' | 'createList' | 'renameList' | 'deleteList';
@@ -15,6 +15,9 @@ export interface QueuedMutation {
   timestamp: number;
   retryCount: number;
   error?: string;
+  denied?: boolean;
+  authoredFields?: string[];
+  legacyRecoveryPending?: boolean;
   state: 'pending' | 'failed' | 'conflict' | 'acked';
   ack?: ReplayAck;
   listIds: string[];
@@ -24,7 +27,7 @@ export interface QueuedMutation {
 export const RECENT_OPERATIONS = 32;
 export const RECEIPT_QUERY_LIMIT = 128;
 export interface CompactionProof { retiredThrough: number; retainedOperationIds: string[] }
-type CacheMetadata = { key: string; sequence?: number; retiredThrough?: number; discarded?: boolean };
+type CacheMetadata = { key: string; sequence?: number; retiredThrough?: number; discarded?: boolean; revoked?: boolean; readOnly?: boolean; checkedAt?: number };
 // assigneeDids is a joined read projection. assignmentsVersion in the persisted
 // item fences membership changes; hashing the projection would mismatch replay.
 const cleanDocument = (doc: object) => Object.fromEntries(Object.entries(doc).filter(([key]) => !['_isOptimistic', '_syncError', '_localKey', '_operationId', 'assigneeDids'].includes(key)));
@@ -87,20 +90,21 @@ export async function getOperations(accountId: string): Promise<QueuedMutation[]
   if (!accountId) return [];
   return (await getOfflineDB(accountId)).getAll('mutations');
 }
-export interface OfflineState extends CompactionProof { operations: QueuedMutation[]; aliases: Record<string, string>; items: OfflineItem[]; sequences: Record<string, number> }
+export interface OfflineState extends CompactionProof { operations: QueuedMutation[]; aliases: Record<string, string>; items: OfflineItem[]; sequences: Record<string, number>; revokedListIds?: string[]; unavailableItemIds?: string[]; lists?: OfflineList[] }
 export const EMPTY_OFFLINE_STATE: OfflineState = { operations: [], aliases: {}, items: [], sequences: {}, retiredThrough: 0, retainedOperationIds: [] };
 /** Queue and live aliases must advance together: another tab may have removed
  * the create receipt while this tab still has a temporary item's modal open. */
 export async function getOfflineState(accountId: string): Promise<OfflineState> {
   if (!accountId) return EMPTY_OFFLINE_STATE;
-  const tx = (await getOfflineDB(accountId)).transaction(['mutations', 'items', 'metadata']);
+  const tx = (await getOfflineDB(accountId)).transaction(['mutations', 'items', 'metadata', 'lists']);
+  const lists = await tx.objectStore('lists').getAll();
   const operations = await tx.objectStore('mutations').getAll();
   const items = await tx.objectStore('items').getAll();
   const metadata = await tx.objectStore('metadata').getAll();
   const meta = metadata.find(m => m.key === 'compaction');
   const sequences = Object.fromEntries(metadata.filter(m => m.key.startsWith('sequence:') && m.sequence !== undefined).map(m => [m.key.slice(9), m.sequence!]));
   await tx.done;
-  return { operations, items, sequences, aliases: Object.fromEntries(items.filter(i => i._localKey).map(i => [i._id, i._localKey!])), retiredThrough: meta?.retiredThrough ?? 0, retainedOperationIds: operations.map(m => m.operationId) };
+  return { operations, items, lists, unavailableItemIds: metadata.filter(m => m.key.startsWith('unavailable-item:') && m.revoked).map(m => m.key.slice(17)), revokedListIds: metadata.filter(m => m.key.startsWith('revoked:') && m.revoked).map(m => m.key.slice(8)), sequences, aliases: Object.fromEntries(items.filter(i => i._localKey).map(i => [i._id, i._localKey!])), retiredThrough: meta?.retiredThrough ?? 0, retainedOperationIds: operations.map(m => m.operationId) };
 }
 export async function getQueuedMutations(accountId: string) { return (await getOperations(accountId)).filter(m => m.state !== 'acked'); }
 // Preserve invocation order even when hashing/caching takes different amounts
@@ -137,6 +141,11 @@ async function enqueueMutation(accountId: string, input: {
     const cached = await db.get('items', resolvedId);
     const source = snapshots.find(i => resolveOperationId(i._id, identities, aliases) === resolvedId || (i._id.startsWith('temp-') && cached?._localKey === i._id.slice(5)));
     const doc = source ?? cached ?? await db.get('lists', resolvedId);
+    if (input.type === 'updateItem' && source) {
+      for (const key of ['name', 'description', 'dueDate', 'url', 'recurrence', 'priority', 'groceryAisle', 'assigneeDids']) {
+        if (canonical(payload[key]) === canonical((source as unknown as Record<string, unknown>)[key])) delete payload[key];
+      }
+    }
     const sourceOperation = doc && '_operationId' in doc ? doc._operationId : undefined;
     if (typeof sourceOperation === 'string') sourceOperations.set(id, sourceOperation);
     else if (source?._id.startsWith('temp-')) sourceOperations.set(id, source._id.slice(5));
@@ -150,6 +159,7 @@ async function enqueueMutation(accountId: string, input: {
   const expected = targets.map(id => {
     const resolvedId = resolveOperationId(id, prior);
     const predecessor = [...prior].reverse().find(m => {
+      if (m.denied) return false;
       const createsTarget = m.type === 'addItem' && (`temp-${m.operationId}` === id || m.ack?.result === resolvedId);
       const target = m.expected.find(e => resolveOperationId(e.id, prior) === resolvedId);
       if (!createsTarget && !target) return false;
@@ -175,7 +185,8 @@ async function enqueueMutation(accountId: string, input: {
       throw new Error('This draft depends on a discarded edit. Reopen the current item before editing again.');
     }
   }
-  const id = await mutationStore.add({ ...input, payload, accountId, listIds: [...listIds], operationId: randomId(), expected, state: 'pending', timestamp: input.timestamp ?? Date.now(), retryCount: 0 });
+  const denied = (await Promise.all([...listIds].map(id => tx.objectStore('metadata').get(`revoked:${id}`)))).some(m => m?.revoked || m?.readOnly) || (await Promise.all(targets.map(id => tx.objectStore('metadata').get(`unavailable-item:${id}`)))).some(m => m?.revoked) || dependencies.some(id => prior.some(m => m.operationId === id && m.denied));
+  const id = await mutationStore.add({ ...input, payload, ...(input.type === 'updateItem' ? { authoredFields: Object.keys(payload).filter(key => payload[key] !== undefined) } : {}), accountId, listIds: [...listIds], operationId: randomId(), expected, state: denied ? 'conflict' : 'pending', ...(denied ? { denied: true, error: 'Permission lost. Export these independent local edits or discard them.' } : {}), timestamp: input.timestamp ?? Date.now(), retryCount: 0 });
   await tx.done;
   changed();
   return id;
@@ -187,8 +198,8 @@ export async function saveOperation(accountId: string, mutation: QueuedMutation)
   // A reactive receipt can arrive before the mutation promise (or its error).
   // Never overwrite that stronger acknowledgment with a stale in-flight copy.
   if (previous?.operationId === mutation.operationId) {
-    if (previous.state !== 'acked' || mutation.state === 'acked') {
-      await tx.store.put({ ...mutation, observedListIds: previous.observedListIds });
+    if ((!previous.denied && previous.state !== 'acked') || mutation.state === 'acked') {
+      await tx.store.put({ ...mutation, ...(previous.denied && mutation.state === 'acked' ? { payload: {} } : {}), denied: previous.denied || mutation.denied, observedListIds: previous.observedListIds });
     }
   }
   await tx.done; changed();
@@ -303,7 +314,7 @@ export async function rebaseOperation(accountId: string, id: number, snapshots: 
   const revisions = new Map(await Promise.all(snapshots.map(async doc => [doc._id as string, await revision(cleanDocument(doc))] as const)));
   const tx = db.transaction('mutations', 'readwrite');
   const m = await tx.store.get(id);
-  if (!m || m.state !== 'conflict') throw new Error('Only a rejected conflict can be reapplied');
+  if (!m || m.denied || m.state !== 'conflict') throw new Error('Only a rejected conflict can be reapplied');
   const operations = await tx.store.getAll();
   if (m.expected.some(e => !revisions.has(resolveOperationId(e.id, operations)))) throw new Error('Refresh the list before reviewing this edit');
   const operationId = randomId();
@@ -334,6 +345,7 @@ async function writeListSnapshot(accountId: string, listId: string, items: Offli
     // the write transaction so a suspended tab cannot overwrite a newer cache.
     const metadata = tx.objectStore('metadata');
     const meta = await metadata.get('compaction');
+    if ((await metadata.get(`revoked:${listId}`))?.revoked) { await tx.done; return false; }
     const accepted = (await metadata.get(`sequence:${listId}`))?.sequence;
     const versioned = Number.isSafeInteger(sequence) && sequence! >= 0;
     if ((accepted !== undefined && (!versioned || sequence! < accepted)) ||
@@ -349,6 +361,7 @@ async function writeListSnapshot(accountId: string, listId: string, items: Offli
     }
     if (replace) for (const id of await itemStore.index('byList').getAllKeys(listId)) await itemStore.delete(id);
     for (const item of items) {
+      if ((await metadata.get(`unavailable-item:${item._id}`))?.revoked) continue;
       if (item.listId !== listId) throw new Error('Snapshot list mismatch');
       await itemStore.put(aliases.has(item._id) ? { ...item, _localKey: aliases.get(item._id) } : item);
     }
@@ -395,11 +408,122 @@ export function resolveOperationId(id: string, operations: QueuedMutation[], ali
   return typeof create?.ack?.result === 'string' ? create.ack.result : aliases.find(item => item._localKey === id.slice(5))?._id ?? id;
 }
 export async function cacheAllLists(accountId: string, lists: OfflineList[]) {
-  const tx = (await getOfflineDB(accountId)).transaction('lists', 'readwrite');
-  await tx.store.clear();
-  for (const list of lists) await tx.store.put(list);
-  await tx.done;
+  const tx = (await getOfflineDB(accountId)).transaction(['lists', 'metadata'], 'readwrite');
+  const store = tx.objectStore('lists');
+  await store.clear();
+  for (const list of lists) if (!(await tx.objectStore('metadata').get(`revoked:${list._id}`))?.revoked) await store.put(list);
+  await tx.done; changed();
 }
 export async function getAllCachedLists(accountId: string) {
   return accountId ? (await getOfflineDB(accountId)).getAll('lists') : [];
+}
+
+/** Park denied edits and their dependents using existing conflict/discard semantics.
+ * Retain only queued user intent, never the cached source document. */
+export async function denyOperation(accountId: string, operationId: string) {
+  const proofs = await recoveryBaselines(accountId);
+  const tx = (await getOfflineDB(accountId)).transaction(['mutations', 'items'], 'readwrite');
+  const operations = await tx.objectStore('mutations').getAll();
+  const items = await tx.objectStore('items').getAll();
+  for (const m of discardCascade(operations, operationId)) await tx.objectStore('mutations').put(deniedRecovery(m, proofs, items));
+  await tx.done; changed();
+}
+export async function reconcileOfflineAccess(accountId: string, access: Array<{ listId: string; canRead: boolean; canEdit: boolean; checkedAt?: number; missingItemIds?: string[]; presentItemIds?: string[] }>) {
+  const proofs = await recoveryBaselines(accountId);
+  const tx = (await getOfflineDB(accountId)).transaction(['lists', 'items', 'mutations', 'metadata'], 'readwrite');
+  const operations = await tx.objectStore('mutations').getAll();
+  const items = await tx.objectStore('items').getAll();
+  const denied = new Set<string>();
+  const metadata = tx.objectStore('metadata');
+  for (const entry of access) {
+    const prior = await metadata.get(`revoked:${entry.listId}`);
+    const checkedAt = entry.checkedAt ?? Date.now();
+    const staleList = prior?.checkedAt !== undefined && (checkedAt < prior.checkedAt ||
+      (checkedAt === prior.checkedAt && ((prior.revoked && entry.canRead) || (prior.readOnly && entry.canEdit))));
+    if (!staleList) {
+      await metadata.put({ key: `revoked:${entry.listId}`, revoked: !entry.canRead, readOnly: !entry.canEdit, checkedAt });
+      if (!entry.canRead) {
+        for (const m of operations) if (m.state === 'acked' && m.listIds.includes(entry.listId)) {
+          m.payload = {}; m.denied = true;
+          await tx.objectStore('mutations').put(m);
+        }
+        await tx.objectStore('lists').delete(entry.listId);
+        for (const id of await tx.objectStore('items').index('byList').getAllKeys(entry.listId)) await tx.objectStore('items').delete(id);
+      }
+      if (!entry.canEdit) for (const m of operations) if (m.listIds.includes(entry.listId) && m.state !== 'acked') {
+        for (const dependent of discardCascade(operations, m.operationId)) denied.add(dependent.operationId);
+      }
+    }
+    // A list denial intentionally conceals item existence. It must NOT create
+    // deletion tombstones that would survive a legitimate later invitation.
+    // Item subsets and list permissions arrive independently; fence each item
+    // by its own observation timestamp, never by another batch's list clock.
+    if (!entry.canRead) continue;
+    for (const [present, itemIds] of [[false, entry.missingItemIds ?? []], [true, entry.presentItemIds ?? []]] as const) {
+      for (const itemId of itemIds) {
+        const previous = await metadata.get(`unavailable-item:${itemId}`);
+        if (previous?.checkedAt !== undefined && (checkedAt < previous.checkedAt || (checkedAt === previous.checkedAt && previous.revoked && present))) continue;
+        await metadata.put({ key: `unavailable-item:${itemId}`, revoked: !present, checkedAt });
+        if (present) continue;
+        await tx.objectStore('items').delete(itemId);
+        for (const m of operations) if (operationReferences(m).includes(itemId) || (m.type === 'addItem' && m.ack?.result === itemId)) {
+          if (m.state === 'acked') {
+            m.payload = {}; m.denied = true;
+            await tx.objectStore('mutations').put(m);
+          } else for (const dependent of discardCascade(operations, m.operationId)) denied.add(dependent.operationId);
+        }
+      }
+    }
+  }
+  for (const m of operations) if (denied.has(m.operationId)) await tx.objectStore('mutations').put(deniedRecovery(m, proofs, items));
+  await tx.done; changed();
+}
+
+/** An interrupted, not-yet-submitted form is export-only user intent. Do not
+ * retain untouched fields, source snapshots, credentials or attachment URLs. */
+export async function retainItemDraft(accountId: string, operationId: string, listId: string, itemId: string, draftFields: Record<string, unknown>) {
+  if (!accountId || !Object.keys(draftFields).length) return;
+  const tx = (await getOfflineDB(accountId)).transaction('mutations', 'readwrite');
+  const previous = (await tx.store.getAll()).find(m => m.operationId === operationId);
+  await tx.store.put({ ...(previous?.id ? { id: previous.id } : {}), accountId, operationId,
+    type: 'updateItem', payload: { itemId, draftFields }, expected: [], listIds: [listId],
+    state: 'conflict', denied: true, retryCount: 0, timestamp: Date.now(),
+    error: 'Unsent form fields saved as an independent local draft. Export or discard; this draft cannot be applied to the source.' });
+  await tx.done; changed();
+}
+
+const updateFields = ['name', 'description', 'dueDate', 'url', 'recurrence', 'priority', 'groceryAisle', 'assigneeDids', 'assigneeDid'];
+async function recoveryBaselines(accountId: string) {
+  const db = await getOfflineDB(accountId);
+  const ids = [...new Set((await db.getAll('mutations'))
+    .filter(m => m.type === 'updateItem' && !m.authoredFields && !m.denied && m.state !== 'acked')
+    .map(m => m.payload.itemId).filter((id): id is string => typeof id === 'string'))];
+  const proofs = new Map<string, { canonical: string; revision: string }>();
+  if (!ids.length) return proofs;
+  const items = await Promise.all(ids.map(id => db.get('items', id)));
+  return new Map(await Promise.all(items.filter((item): item is OfflineItem => !!item).map(async item => [item._id as string, { canonical: canonical(item), revision: await revision(cleanDocument(item)) }] as const)));
+}
+function deniedRecovery(m: QueuedMutation, proofs: Awaited<ReturnType<typeof recoveryBaselines>>, items: OfflineItem[]): QueuedMutation {
+  let payload = { ...m.payload }, legacyRecoveryPending = m.legacyRecoveryPending;
+  if (m.type === 'updateItem' && !m.authoredFields && !m.denied) {
+    const item = items.find(item => item._id === payload.itemId);
+    const proof = item && proofs.get(item._id);
+    if (item && proof && proof.canonical === canonical(item) && m.expected.some(e => e.id === item._id && e.revision === proof.revision)) {
+      for (const field of updateFields) if (canonical(payload[field]) === canonical((item as unknown as Record<string, unknown>)[field])) delete payload[field];
+    } else {
+      // Older clients recorded whole forms without field provenance. Preserve
+      // this ambiguous work, but quarantine it from display/export/replay.
+      legacyRecoveryPending = true;
+    }
+  }
+  if (m.authoredFields) payload = Object.fromEntries(Object.entries(payload).filter(([field]) => m.authoredFields!.includes(field)));
+  return { ...m, payload, legacyRecoveryPending, state: 'conflict', denied: true,
+    error: legacyRecoveryPending
+      ? 'This older edit has no matching baseline to separate your changes from private source fields. It is retained locally but cannot be displayed, exported or retried safely. Discard only if you no longer need it.'
+      : 'Permission lost or source deleted. Export these independent local edits or discard them; they cannot be applied to the source.' };
+}
+export function exportSavedEdits(operations: QueuedMutation[]) {
+  return { notice: 'Independent local work only; this export does not grant source access or replay changes. An in-flight request may already have reached the server. Ambiguous older edits are retained locally and omitted.',
+    edits: operations.filter(m => !m.legacyRecoveryPending).map(m => ({ type: m.type, timestamp: m.timestamp, payload: m.payload })),
+    retainedLegacyCount: operations.filter(m => m.legacyRecoveryPending).length };
 }

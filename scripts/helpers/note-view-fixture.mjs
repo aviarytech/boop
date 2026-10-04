@@ -6,9 +6,10 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
   await build({ stdin: { contents: `
     import React, { useState } from 'react';
     import { ${item ? 'NoteEditor' : 'NoteView'} as Editor } from './src/pages/${item ? 'NoteEditor' : 'NoteView'}';
+    export * as drafts from './src/lib/noteDrafts';
     export const state = globalThis.__noteViewFixture = {
       did: 'did:editor', legacyDids: {}, identityLoading: false, list: { _id: 'N', ownerDid: 'did:owner', name: 'Fixture note', kind: 'note', createdAt: 1 },
-      body: 'Original authorized source', canEdit: true, available: true, deny: false, conflictNext: false, writes: [],
+      body: 'Original authorized source', accessCheckedAt: 1, canEdit: true, available: true, deny: false, conflictNext: false, writes: [],
     };
     export function Harness() {
       const [, redraw] = useState(0);
@@ -34,10 +35,10 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
         if (path.endsWith('/authenticatedConvex')) contents = `
           import { getFunctionName } from 'convex/server';
           export const useQuery = ref => getFunctionName(ref) === 'items:getItemForEditor'
-            ? (state().available ? {description: state().body, name: 'Fixture item', canEdit: state().canEdit} : null)
+            ? (state().available ? {description: state().body, name: 'Fixture item', canEdit: state().canEdit, accessCheckedAt: state().accessCheckedAt} : null)
             : getFunctionName(ref) === 'lists:getList'
             ? (state().available ? state().list : null)
-            : (state().available ? { body: state().body, updatedAt: 1, canEdit: state().canEdit } : null);
+            : (state().available ? { body: state().body, updatedAt: 1, canEdit: state().canEdit, accessCheckedAt: state().accessCheckedAt } : null);
           export const useMutation = () => async args => {
             const s = state(); s.writes.push(args);
             if (s.conflictNext) { s.conflictNext = false; s.body = 'Remote authorized change'; s.refresh?.(); }

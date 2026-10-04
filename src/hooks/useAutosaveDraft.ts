@@ -1,24 +1,30 @@
 import { authErrorData } from "../../convex/lib/authError";
 import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
+import { reconcileDraftAccess, draftIsDetached, sameDraftRevision, subscribeDrafts, draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
 import { clampNote } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "denied";
 
 /** Callers remount this hook when the account/resource key changes. */
-export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = [], canEdit, persist }: {
+export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = [], canEdit, accessCheckedAt, persist }: {
   saved: string | undefined;
   draftKey?: string;
   draftAliases?: readonly string[];
   canEdit: boolean;
+  accessCheckedAt?: number;
   persist: (text: string, expectedBody: string) => Promise<void>;
 }) {
   const [session] = useState(() => ({
     key: documentKey ? `${documentKey}:session:${draftRevision()}` : undefined,
-    source: documentKey ? listDrafts(documentKey, draftAliases)[0] : undefined,
+    source: documentKey ? listDrafts(documentKey, draftAliases).find(draft => !draft.detached) : undefined,
   }));
   const draftKey = session.key;
+  // A cached canEdit boolean is not evidence of regrant. Only a newer
+  // timestamp from the server query may supersede a cross-tab denial.
+  useEffect(() => {
+    if (documentKey && accessCheckedAt !== undefined) reconcileDraftAccess(documentKey, canEdit, accessCheckedAt);
+  }, [documentKey, canEdit, accessCheckedAt]);
   const sourceRef = useRef(session.source);
   const [draft, setDraft] = useState<string | null>(session.source?.text ?? null);
   const [status, setStatus] = useState<SaveStatus>("idle");
@@ -51,6 +57,11 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
   });
 
   const save = useCallback(async function drain(): Promise<void> {
+    if (draftKey && draftIsDetached(draftKey)) {
+      deniedRef.current = true; baseRef.current = undefined; sourceRef.current = undefined; recordRef.current = readDraft(draftKey);
+      if (mountedRef.current) setStatus("denied");
+      return;
+    }
     if (!dirtyRef.current || !editRef.current || conflictRef.current || deniedRef.current) return;
     if (inFlightRef.current) { queuedRef.current = true; return; }
     const base = baseRef.current;
@@ -119,6 +130,13 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
     };
   }, [save, draftKey]);
 
+  useEffect(() => subscribeDrafts(() => {
+    if (draftKey && draftIsDetached(draftKey) && dirtyRef.current) {
+      deniedRef.current = true; baseRef.current = undefined; sourceRef.current = undefined; recordRef.current = readDraft(draftKey);
+      if (mountedRef.current) setStatus("denied");
+    }
+  }), [draftKey]);
+
   const onChange = (next: string) => {
     const text = clampNote(next);
     if (!dirtyRef.current) baseRef.current = savedRef.current;
@@ -155,7 +173,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
   };
 
   const recoverDraft = (stored: StoredDraft) => {
-    if (dirtyRef.current || inFlightRef.current || !editRef.current) return;
+    if (stored.detached || dirtyRef.current || inFlightRef.current || !editRef.current) return;
     if (readDraft(stored.key) !== stored.record) return;
     sourceRef.current = stored;
     baseRef.current = stored.base;
@@ -170,7 +188,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
   // Recovery may discard a stored record while this editor remains mounted
   // (e.g. viewer downgrade). Do not resurrect that exact draft if editing returns.
   const discardStoredDraft = (stored: StoredDraft) => {
-    if (stored.record !== recordRef.current ||
+    if (!sameDraftRevision(stored.record, recordRef.current) ||
         (stored.key !== draftKey && stored.key !== sourceRef.current?.key)) return;
     revisionRef.current++;
     recordRef.current = null;
@@ -179,7 +197,8 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
     conflictRef.current = false;
     dirtyRef.current = false;
     setDraft(null);
-    if (!deniedRef.current) setStatus("idle");
+    deniedRef.current = false;
+    setStatus("idle");
   };
   const otherDrafts = documentKey ? listDrafts(documentKey, draftAliases).filter(candidate =>
     candidate.key !== draftKey && candidate.key !== sourceRef.current?.key) : [];
@@ -191,6 +210,6 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  return { value, onChange, status: conflict ? "conflict" as const : status,
+  return { value, onChange, status: conflict ? "conflict" as const : status === "denied" && !canEdit ? "idle" as const : status,
     dirty, retry: save, useServer, saveDraft, otherDrafts, recoverDraft, discardStoredDraft };
 }

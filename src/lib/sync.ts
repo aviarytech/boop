@@ -2,7 +2,7 @@ import type { ConvexReactClient } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { api } from '../../convex/_generated/api';
 import { authErrorData } from '../../convex/lib/authError';
-import { getOperations, prepareOperationForSync, getQueuedMutations, saveOperation, type MutationType, type QueuedMutation } from './offline';
+import { denyOperation, getOperations, prepareOperationForSync, getQueuedMutations, saveOperation, type MutationType, type QueuedMutation } from './offline';
 import type { ReplayAck } from '../../shared/replay';
 export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'error';
 export interface SyncStatus { status: SyncStatusType; message?: string; accountId?: string }
@@ -55,6 +55,7 @@ export class SyncManager {
               notify({ status: 'error', message: 'Sync paused. Sign in with the account that made these edits; your changes are still saved.' });
               return;
             }
+            if (auth?.code === 'FORBIDDEN') { await denyOperation(accountId, current.operationId); continue; }
             const conflict = error instanceof ConvexError && error.data?.code === 'REPLAY_CONFLICT';
             const message = conflict ? String(error.data.message) : error instanceof Error ? error.message : 'Sync failed';
             await saveOperation(accountId, { ...current, retryCount: current.retryCount + 1, state: conflict ? 'conflict' : 'failed', nextAttemptAt: Date.now() + 1000 * 2 ** current.retryCount, error: message });

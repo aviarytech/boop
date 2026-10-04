@@ -283,3 +283,21 @@ for (const transition of ['keep-list', 'logout', 'switch-account', 'rotate-token
     }
   });
 }
+
+test('revocation notification clears mounted cache fallbacks and denied optimistic additions even with a stale content subscription', async () => {
+  const accountId = 'hook-revoked';
+  fixture.user = { turnkeySubOrgId: accountId, did: 'did:a' }; fixture.token = 'token-revoked';
+  fixture.snapshots.set(`${accountId}:L1`, { items: [item()], acknowledgments: [], sequence: 0 });
+  const view = renderHook(() => useOptimisticItems('L1'));
+  try {
+    await waitFor(() => assert.equal(view.result.current.items.length, 1));
+    await act(async () => { await view.result.current.addItem({ name: 'Only my new text', createdByDid: 'did:a', createdAt: 1 }); });
+    await waitFor(() => assert.equal(view.result.current.items.length, 2));
+    await act(async () => { await store.reconcileOfflineAccess(accountId, [{ listId: 'L1', canRead: false, canEdit: false, checkedAt: 2 }]); });
+    await waitFor(() => assert.deepEqual(view.result.current.items, []));
+    assert.deepEqual(await store.getCachedItemsByList(accountId, 'L1'), []);
+    fixture.snapshots.delete(`${accountId}:L1`); view.rerender();
+    assert.deepEqual(view.result.current.items, []);
+    assert.equal((await store.getOperations(accountId))[0].payload.name, 'Only my new text');
+  } finally { view.unmount(); cleanup(); }
+});

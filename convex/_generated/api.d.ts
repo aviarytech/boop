@@ -17,6 +17,7 @@ import type * as apiKeys from "../apiKeys.js";
 import type * as apiKeysHttp from "../apiKeysHttp.js";
 import type * as assignees from "../assignees.js";
 import type * as assigneesHttp from "../assigneesHttp.js";
+import type * as attachmentDownload from "../attachmentDownload.js";
 import type * as attachments from "../attachments.js";
 import type * as auth from "../auth.js";
 import type * as authInternal from "../authInternal.js";
@@ -119,6 +120,7 @@ declare const fullApi: ApiFromModules<{
   apiKeysHttp: typeof apiKeysHttp;
   assignees: typeof assignees;
   assigneesHttp: typeof assigneesHttp;
+  attachmentDownload: typeof attachmentDownload;
   attachments: typeof attachments;
   auth: typeof auth;
   authInternal: typeof authInternal;

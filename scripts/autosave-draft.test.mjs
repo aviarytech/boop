@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 const { renderHook, act } = await import('@testing-library/react');
-await build({ entryPoints: ['src/hooks/useAutosaveDraft.ts'], outfile: 'tmp/autosave-draft-test.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react'] });
-const { useAutosaveDraft } = await import(pathToFileURL(`${process.cwd()}/tmp/autosave-draft-test.mjs`));
+await build({ stdin: { contents: 'export { useAutosaveDraft } from "./src/hooks/useAutosaveDraft"; export { reconcileDraftAccess, listDrafts, draftResources } from "./src/lib/noteDrafts";', resolveDir: process.cwd() }, outfile: 'tmp/autosave-draft-test.mjs', bundle: true, platform: 'node', format: 'esm', external: ['react'] });
+const { useAutosaveDraft, reconcileDraftAccess, listDrafts, draftResources } = await import(pathToFileURL(`${process.cwd()}/tmp/autosave-draft-test.mjs`));
 
 test('failed autosave keeps the draft, warns on close, and retries the latest text', async () => {
   let reject = true;
@@ -309,4 +309,76 @@ test('permission rejection is distinct from conflict, keeps draft and blocks ret
   assert.ok(durableDrafts(key).some(d => d.text === 'independent unsent text'));
   await act(async () => unmount());
   assert.equal(writes, 1);
+});
+
+
+for (const kind of ['note', 'item']) test(`${kind} draft revocation removes original bases and prevents stale mounted editors from automatic source replay even after regrant`, async () => {
+  const documentKey = `did:stale-${kind}:${kind}:resource`, writes = [];
+  const options = { saved: 'Original private comparison source', canEdit: true, draftKey: documentKey, persist: async text => writes.push(text) };
+  const first = renderHook(() => useAutosaveDraft(options));
+  const second = renderHook(() => useAutosaveDraft(options));
+  try {
+    await act(async () => { first.result.current.onChange('First independent work'); second.result.current.onChange('Second independent work'); });
+    assert.equal(listDrafts(documentKey).length, 2);
+    await act(async () => { reconcileDraftAccess(documentKey, false, 20); });
+    assert.ok(listDrafts(documentKey).every(draft => draft.detached && draft.base === undefined));
+    await act(async () => {
+      first.result.current.onChange('Stale tab keeps writing locally');
+      reconcileDraftAccess(documentKey, true, 30);
+      await first.result.current.retry(); await second.result.current.retry();
+    });
+    assert.deepEqual(writes, []);
+    assert.ok(listDrafts(documentKey).every(draft => draft.base === undefined));
+    assert.ok(listDrafts(documentKey).some(draft => draft.text === 'Stale tab keeps writing locally'));
+  } finally { first.unmount(); second.unmount(); }
+});
+
+for (const kind of ['note', 'item']) test(`${kind} fresh authorized session saves past old denial while old drafts and later stale writes stay detached`, async () => {
+  const documentKey = `did:fresh-${kind}:${kind}:resource`, writes = [];
+  const options = { saved:'Source', canEdit:true, draftKey:documentKey, persist:async text => writes.push(text) };
+  const old = renderHook(() => useAutosaveDraft(options));
+  let fresh;
+  try {
+    await act(async () => old.result.current.onChange('Old independent work'));
+    await act(async () => reconcileDraftAccess(documentKey, false, 100));
+    fresh = renderHook(() => useAutosaveDraft({...options, accessCheckedAt: 101}));
+    assert.equal(fresh.result.current.value, 'Source');
+    await act(async () => fresh.result.current.onChange('Fresh authorized work'));
+    await act(async () => fresh.result.current.retry());
+    assert.deepEqual(writes, ['Fresh authorized work']);
+    assert.ok(listDrafts(documentKey).some(d => d.text === 'Old independent work' && d.detached && d.base === undefined));
+    await act(async () => reconcileDraftAccess(documentKey, false, 102));
+    await act(async () => fresh.result.current.onChange('Stale edit after new denial'));
+    await act(async () => fresh.result.current.retry());
+    assert.deepEqual(writes, ['Fresh authorized work']);
+    assert.ok(listDrafts(documentKey).every(d => d.base === undefined));
+  } finally { old.unmount(); fresh?.unmount(); }
+});
+
+for (const kind of ['note', 'item']) test(`${kind} newly mounted stale authorized snapshot cannot override a known cross-tab denial`, async () => {
+  const documentKey = `did:stale-new-${kind}:${kind}:resource`, writes = [];
+  reconcileDraftAccess(documentKey, true, 98);
+  reconcileDraftAccess(documentKey, false, 100);
+  const editor = renderHook(() => useAutosaveDraft({saved:'Stale source', canEdit:true, accessCheckedAt:99,
+    draftKey:documentKey, persist:async text => writes.push(text)}));
+  try {
+    await act(async () => editor.result.current.onChange('Independent work'));
+    await act(async () => editor.result.current.retry());
+    assert.deepEqual(writes, []);
+    assert.equal(editor.result.current.status, 'denied');
+    assert.ok(listDrafts(documentKey).every(d => d.detached && d.base === undefined));
+  } finally { editor.unmount(); }
+});
+
+test('passive viewer mounts do not accumulate denial markers or monitored resources', async () => {
+  const did = 'did:passive-viewer';
+  for (const kind of ['note', 'item']) for (let index = 0; index < 64; index++) {
+    const documentKey = `${did}:${kind}:${index}`;
+    const viewer = renderHook(() => useAutosaveDraft({saved:'Read-only source', canEdit:false, accessCheckedAt:100,
+      draftKey:documentKey, persist:async () => assert.fail('viewer must not save')}));
+    await act(async () => viewer.unmount());
+    assert.equal(localStorage.getItem(`boop-note-access:${documentKey}`), null);
+    assert.deepEqual(listDrafts(documentKey), []);
+  }
+  assert.deepEqual(draftResources([did]), []);
 });

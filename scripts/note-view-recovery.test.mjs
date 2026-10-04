@@ -8,10 +8,10 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import('react');
 const { render, fireEvent, act, waitFor, cleanup } = await import('@testing-library/react');
 await buildNoteViewFixture('tmp/note-view-fixture.mjs');
-const { Harness, state } = await import(pathToFileURL(`${process.cwd()}/tmp/note-view-fixture.mjs`));
+const { Harness, state, drafts } = await import(pathToFileURL(`${process.cwd()}/tmp/note-view-fixture.mjs`));
 function setup({ seed, ...overrides } = {}) {
   localStorage.clear();
-  Object.assign(state, { did: 'did:editor', body: 'Original authorized source', canEdit: true, available: true, deny: false, writes: [], legacyDids: {}, identityLoading: false, ...overrides });
+  Object.assign(state, { did: 'did:editor', body: 'Original authorized source', accessCheckedAt: 1, canEdit: true, available: true, deny: false, writes: [], legacyDids: {}, identityLoading: false, ...overrides });
   seed?.();
   return render(React.createElement(Harness));
 }
@@ -51,6 +51,13 @@ for (const loss of ['Revoke access', 'Downgrade to viewer', 'Save denied before 
       assert.equal(view.getByRole('textbox', { name: 'Unsent local draft' }).value, 'My independent draft');
       assert.equal(view.queryByText('Compare with the server version'), null);
       assert.equal(view.queryByRole('textbox', { name: 'Note body' }), null);
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('boop-note-draft:did:editor:')) {
+          const record = JSON.parse(localStorage.getItem(key));
+          assert.equal(record.base, undefined); assert.equal(record.detached, true);
+        }
+      }
       fireEvent.click(view.getByText('Download draft'));
       assert.equal(await blobs[0].text(), 'My independent draft');
       const ownKeys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter(k => k.startsWith('boop-note-draft:'));
@@ -195,5 +202,36 @@ test('discarding one unavailable draft leaves other sessions of the same account
     const before = view.getAllByRole('textbox', { name: 'Unsent local draft' }).map(input => input.value);
     fireEvent.click(view.getAllByText('Discard draft')[0]);
     assert.deepEqual(view.getAllByRole('textbox', { name: 'Unsent local draft' }).map(input => input.value), before.slice(1));
+  } finally { await act(async () => view.unmount()); cleanup(); }
+});
+
+for (const oldDenial of [false, true]) test(`viewer render then promotion and fresh session saves (older denied marker: ${oldDenial})`, async () => {
+  let view = setup({ canEdit: false, accessCheckedAt: 99, seed: () => {
+    if (oldDenial) {
+      drafts.reconcileDraftAccess('did:editor:note:N', true, 98);
+      drafts.reconcileDraftAccess('did:editor:note:N', false, 100);
+    }
+  } });
+  try {
+    assert.equal(localStorage.getItem('boop-note-access:did:editor:note:N'), oldDenial ? JSON.stringify({canEdit:false,checkedAt:100}) : null);
+    await act(async () => { state.canEdit = true; state.accessCheckedAt = 101; state.refresh(); });
+    await act(async () => view.unmount());
+    view = render(React.createElement(Harness));
+    edit(view, 'Fresh authorized work');
+    await waitFor(() => assert.equal(state.body, 'Fresh authorized work'), { timeout: 2000 });
+    assert.equal(state.writes.length, 1);
+    assert.equal(view.queryByText('Download draft'), null);
+  } finally { await act(async () => view.unmount()); cleanup(); }
+});
+
+test('unavailable rendering cannot repin a reconciled grant at the same server timestamp', async () => {
+  const view = setup({ available: false, seed: () => {
+    drafts.reconcileDraftAccess('did:editor:note:N', false, 100);
+    drafts.reconcileDraftAccess('did:editor:note:N', true, 101);
+  } });
+  try {
+    assert.deepEqual(JSON.parse(localStorage.getItem('boop-note-access:did:editor:note:N')), {canEdit:true,checkedAt:101});
+    drafts.reconcileDraftAccess('did:editor:note:N', true, 101);
+    assert.equal(drafts.draftIsDetached('did:editor:note:N:session:new'), false);
   } finally { await act(async () => view.unmount()); cleanup(); }
 });

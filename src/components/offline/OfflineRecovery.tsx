@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useOffline } from '../../hooks/useOffline';
 import { api } from '../../../convex/_generated/api';
 import type { Id } from '../../../convex/_generated/dataModel';
-import { rebaseOperation, resolveOperationId, discardCascade, discardOperation, type OfflineItem, type QueuedMutation } from '../../lib/offline';
+import { exportSavedEdits, rebaseOperation, resolveOperationId, discardCascade, discardOperation, type OfflineItem, type QueuedMutation } from '../../lib/offline';
 import { authErrorData } from '../../../convex/lib/authError';
 import { exportIdentifiedLegacyWork, hasLegacyWork } from '../../lib/legacyOffline';
 function download(value: unknown, filename: string) {
@@ -27,6 +27,9 @@ export function OfflineRecovery() {
   const isCurrent = () => mounted.current && current.current.accountId === accountId && current.current.token === token;
   useEffect(() => { void hasLegacyWork().then(setLegacy); }, []);
   useEffect(() => { setReview(undefined); setDiscard(undefined); setMessage(''); setDiscarding(false); }, [accountId, token]);
+  useEffect(() => {
+    if (review && operations.find(m => m.operationId === review.mutation.operationId)?.denied) setReview(undefined);
+  }, [operations, review]);
   if (!accountId || (!pendingCount && !legacy)) return null;
   const pending = operations.filter(m => m.state !== 'acked');
   const inspect = async (mutation: QueuedMutation) => {
@@ -64,24 +67,25 @@ export function OfflineRecovery() {
   return <details className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border bg-white p-3 text-sm text-gray-900 shadow-lg dark:bg-gray-900 dark:text-white">
     <summary className="cursor-pointer">{pendingCount ? `${pendingCount} saved edit(s) awaiting sync` : 'Older offline edits retained'}</summary>
     <div className="max-h-96 overflow-auto space-y-3 pt-3">
-      {pendingCount > 0 && <><button className="underline mr-3" onClick={() => void manualSync()}>Retry failed edits</button><button className="underline" onClick={() => download(pending, 'boop-saved-edits.json')}>Export saved edits</button></>}
+      {pendingCount > 0 && <><button className="underline mr-3" onClick={() => void manualSync()}>Retry failed edits</button><button className="underline" onClick={() => download(exportSavedEdits(pending), 'boop-saved-edits.json')}>Export saved edits</button></>}
       {pending.map(m => <div key={m.operationId} className="border-t pt-2">
-        <p>{m.type}: {String(m.payload.name ?? m.payload.itemId ?? 'Selected items')}</p>
+        <p>{m.type}: {m.legacyRecoveryPending ? 'Older edit retained for recovery' : String(m.payload.name ?? m.payload.itemId ?? 'Selected items')}</p>
         <p>{m.error ?? 'Waiting for sync or a preceding edit'}</p>
-        {m.state === 'conflict' && <button className="underline mr-3" onClick={() => void inspect(m)}>Review conflict</button>}
+        {m.state === 'conflict' && !m.denied && <button className="underline mr-3" onClick={() => void inspect(m)}>Review conflict</button>}
         {(m.state === 'conflict' || m.state === 'failed') && <button className="underline" onClick={() => { setDiscard({ accountId, token, operationId: m.operationId }); setMessage(''); }}>Discard saved edit</button>}
       </div>)}
       {discard?.accountId === accountId && discard.token === token && <div role="alertdialog" aria-labelledby="discard-edits-title" className="border p-2 space-y-2">
         <p id="discard-edits-title">Discard saved edits?</p>
         {discardRoot ? <>
           <p>This permanently removes {discardEdits.length} saved edit(s) from this device: this edit and {discardEdits.length - 1} dependent edit(s). They will not be retried.</p>
+          {discardEdits.some(m => m.legacyRecoveryPending) && <p>Some older edits cannot be exported safely. Discarding also permanently removes their retained values.</p>}
           <p>This does not undo edits already sent to the server. A request sent before a connection failure may still finish. Export these edits first if you want to keep a copy.</p>
-          <button className="underline mr-3" onClick={() => download(discardEdits, 'boop-discarded-edits-backup.json')}>Export these edits</button>
+          <button className="underline mr-3" onClick={() => download(exportSavedEdits(discardEdits), 'boop-discarded-edits-backup.json')}>Export these edits</button>
           <button className="underline mr-3" disabled={discarding} onClick={() => void confirmDiscard()}>Discard edits</button>
         </> : <p>This edit changed or is already syncing. Review the saved edits again before discarding.</p>}
         <button className="underline" disabled={discarding} onClick={() => setDiscard(undefined)}>Cancel discard</button>
       </div>}
-      {review?.accountId === accountId && <div className="border p-2">
+      {review?.accountId === accountId && !operations.find(m => m.operationId === review.mutation.operationId)?.denied && <div className="border p-2">
         <p>Current server version</p><pre className="whitespace-pre-wrap break-all">{JSON.stringify(review.items.map(i => ({ name: i.name, checked: i.checked, description: i.description })), null, 2)}</pre>
         <p>Your saved edit</p><pre className="whitespace-pre-wrap break-all">{JSON.stringify(review.mutation.payload, null, 2)}</pre>
         <button className="underline" onClick={async () => {

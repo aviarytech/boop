@@ -60,6 +60,7 @@ export const { public: getNoteBody, internal: getNoteBodyInternal } = actorQuery
     if (!await canUserViewList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid)) return null;
     const row = await getBodyRow(ctx, args.listId);
     return {
+      accessCheckedAt: Date.now(),
       body: row?.body ?? "",
       updatedAt: row?.updatedAt ?? list.createdAt,
       canEdit: hasScope(ctx.actor.scopes, "items:write") && await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid),

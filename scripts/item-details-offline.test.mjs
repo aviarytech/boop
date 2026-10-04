@@ -19,10 +19,11 @@ modules.assignees = await import(pathToFileURL(`${process.cwd()}/tmp/item-detail
 // transport/context boundaries are replaced; reject invalid IDs even when the
 // backend is reachable but the create has not yet been acknowledged.
 await build({ stdin: { contents: 'export { ItemDetailsModal } from "./src/components/ItemDetailsModal"; export { NestedListItem } from "./src/components/NestedListItem"; export { useOptimisticItems } from "./src/hooks/useOptimisticItems"; export { matchesItemId } from "./src/lib/optimisticItems";', resolveDir: process.cwd() }, outfile: 'tmp/item-details-offline.mjs', bundle: true, jsx: 'automatic', platform: 'node', format: 'esm', packages: 'external', define: { 'import.meta.env.MODE': '"test"' }, plugins: [{ name: 'detail-contexts', setup(b) {
-  b.onResolve({ filter: /\/(authenticatedConvex|useOffline|useSettings|useCurrentUser|originals|observability)$/ }, args => ({ path: args.path, namespace: 'detail-fixture' }));
+  b.onResolve({ filter: /\/(authenticatedConvex|useOffline|useSettings|useAuth|useCurrentUser|originals|observability)$/ }, args => ({ path: args.path, namespace: 'detail-fixture' }));
   b.onLoad({ filter: /.*/, namespace: 'detail-fixture' }, ({ path }) => ({ contents:
     path.endsWith('/authenticatedConvex') ? `export const useQuery=(ref,args)=>globalThis.__detailFixture.query(ref,args); export const useMutation=ref=>args=>globalThis.__detailFixture.mutate(ref,args); export const useAction=useMutation;` :
     path.endsWith('/useOffline') ? 'export const useOffline=()=>globalThis.__detailFixture.offline;' :
+    path.endsWith('/useAuth') ? 'export const useAuth=()=>({token:null});' :
     path.endsWith('/useSettings') ? 'export const useSettings=()=>({haptic:()=>{}});' :
     path.endsWith('/useCurrentUser') ? 'export const useCurrentUser=()=>({did:globalThis.__detailFixture.did});' :
     path.endsWith('/observability') ? 'export const recordLatencyMs=()=>{};' :
@@ -319,4 +320,30 @@ test('unknown and null-name long-DID assignees have compact labels and remain re
       assert.deepEqual((await f.call('items','getListItems',{listId:'L1'}))[0].assigneeDids,[]);
     } finally { view.unmount(); cleanup(); }
   }
+});
+
+test('real name-only modal save exports only authored fields after revocation, including explicit clears without untouched private data', async () => {
+  const f = await replayFixture(modules), store = modules.offline, account = f.session.accountId;
+  const item = { ...f.rows.items[0], description: 'Untouched private source description', url: 'https://private.test/original', recurrence: { frequency: 'daily' }, priority: 'high' };
+  await store.cacheItems(account, [item], 'L1');
+  globalThis.__detailFixture = { did: f.owner.user.did,
+    offline: { accountId: account, isOnline: false, queueMutation: (m, snapshots) => store.queueMutation(account, m, snapshots) },
+    query: (ref, args) => args === 'skip' ? undefined : getFunctionName(ref) === 'lists:getList' ? f.rows.lists[0] : getFunctionName(ref) === 'users:getUsersByDids' ? {} : [],
+    mutate() { throw Error('Use queue'); },
+  };
+  const view = render(h(MemoryRouter, null, h(ItemDetailsModal, { item, userDid: f.owner.user.did, canEdit: true, onClose() {} })));
+  try {
+    fireEvent.change(view.getByDisplayValue(item.name), { target: { value: 'Only my new name' } });
+    fireEvent.change(view.getByDisplayValue(item.url), { target: { value: '' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => assert.equal((await store.getOperations(account)).length, 1));
+    const [queued] = await store.getOperations(account);
+    assert.deepEqual(queued.payload, { itemId: 'I1', name: 'Only my new name', clearUrl: true });
+    await store.reconcileOfflineAccess(account, [{ listId: 'L1', canRead: false, canEdit: false }]);
+    const exported = store.exportSavedEdits(await store.getOperations(account));
+    assert.deepEqual(exported.edits[0].payload, queued.payload);
+    assert.ok(!JSON.stringify(exported).includes(item.description));
+    assert.ok(!JSON.stringify(exported).includes(item.url));
+    assert.ok(!JSON.stringify(exported).includes('daily'));
+  } finally { view.unmount(); cleanup(); }
 });

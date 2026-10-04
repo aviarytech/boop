@@ -43,6 +43,7 @@ function ItemNoteEditor() {
     saved: data?.description,
     draftKey,
     canEdit: !!data?.canEdit,
+    accessCheckedAt: data?.accessCheckedAt,
     persist: async (text, expectedBody) => {
       await updateItem({ itemId: itemId as Id<"items">, description: text, expectedDescription: expectedBody });
     },

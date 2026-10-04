@@ -11,7 +11,6 @@ import { internal } from "./_generated/api";
 import {
   bucketKey as makeBucketKey,
   deleteObject,
-  presignGet,
   presignPut,
 } from "./lib/bucket";
 
@@ -154,7 +153,7 @@ export const { public: getAttachmentUrls, internal: getAttachmentUrlsInternal } 
         key: entry.key,
         contentType: entry.contentType,
         size: entry.size,
-        url: await presignGet(entry.key, { expiresSec: 600 }),
+        url: `${process.env.CONVEX_SITE_URL}/api/attachments/download?${new URLSearchParams({ itemId: args.itemId, key: entry.key })}`,
       }))
     );
   },
