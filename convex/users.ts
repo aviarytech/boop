@@ -1,4 +1,4 @@
-import { publicDisplayName } from "./lib/publicDisplayName";
+import { publicDisplayName, chosenPublicDisplayName, displayNameError } from "./lib/publicDisplayName";
 import { canUserViewList } from "./lib/permissions";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
@@ -6,7 +6,9 @@ import { actorMutation, actorQuery } from "./lib/authenticated";
  * Provides user statistics and profile information.
  */
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
+import { requireSession } from "./lib/session";
+import { resourceUnavailable } from "./lib/authError";
 import { query, internalMutation, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
@@ -86,6 +88,8 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
       if (await drain(ctx.db.query(table).withIndex("by_list", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     }
     if (await drain(ctx.db.query("listGrants").withIndex("by_list_recipient", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
+    if (await drain(ctx.db.query("listGrantRevocations").withIndex("by_list_recipient", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
+    if (await drain(ctx.db.query("listInvitations").withIndex("by_list_email", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     await ctx.db.delete(listId);
     return false;
   }
@@ -100,6 +104,11 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     if (await drain(ctx.db.query("didLogs").withIndex("by_user_did", q => q.eq("userDid", did)).take(DELETE_BATCH_SIZE))) return false;
   }
   if (await drain(ctx.db.query("listGrants").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("listGrantRevocations").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("listInvitations").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  // Pending email invitations are not account-bound. Profile email is not proof
+  // of ownership and must never authorize deletion of someone else’s invitations.
+  if (await drain(ctx.db.query("invitationRequests").withIndex("by_owner_request", q => q.eq("ownerId", userId)).take(DELETE_BATCH_SIZE))) return false;
   const code = await ctx.db.query("referralCodes").withIndex("by_user", q => q.eq("userId", userId)).first();
   if (code) {
     if (await drain(ctx.db.query("referrals").withIndex("by_code", q => q.eq("referralCodeId", code._id)).take(DELETE_BATCH_SIZE))) return false;
@@ -223,5 +232,26 @@ export const { public: getUserStats, internal: getUserStatsInternal } = actorQue
       completedItems,
       pendingItems: totalItems - completedItems,
     };
+  },
+});
+
+
+/** Only the authenticated account can explicitly choose its public attribution. */
+export const { public: getMyPublicDisplayName, internal: getMyPublicDisplayNameInternal } = actorQuery({
+  resources: () => ({}), scope: "lists:read", args: {},
+  handler: async ctx => ({ displayName: chosenPublicDisplayName(await ctx.db.get(ctx.actor.userId)) }),
+});
+
+export const { public: setPublicDisplayName, internal: setPublicDisplayNameInternal } = actorMutation({
+  resources: () => ({}), scope: "*", args: { displayName: v.string() },
+  handler: async (ctx, args) => {
+    if (ctx.actor.viaApiKey) throw resourceUnavailable();
+    const session = await requireSession(ctx, ctx.credentials.authToken);
+    const user = await ctx.db.get(ctx.actor.userId);
+    const displayName = args.displayName.trim().normalize("NFKC");
+    const error = displayNameError(displayName, session.email) ?? displayNameError(displayName, user?.email);
+    if (error) throw new ConvexError(error);
+    await ctx.db.patch(ctx.actor.userId, { displayName, displayNameChosenAt: Date.now() });
+    return { displayName };
   },
 });

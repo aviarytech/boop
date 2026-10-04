@@ -598,6 +598,12 @@ export const { public: deleteList, internal: deleteListInternal, replay: deleteL
     const grants = await ctx.db.query("listGrants")
       .withIndex("by_list_recipient", q => q.eq("listId", args.listId)).collect();
     for (const grant of grants) await ctx.db.delete(grant._id);
+    const revocations = await ctx.db.query("listGrantRevocations")
+      .withIndex("by_list_recipient", q => q.eq("listId", args.listId)).collect();
+    for (const revocation of revocations) await ctx.db.delete(revocation._id);
+    const invitations = await ctx.db.query("listInvitations")
+      .withIndex("by_list_email", q => q.eq("listId", args.listId)).collect();
+    for (const invitation of invitations) await ctx.db.delete(invitation._id);
     await ctx.db.delete(args.listId);
   },
 });

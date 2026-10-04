@@ -42,6 +42,10 @@ export const { public: revokeListGrant, internal: revokeListGrantInternal } = ac
   handler: async (ctx, args) => {
     const grant = await ctx.db.get(args.grantId);
     if (!grant || grant.listId !== args.listId || grant.recipientId === ctx.actor.userId) throw resourceUnavailable();
+    const previous = await ctx.db.query("listGrantRevocations")
+      .withIndex("by_list_recipient", q => q.eq("listId", args.listId).eq("recipientId", grant.recipientId)).unique();
+    if (previous) await ctx.db.patch(previous._id, { revokedAt: Date.now() });
+    else await ctx.db.insert("listGrantRevocations", { listId: args.listId, recipientId: grant.recipientId, revokedAt: Date.now() });
     await ctx.db.delete(grant._id);
   },
 });

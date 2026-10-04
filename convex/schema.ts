@@ -9,6 +9,25 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  listInvitations: defineTable({
+    listId: v.id("lists"), ownerId: v.id("users"), email: v.string(),
+    role: v.union(v.literal("viewer"), v.literal("editor")),
+    version: v.number(), createdAt: v.number(), issuedAt: v.number(), expiresAt: v.number(),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("revoked"), v.literal("expired")),
+    recipientId: v.optional(v.id("users")), grantId: v.optional(v.id("listGrants")),
+    delivery: v.union(v.literal("queued"), v.literal("sent"), v.literal("failed")),
+  }).index("by_list_email", ["listId", "email"])
+    .index("by_email_status", ["email", "status"])
+    .index("by_recipient", ["recipientId"]),
+  // Revocation tombstones prevent older, still-pending invitations restoring access.
+  listGrantRevocations: defineTable({
+    listId: v.id("lists"), recipientId: v.id("users"), revokedAt: v.number(),
+  }).index("by_list_recipient", ["listId", "recipientId"])
+    .index("by_recipient", ["recipientId"]),
+  invitationRequests: defineTable({
+    ownerId: v.id("users"), requestId: v.string(), fingerprint: v.string(),
+    invitationId: v.id("listInvitations"), version: v.number(),
+  }).index("by_owner_request", ["ownerId", "requestId"]),
   // Accepted account grants only. Pending invitations must live separately.
   listGrants: defineTable({
     listId: v.id("lists"),
@@ -76,6 +95,7 @@ export default defineSchema({
     deletionDids: v.optional(v.array(v.string())),
     did: v.optional(v.string()), // did:webvh:... created client-side (null until first login completes)
     displayName: v.string(),
+    displayNameChosenAt: v.optional(v.number()), // Explicit public-name choice; never inferred from old profiles
     createdAt: v.number(),
     // Turnkey auth fields (added in Phase 1.3)
     turnkeySubOrgId: v.optional(v.string()), // Turnkey sub-organization ID

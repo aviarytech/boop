@@ -19,6 +19,8 @@ import { initPushNotifications } from './lib/pushNotifications'
 import { incrementMetric } from './lib/observability'
 
 // Lazy-loaded routes for better code splitting
+const Invitations = lazy(() => import('./pages/Invitations').then(m => ({ default: m.Invitations })))
+const InvitationSignIn = lazy(() => import('./pages/Invitations').then(m => ({ default: m.InvitationSignIn })))
 const Home = lazy(() => import('./pages/Home').then(m => ({ default: m.Home })))
 const Sites = lazy(() => import('./pages/Sites').then(m => ({ default: m.Sites })))
 const SiteDetail = lazy(() => import('./pages/SiteDetail').then(m => ({ default: m.SiteDetail })))
@@ -139,6 +141,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main id="main-content" className="container mx-auto px-4 py-6 safe-area-inset-bottom flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain" style={{ touchAction: "pan-y pinch-zoom" }}>
+        <div className="mb-5 text-right"><Link to="/invitations" className="inline-block py-2 text-sm font-semibold text-stone-700 dark:text-gray-300 underline underline-offset-4">Invitations</Link></div>
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 
@@ -275,6 +278,9 @@ function App() {
             <Route path="/join/:listId/:token" element={<JoinList />} />
             <Route path="/public/:did" element={<PublicList />} />
             <Route path="/:userPath/resources/:resourceId" element={<SharedListResource />} />
+
+            <Route path="/invitations" element={isAuthenticated ? <ProtectedRoute><Invitations /></ProtectedRoute> : <InvitationSignIn />} />
+            <Route path="/invitations/:invitationId/:version" element={isAuthenticated ? <ProtectedRoute><Invitations /></ProtectedRoute> : <InvitationSignIn />} />
 
             {/* Protected routes - require authentication */}
             <Route path="/d" element={<ProtectedRoute><Home /></ProtectedRoute>} />
