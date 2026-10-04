@@ -28,7 +28,7 @@ export async function initPushNotifications() {
     console.log('Push registration success, token:', token.value);
     // Token will be sent to Convex via registerNativePushToken
     // Store it for later registration
-    window.__pooAppAPNsToken = token.value;
+    window.__boopAPNsToken = token.value;
   });
 
   PushNotifications.addListener('registrationError', (error) => {
@@ -56,7 +56,7 @@ export async function registerNativePushToken(
   convexMutation: (args: { userDid: string; token: string; platform: 'ios' | 'android' | 'web' }) => Promise<unknown>,
   userDid: string
 ) {
-  const token = window.__pooAppAPNsToken;
+  const token = window.__boopAPNsToken;
   if (!token) return;
 
   await convexMutation({
@@ -76,6 +76,6 @@ export async function getDeliveredNotifications() {
 // Extend window for APNs token storage
 declare global {
   interface Window {
-    __pooAppAPNsToken?: string;
+    __boopAPNsToken?: string;
   }
 }
