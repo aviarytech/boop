@@ -1,11 +1,9 @@
 /**
  * localStorage-backed KeyStore for did:cel list assets.
  *
- * Without a KeyStore, LifecycleManager.createAsset mints the genesis controller
- * key, uses it to sign the create event, then drops it — the SDK emits
- * `key:unpersisted` and every later CEL append degrades to cel:append-skipped.
- * Holding the key is what makes a list asset authorable rather than merely
- * identifiable.
+ * The v4 wrapper persists each local signer's secret under `<assetId>#key-0`
+ * and reconstructs a CelSigner when publishing. The legacy SDK uses the same
+ * KeyStore for existing pre-CEL-3 assets.
  *
  * Custody matches the did:webvh keys in webvh.ts: raw hex in localStorage,
  * per-origin, never sent to the server.
@@ -20,8 +18,8 @@ function storageKey(verificationMethodId: string): string {
 }
 
 /**
- * The SDK registers each genesis key under two verification-method ids (the
- * did:key VM and `<did>#key-0`), so a single asset writes two entries.
+ * The legacy SDK registers both the did:key VM and `<did>#key-0`.
+ * New v4 assets need only the per-asset entry.
  */
 export const localCelKeyStore: KeyStore = {
   async getPrivateKey(verificationMethodId: string): Promise<string | null> {

@@ -18,6 +18,23 @@ Check that list for what needs to be built. Mark items done when you ship them.
 - **Credentials**: Verifiable Credentials (via @originals/sdk)
 - **Deploy**: Railway (frontend) + Convex Cloud (backend)
 
+## Originals SDK compatibility
+
+New lists and notes use `@originals/sdk` 4.0.0 with explicit local Ed25519
+signers and version-4 envelopes. The application's `assetDid` field remains
+unchanged; the SDK envelope calls this identity `assetId`.
+
+Saved version-1/2 envelopes from the old prerelease cannot be loaded by the
+v4 lifecycle. `originalsLegacy.ts` loads the pinned `@originals/sdk-legacy`
+alias only for those archives, preserving their signatures, identities and
+existing device keys when verifying or publishing. This intentionally retains
+the old SDK for compatibility; do not remove it while those archives remain
+in use. No stored histories are rewritten or re-minted by this upgrade.
+See the [upstream migration guide](https://github.com/onionoriginals/sdk/blob/main/docs/MIGRATION_4.0.md).
+
+Focused verification:
+`bun test scripts/originals.test.mjs scripts/published-version.test.mjs scripts/cel-migration.test.mjs`.
+
 ## Sites
 
 boop also includes **Sites**, a public publishing surface alongside private and

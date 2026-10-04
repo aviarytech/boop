@@ -59,9 +59,11 @@ const originals = await loadOriginalsModule();
   // The envelope is what makes the DID more than an opaque string.
   const envelope = JSON.parse(asset.envelope);
   assert.equal(envelope.format, "originals/asset");
-  assert.equal(envelope.assetDid, asset.assetDid, "envelope must describe this asset");
+  assert.equal(envelope.assetId, asset.assetDid, "envelope must describe this asset");
   assert.ok(envelope.eventLog, "envelope must carry the signed CEL log");
-  assert.ok(envelope.didDocuments["did:cel"], "envelope must carry the did:cel document");
+  assert.equal(envelope.version, 4);
+  assert.ok(originals.genesisSealedAt(asset.envelope), "v4 genesis must have a readable seal time");
+  assert.equal(envelope.eventLog.log[0].event.operation.data.profile, "originals/cel/3");
 }
 
 // buildNoteBodyResource / createNoteAsset: a note's body is its own genesis resource
@@ -101,9 +103,17 @@ const originals = await loadOriginalsModule();
 
   // Tampering with the genesis resource must fail closed, not pass quietly.
   const tampered = JSON.parse(asset.envelope);
-  tampered.resources[0].content = JSON.stringify({ name: "Not Chores" });
+  tampered.resources[0].content.data = Buffer.from("Not Chores").toString("base64");
   const bad = await originals.verifyListEnvelope(JSON.stringify(tampered));
   assert.equal(bad.verified, false, "tampered resource content must not verify");
+
+  const changedHistory = JSON.parse(asset.envelope);
+  changedHistory.eventLog.log[0].event.operation.data.name = "Forged";
+  assert.equal((await originals.verifyListEnvelope(JSON.stringify(changedHistory))).verified, false);
+
+  // Unknown containers must not fall back to the legacy verifier.
+  const unknown = { ...JSON.parse(asset.envelope), version: 99 };
+  assert.equal((await originals.verifyListEnvelope(JSON.stringify(unknown))).verified, false);
 
   // Garbage in must not throw at the call site.
   const garbage = await originals.verifyListEnvelope("not json");
