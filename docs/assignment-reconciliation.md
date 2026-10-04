@@ -160,3 +160,37 @@ large-chunk warnings remain. Test-generated icon/splash artifacts were restored.
 The coordinating thread independently verified the mocked-transport modal at
 375×812, including multiple assignees and a long-DID removal button remaining
 inside the viewport. No live deployment or native-device validation is claimed.
+
+## Assignment read scaling (PR #263 follow-up)
+
+`withAssignmentsBatch` hydrates requested items with at most one assignment index
+query per represented list. It groups live requested item IDs before reading,
+ignores orphan/out-of-subset rows, unions unreconciled scalars, and deduplicates
+membership. Multi-item groups use `itemAssignees.by_list`; a singleton uses the
+narrower `by_item` index. Empty filtered results make no assignment query. Explorer,
+list/replay/API reads, sub-items, due-date and priority results use this path.
+
+Copying preloads source membership once and inserts the brand-new target's
+primary/revision projection, membership rows and attributed activities directly.
+It does not read, reconcile, or diff each new target. Unassigned targets retain
+initial assignment version 1; assigned targets retain version 2, sorted primary,
+and copier attribution. Source history stays untouched. Single recurrence reads
+only source membership; batch recurrence caches assignment and parent-group order
+state once per list and advances order locally for each new occurrence. Both
+insert new target membership without target reads.
+
+Query-count regressions exercise 4,500-item reads and copies of 1,200 mostly
+unassigned items, with mixed legacy scalars, authoritative rows, duplicate rows,
+and orphans. They assert one assignment query, a fixed read-call budget for copy,
+zero new-target reads, source/history preservation, and correct new activities.
+Subset/singleton/empty results and batch recurrence ordering are also covered.
+These fixtures demonstrate call-count scaling, not unlimited transaction size or
+deployed throughput; data-volume and write budgets still apply.
+
+Follow-up validation: 84 focused tests, 436 full Bun tests, frontend/backend
+TypeScript, auth registry check, frozen-lockfile installation with scripts
+disabled, and Vite build with uploads disabled passed. Changed TypeScript source
+ESLint has zero errors both before and after this follow-up. Existing React
+`act(...)` and bundle-size warnings remain. No deployment, live migration, or
+production read was performed. Integration with the newer SDK/main branch is
+left to the coordinating thread.
