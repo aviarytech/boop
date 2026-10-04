@@ -15,7 +15,7 @@ import { v } from "convex/values";
 
 /**
  * Helper to check if a user can edit a list.
- * Owner can always edit. Published lists are editable by anyone.
+ * Owners and accepted editors can edit.
  */
 
 /**
@@ -56,7 +56,7 @@ export const { public: getItemComments, internal: getItemCommentsInternal } = ac
 
 /**
  * Add a comment to an item.
- * Any collaborator (owner, editor, or viewer) can comment.
+ * Owners and accepted editors can comment; viewers are read-only.
  */
 export const { public: addComment, internal: addCommentInternal } = actorMutation({
   resources: args => ({ items: [args.itemId] }),
@@ -75,7 +75,7 @@ export const { public: addComment, internal: addCommentInternal } = actorMutatio
       throw new Error("Item not found");
     }
 
-    // Verify user can view this list (any collaborator can comment)
+    // The mutation boundary requires content-edit authority.
     const canView = await canUserViewList(
       ctx,
       item.listId,
@@ -97,7 +97,7 @@ export const { public: addComment, internal: addCommentInternal } = actorMutatio
 
 /**
  * Delete a comment.
- * Only the comment author or list owner/editor can delete.
+ * Only current list owners/editors can delete, including their own comments.
  */
 export const { public: deleteComment, internal: deleteCommentInternal } = actorMutation({
   resources: () => ({}),
@@ -116,14 +116,6 @@ export const { public: deleteComment, internal: deleteCommentInternal } = actorM
       throw resourceUnavailable();
     }
 
-    const didsToCheck = [ctx.actor.did];
-    if (ctx.actor.legacyDid) {
-      didsToCheck.push(ctx.actor.legacyDid);
-    }
-
-    // Check if user is the comment author
-    const isAuthor = didsToCheck.includes(comment.userDid);
-
     // Check if user can edit the list (owner or editor)
     const canEdit = await canUserEditList(
       ctx,
@@ -132,7 +124,7 @@ export const { public: deleteComment, internal: deleteCommentInternal } = actorM
       ctx.actor.legacyDid
     );
 
-    if (!isAuthor && !canEdit) {
+    if (!canEdit) {
       throw resourceUnavailable();
     }
 

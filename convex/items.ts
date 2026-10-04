@@ -1,4 +1,6 @@
 import { changeAssignments, deleteAssignments, inheritedAssignmentFields, insertInheritedAssignments, withAssignments, withAssignmentsBatch } from "./lib/assignments";
+
+import { hasScope } from "./lib/apiKeyHelpers";
 import { getReplaySequence } from "./lib/replay";
 import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
@@ -8,7 +10,7 @@ import type { Id } from "./_generated/dataModel";
 
 import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
-import { canUserEditList } from "./lib/permissions";
+import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
 
 /**
@@ -176,7 +178,7 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
     if (args.parentId) {
       const parent = await ctx.db.get(args.parentId);
       if (!parent || parent.listId !== args.listId) {
-        throw new Error("Parent item not found or belongs to different list");
+        throw resourceUnavailable();
       }
     }
 
@@ -558,13 +560,16 @@ export const { public: getListItems, internal: getListItemsInternal } = actorQue
  */
 export const { public: reorderItems, internal: reorderItemsInternal, replay: reorderItemsReplay } = actorMutation({
   offlineOperation: "reorderItem",
-  resources: args => ({ lists: [args.listId] }),
+  resources: args => ({ lists: [args.listId], items: args.itemIds }),
   scope: "items:write",
   args: {
     listId: v.id("lists"),
     itemIds: v.array(v.id("items")),
   },
   handler: async (ctx, args) => {
+    for (const id of args.itemIds) {
+      if ((await ctx.db.get(id))?.listId !== args.listId) throw resourceUnavailable();
+    }
     // Update order for each item
     for (let i = 0; i < args.itemIds.length; i++) {
       const itemId = args.itemIds[i];
@@ -619,15 +624,14 @@ export const { public: getItemForSync, internal: getItemForSyncInternal } = acto
   args: { itemId: v.id("items") },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
-    if (!item || !await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) throw resourceUnavailable();
+    if (!item || !await canUserViewList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) throw resourceUnavailable();
     return withAssignments(ctx, item);
   },
 });
 
 /**
  * Load a single item for the full-page note editor.
- * Returns null when the item does not exist OR the user cannot edit it
- * (in the current permission model, no edit access == no access).
+ * Returns null for missing or unreadable items; readable items include canEdit.
  */
 export const { public: getItemForEditor, internal: getItemForEditorInternal } = actorQuery({
   resources: () => ({}),
@@ -639,8 +643,8 @@ export const { public: getItemForEditor, internal: getItemForEditorInternal } = 
     const item = await ctx.db.get(args.itemId);
     if (!item) return null;
 
-    const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
-    if (!canEdit) return null;
+    const canEdit = hasScope(ctx.actor.scopes, "items:write") && await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
+    if (!await canUserViewList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) return null;
 
     return {
       itemId: item._id,
@@ -903,6 +907,10 @@ export const { public: getHighPriorityItems, internal: getHighPriorityItemsInter
       }
     }
 
+    const grants = await ctx.db.query("listGrants")
+      .withIndex("by_recipient", q => q.eq("recipientId", ctx.actor.userId)).collect();
+    for (const grant of grants) listIds.add(grant.listId);
+
     // Now fetch high-priority items from all accessible lists
     const highPriorityItems: Array<{
       item: Awaited<ReturnType<typeof withAssignments>>;
@@ -912,7 +920,7 @@ export const { public: getHighPriorityItems, internal: getHighPriorityItemsInter
 
     for (const listId of listIds) {
       const list = await ctx.db.get(listId);
-      if (!list || !(await canUserEditList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid))) continue;
+      if (!list || !(await canUserViewList(ctx, listId, ctx.actor.did, ctx.actor.legacyDid))) continue;
 
       const items = await ctx.db
         .query("items")
@@ -999,7 +1007,7 @@ export const { public: demoteItem, internal: demoteItemInternal } = actorMutatio
 
     // Verify both items are in the same list
     if (item.listId !== newParent.listId) {
-      throw new Error("Items must be in the same list");
+      throw resourceUnavailable();
     }
 
     const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);

@@ -259,7 +259,7 @@ test('erasure drains large items and children, and an authenticated owner can re
 
 
 for (const legacyOwner of [false, true]) {
-  test(`published-list writers cannot prolong erasure (legacy owner: ${legacyOwner})`, async () => {
+  test(`accepted editors cannot prolong erasure (legacy owner: ${legacyOwner})`, async () => {
     const guestToken = await new SignJWT({ email: 'guest@example.test' })
       .setProtectedHeader({ alg: 'HS256' }).setSubject('guest')
       .setIssuer('originals-auth').setAudience('originals-api').setExpirationTime('1h')
@@ -274,6 +274,7 @@ for (const legacyOwner of [false, true]) {
     ctx.rows.accessSessions.push({ _id: 'S2', tokenHash: createHash('sha256').update(guestToken).digest('hex'),
       subject: 'guest', expiresAt: Date.now() + 3600000 });
     ctx.rows.publications.push({ _id: 'P1', listId: 'N1', status: 'active' });
+    ctx.rows.listGrants = [{ _id: 'G1', listId: 'N1', recipientId: 'U2', role: 'editor', acceptedAt: 1 }];
     // Confirm this collaborator had write access before erasure began.
     await call('items', 'addItem', ctx, { authToken: guestToken, listId: 'N1', name: 'Allowed', createdAt: 1 });
     ctx.jobs.length = 0; // Notification jobs are unrelated to the deletion worker.

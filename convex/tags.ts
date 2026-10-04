@@ -1,3 +1,4 @@
+import { resourceUnavailable } from "./lib/authError";
 import { canUserEditList } from "./lib/permissions";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 /**
@@ -75,11 +76,11 @@ export const { public: updateTag, internal: updateTagInternal } = actorMutation(
   },
   handler: async (ctx, args) => {
     const tag = await ctx.db.get(args.tagId);
-    if (!tag) throw new Error("Tag not found");
+    if (!tag) throw resourceUnavailable();
 
     const canEdit = await canUserEditList(ctx, tag.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
-      throw new Error("Not authorized to update this tag");
+      throw resourceUnavailable();
     }
 
     const updates: Partial<Doc<"tags">> = {};
@@ -102,11 +103,11 @@ export const { public: deleteTag, internal: deleteTagInternal } = actorMutation(
   },
   handler: async (ctx, args) => {
     const tag = await ctx.db.get(args.tagId);
-    if (!tag) throw new Error("Tag not found");
+    if (!tag) throw resourceUnavailable();
 
     const canEdit = await canUserEditList(ctx, tag.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) {
-      throw new Error("Not authorized to delete this tag");
+      throw resourceUnavailable();
     }
 
     // Remove tag from all items that have it

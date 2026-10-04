@@ -89,6 +89,7 @@ test('HTTP keeps multi-assignee shape, arbitrary assignee identities, and scope/
   assert.deepEqual((await f.call('items','getListItemsForReplay',{listId:'L1',operationIds:[]})).items[0].assigneeDids,['did:external:two']);
   // Private resource and scoped agent checks remain at the existing boundary.
   f.rows.publications.length=0;
+  f.rows.listGrants.length=0; // The fixture collaborator must also lose its explicit grant.
   await assert.rejects(()=>f.call('assignees','assignItem',{itemId:'I1',assigneeDid:'x'},f.collaborator),/authorized|unavailable/);
   await f.ctx.db.insert('agentApiKeys',{ownerDid:f.owner.user.did,keyHash:createHash('sha256').update('read-only').digest('hex'),scopes:['items:read']});
   await assert.rejects(()=>modules.assignees.assignItem._handler(f.ctx,{apiKey:'read-only',itemId:'I1',assigneeDid:'x'}),/Missing scope/);

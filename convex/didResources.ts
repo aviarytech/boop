@@ -1,3 +1,4 @@
+import { resourceUnavailable } from "./lib/authError";
 import { actorMutation } from "./lib/authenticated";
 /**
  * Queries for serving list resources publicly.
@@ -126,7 +127,7 @@ export const { public: checkSharedItem, internal: checkSharedItemInternal } = ac
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
     if (!item || item.listId !== args.listId) {
-      throw new Error("Item not found");
+      throw resourceUnavailable();
     }
 
     await ctx.db.patch(args.itemId, {
@@ -153,7 +154,7 @@ export const { public: uncheckSharedItem, internal: uncheckSharedItemInternal } 
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
     if (!item || item.listId !== args.listId) {
-      throw new Error("Item not found");
+      throw resourceUnavailable();
     }
 
     await ctx.db.patch(args.itemId, {

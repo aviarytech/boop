@@ -72,7 +72,8 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
           withIndex: (_name, fn) => {
             // Emulate just enough index filtering for by_list / by_owner.
             const captured = {};
-            if (fn) fn({ eq: (field, value) => { captured[field] = value; return captured; } });
+            const builder = { eq: (field, value) => { captured[field] = value; return builder; } };
+            fn?.(builder);
             const base = rowsFor;
             rowsFor = () =>
               base().filter((r) => Object.entries(captured).every(([k, v]) => r[k] === v));
@@ -80,6 +81,7 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
           },
           collect: async () => rowsFor(),
           first: async () => rowsFor()[0] ?? null,
+          unique: async () => rowsFor()[0] ?? null,
         };
         return result;
       },
@@ -172,7 +174,7 @@ test("drops vcProofs — they attest actions against the source asset", async ()
   assert.equal(copied.vcProofs, undefined, "carrying these would claim another asset's provenance");
 });
 
-test("only the owner can copy a list", async () => {
+test("an outsider cannot copy a private list", async () => {
   const ctx = makeCtx({ items: [] });
   await assert.rejects(
     () => unwrap(mod.copyList)(ctx, { sourceListId: "L1", ...MINTED, authToken: strangerSession.authToken }),

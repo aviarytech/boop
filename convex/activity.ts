@@ -1,3 +1,4 @@
+import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
 
@@ -26,6 +27,8 @@ export const { public: recordActivity, internal: recordActivityInternal } = acto
   handler: async (ctx, args) => {
     const canEdit = await canUserEditList(ctx, args.listId, ctx.actor.did, ctx.actor.legacyDid);
     if (!canEdit) throw new Error("Not authorized to write activity");
+
+    if (args.itemId && (await ctx.db.get(args.itemId))?.listId !== args.listId) throw resourceUnavailable();
 
     return await ctx.db.insert("activities", {
       listId: args.listId,
