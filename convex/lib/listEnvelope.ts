@@ -26,7 +26,7 @@ export async function upsertListEnvelope(
       assetDid,
       envelope,
       updatedAt: Date.now(),
-      // events[0] never changes, so this is written once and then only
+      // Genesis never changes, so this is written once and then only
       // repaired if an older row is missing it.
       genesisSealedAt: existing.genesisSealedAt ?? genesisSealedAt(envelope) ?? undefined,
     });

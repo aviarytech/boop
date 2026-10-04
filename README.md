@@ -24,7 +24,7 @@ New lists and notes use `@originals/sdk` 4.0.0 with explicit local Ed25519
 signers and version-4 envelopes. The application's `assetDid` field remains
 unchanged; the SDK envelope calls this identity `assetId`.
 
-Saved version-1/2 envelopes from the old prerelease cannot be loaded by the
+Saved version-1 envelopes from the old prerelease cannot be loaded by the
 v4 lifecycle. `originalsLegacy.ts` loads the pinned `@originals/sdk-legacy`
 alias only for those archives, preserving their signatures, identities and
 existing device keys when verifying or publishing. This intentionally retains

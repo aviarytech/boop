@@ -30,7 +30,7 @@ interface AssetResource {
 /** Only the old container versions may enter the compatibility reader. */
 function isLegacyEnvelope(envelope: string): boolean {
   const parsed = JSON.parse(envelope);
-  return parsed?.format === "originals/asset" && (parsed.version === 1 || parsed.version === 2);
+  return parsed?.format === "originals/asset" && parsed.version === 1;
 }
 
 async function createAsset(resources: AssetResource[]) {
@@ -210,6 +210,8 @@ export function buildListSnapshot(
 
 /**
  * Append a signed snapshot of the list's published state to its CEL log.
+ * `changes` is retained for legacy histories only; v4 resource updates have no
+ * description field, so their authenticated snapshot is the change record.
  *
  * Publishing used to leave no trace in the chain that exists to record an
  * asset's history — the `publications` row knew, the log did not. This appends

@@ -79,3 +79,35 @@ test("a real 2.1.0-sealed envelope is readable", async () => {
   // Sealed long after a list created in early 2026 would have been.
   assert.equal(legacy.isLegacyGenesis(sealedAt, Date.parse("2026-01-01T00:00:00.000Z")), true);
 });
+
+
+test("v4 genesis agrees on client and server and is persisted on insert and repair", async () => {
+  const client = await load("src/lib/originals.ts", "originals");
+  const { upsertListEnvelope } = await load("convex/lib/listEnvelope.ts", "listEnvelope");
+  const { count } = await load("convex/migrations/envelopeCoverage.ts", "envelopeCoverage");
+  const asset = await client.createListAsset("V4 provenance", "did:key:owner");
+  const sealed = client.genesisSealedAt(asset.envelope);
+  assert.ok(sealed !== null);
+  assert.equal(legacy.genesisSealedAt(asset.envelope), sealed);
+  const createdAt = sealed - 120_000;
+  assert.equal(legacy.isLegacyGenesis(sealed, createdAt), client.isRetroactiveGenesis(asset.envelope, createdAt));
+
+  let row = null;
+  const ctx = { db: {
+    query: table => ({
+      withIndex() { return this; },
+      first: async () => row,
+      take: async () => table === "lists" ? [{ _id: "L1", createdAt }] : [row],
+    }),
+    insert: async (_table, value) => { row = { _id: "E1", ...value }; },
+    patch: async (_id, value) => { Object.assign(row, value); },
+  } };
+  await upsertListEnvelope(ctx, "L1", asset.assetDid, asset.envelope);
+  assert.equal(row.genesisSealedAt, sealed);
+  delete row.genesisSealedAt;
+  await upsertListEnvelope(ctx, "L1", asset.assetDid, asset.envelope);
+  assert.equal(row.genesisSealedAt, sealed, "an older row missing the timestamp is repaired");
+  const report = await count._handler(ctx, {});
+  assert.equal(report.retroactiveGenesis, 1, "coverage counts v4 migration genesis");
+  assert.equal(report.authorable, 0);
+});
