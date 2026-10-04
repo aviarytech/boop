@@ -2,9 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
-import React from 'react';
-import { render, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const React = await import('react');
+const { render, fireEvent, waitFor, act, cleanup } = await import('@testing-library/react');
+const { MemoryRouter, useLocation, useNavigate } = await import('react-router-dom');
 
 const state = globalThis.__deepLinkFixture = {
   native: true, listeners: new Map(), registrations: 0, launches: 0,
