@@ -70,6 +70,12 @@ marked **inferred**, not an authentic assignment event. A conflict does not
 choose a winner. An authorized user must review and explicitly remove unwanted
 memberships through normal writes.
 
+Reconciliation audit timestamps record the actual maintenance time. These
+activities can move affected lists in Explorer’s updated sort; this one-time
+reordering is an accepted rollout effect. The release owner must anticipate and
+document it. Do not backdate audit events or change the recency model to hide
+this movement.
+
 Reruns do not re-import the scalar after the marker is set. An explicit API
 unassignment, browser clear, or legacy-primary clear first reconciles and then
 removes the requested membership in the same transaction, so a later migration
