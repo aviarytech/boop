@@ -20,8 +20,8 @@ export function RecoveredNoteDrafts({ drafts, disabled, onRecover }: {
 
 /** Recovery is independent of source access: only this account's local text.
  * Never show the stored base or fetch the resource to export an unsent draft. */
-export function UnsentNoteDrafts({ documentKey }: { documentKey?: string }) {
-  const drafts = documentKey ? listDrafts(documentKey) : [];
+export function UnsentNoteDrafts({ documentKey, aliases = [] }: { documentKey?: string; aliases?: readonly string[] }) {
+  const drafts = documentKey ? listDrafts(documentKey, aliases) : [];
   if (!drafts.length) return null;
   return (
     <section className="my-4 rounded-xl border border-amber-400 p-4 text-sm text-left">

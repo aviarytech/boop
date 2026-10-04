@@ -7,7 +7,7 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
     import React, { useState } from 'react';
     import { ${item ? 'NoteEditor' : 'NoteView'} as Editor } from './src/pages/${item ? 'NoteEditor' : 'NoteView'}';
     export const state = globalThis.__noteViewFixture = {
-      did: 'did:editor', list: { _id: 'N', ownerDid: 'did:owner', name: 'Fixture note', kind: 'note', createdAt: 1 },
+      did: 'did:editor', legacyDids: {}, identityLoading: false, list: { _id: 'N', ownerDid: 'did:owner', name: 'Fixture note', kind: 'note', createdAt: 1 },
       body: 'Original authorized source', canEdit: true, available: true, deny: false, conflictNext: false, writes: [],
     };
     export function Harness() {
@@ -45,7 +45,7 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
             if ((args.expectedBody ?? args.expectedDescription) !== s.body) throw { data: { code: 'NOTE_CONFLICT' } };
             s.body = args.body ?? args.description; s.refresh?.();
           };`;
-        else if (path.endsWith('/useCurrentUser')) contents = 'export const useCurrentUser = () => ({ did: state().did });';
+        else if (path.endsWith('/useCurrentUser')) contents = 'export const useCurrentUser = () => ({ did: state().did, legacyDid: state().legacyDids[state().did] ?? null, isLoading: state().identityLoading });';
         else if (path.endsWith('/useSettings')) contents = 'export const useSettings = () => ({ haptic: () => {} });';
         else if (path.endsWith('/useOffline')) contents = 'export const useOffline = () => ({ isOnline: true });';
         else if (path.endsWith('/useCategories')) contents = 'export const useCategories = () => ({ categories: [] });';

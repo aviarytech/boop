@@ -9,9 +9,10 @@ const React = await import('react');
 const { render, fireEvent, act, waitFor, cleanup } = await import('@testing-library/react');
 await buildNoteViewFixture('tmp/note-view-fixture.mjs');
 const { Harness, state } = await import(pathToFileURL(`${process.cwd()}/tmp/note-view-fixture.mjs`));
-function setup() {
+function setup({ seed, ...overrides } = {}) {
   localStorage.clear();
-  Object.assign(state, { did: 'did:editor', body: 'Original authorized source', canEdit: true, available: true, deny: false, writes: [] });
+  Object.assign(state, { did: 'did:editor', body: 'Original authorized source', canEdit: true, available: true, deny: false, writes: [], legacyDids: {}, identityLoading: false, ...overrides });
+  seed?.();
   return render(React.createElement(Harness));
 }
 const edit = (view, text) => {
@@ -67,3 +68,75 @@ for (const loss of ['Revoke access', 'Downgrade to viewer', 'Save denied before 
     }
   });
 }
+
+function seedMigratedOwnerDrafts() {
+  for (const [did, text] of [
+    ['did:legacy-owner', 'Migrated owner unsent draft'],
+    ['did:unrelated-owner', 'Unrelated account secret draft'],
+  ]) {
+    localStorage.setItem(`boop-note-draft:${did}:note:N:session:old`, JSON.stringify({
+      text, base: 'Pre-upgrade base', updatedAt: 1, revision: 'old',
+    }));
+  }
+}
+const migratedOwner = {
+  did: 'did:editor', legacyDids: { 'did:editor': 'did:legacy-owner' },
+  list: { _id: 'N', ownerDid: 'did:legacy-owner', name: 'Fixture note', kind: 'note', createdAt: 1 },
+  seed: seedMigratedOwnerDrafts,
+};
+test('migrated owner recovers a legacy draft, reconciles conditionally and writes new edits to canonical namespace', async () => {
+  const view = setup(migratedOwner);
+  try {
+    assert.ok(view.getByRole('alert'));
+    fireEvent.click(view.getByRole('button', { name: 'Edit', exact: true }));
+    assert.equal(view.getByRole('textbox', { name: 'Note body' }).value, 'Migrated owner unsent draft');
+    assert.ok(!view.container.textContent.includes('Unrelated account secret draft'));
+    assert.equal(state.writes.length, 0);
+    fireEvent.change(view.getByRole('textbox', { name: 'Note body' }), { target: { value: 'Reconciled migrated draft' } });
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i));
+    assert.ok(keys.some(k => k.startsWith('boop-note-draft:did:editor:note:N:session:')));
+    fireEvent.click(view.getByText('Replace server version with my draft'));
+    await waitFor(() => assert.equal(state.body, 'Reconciled migrated draft'));
+    assert.equal(state.writes.at(-1).expectedBody, 'Original authorized source');
+    // Unknown old sessions are retained: an alias must not weaken draft ownership.
+    assert.ok(localStorage.getItem('boop-note-draft:did:legacy-owner:note:N:session:old'));
+  } finally { await act(async () => view.unmount()); cleanup(); }
+});
+for (const available of [true, false]) {
+  test(`verified legacy alias is isolated across account switches (source available: ${available})`, async () => {
+    const view = setup({ ...migratedOwner, available });
+    try {
+      if (available) assert.ok(view.getByRole('alert'));
+      else {
+        assert.equal(view.getByRole('textbox', { name: 'Unsent local draft' }).value, 'Migrated owner unsent draft');
+        assert.ok(view.getByText('Download draft'));
+        assert.ok(!view.container.textContent.includes('Pre-upgrade base'));
+        assert.ok(!view.container.textContent.includes('Original authorized source'));
+      }
+      assert.ok(!view.container.textContent.includes('Unrelated account secret draft'));
+      fireEvent.click(view.getByText('Switch account'));
+      assert.equal(view.queryByRole('textbox', { name: 'Unsent local draft' }), null);
+      assert.equal(view.queryByRole('alert'), null);
+      assert.ok(!view.container.textContent.includes('Migrated owner unsent draft'));
+      assert.ok(!view.container.textContent.includes('Unrelated account secret draft'));
+      fireEvent.click(view.getByText('Switch account'));
+      if (available) assert.ok(view.getByRole('alert'));
+      else assert.equal(view.getByRole('textbox', { name: 'Unsent local draft' }).value, 'Migrated owner unsent draft');
+      assert.equal(state.writes.length, 0);
+    } finally { await act(async () => view.unmount()); cleanup(); }
+  });
+}
+test('legacy alias recovery waits for verified account identity and remains available after revocation', async () => {
+  const view = setup({ ...migratedOwner, identityLoading: true });
+  try {
+    assert.ok(!view.container.textContent.includes('Migrated owner unsent draft'));
+    assert.equal(view.queryByRole('alert'), null);
+    await act(async () => { state.identityLoading = false; state.refresh(); });
+    assert.ok(view.getByRole('alert'));
+    fireEvent.click(view.getByText('Revoke access'));
+    assert.equal(view.getByRole('textbox', { name: 'Unsent local draft' }).value, 'Migrated owner unsent draft');
+    assert.ok(!view.container.textContent.includes('Original authorized source'));
+    assert.ok(!view.container.textContent.includes('Pre-upgrade base'));
+    assert.equal(state.writes.length, 0);
+  } finally { await act(async () => view.unmount()); cleanup(); }
+});

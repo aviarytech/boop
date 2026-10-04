@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 
 // Exercise the production verifier with a test-only signing secret. The DID is
 // deliberately absent from the JWT: the database account owns that association.
-process.env.JWT_SECRET = "boop-handler-regression-test-secret-only";
+export const AUTH_FIXTURE_SECRET = "boop-handler-regression-test-secret-only";
+process.env.JWT_SECRET = AUTH_FIXTURE_SECRET;
 
-export async function createAuthFixture(did, overrides = {}) {
+export async function createAuthFixture(did, overrides = {}, signingSecret = process.env.JWT_SECRET) {
   const user = {
     _id: `user-${did}`,
     did,
@@ -20,7 +21,7 @@ export async function createAuthFixture(did, overrides = {}) {
     .setAudience("originals-api")
     .setIssuedAt()
     .setExpirationTime(expiresAt / 1000)
-    .sign(new TextEncoder().encode(process.env.JWT_SECRET));
+    .sign(new TextEncoder().encode(signingSecret));
   const accessSession = {
     _id: `session-${did}`,
     tokenHash: createHash("sha256").update(authToken).digest("hex"),

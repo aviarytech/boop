@@ -49,10 +49,15 @@ it. On reload, a saved draft with a different or unknown base needs reconciliati
 
 Drafts are keyed by the editing account's DID and resource, with separate records
 per editor session. They no longer use a shared resource owner's DID. Existing
-owner drafts retain their keys. Historical drafts saved by shared recipients in
-an owner's namespace cannot safely be attributed; they are not automatically
-migrated into another account's namespace. Browser storage failure retains drafts
-in memory for SPA navigation only, not reliably across a full reload.
+owner drafts remain recoverable from the canonical DID and the signed-in account's
+server-verified legacy DID, including when the source is unavailable. Identity
+loading completes before recovery is shown. New edits use the canonical key;
+legacy records retain the existing per-session ownership/cleanup rules. Resource
+ownership alone never adds a recovery alias. Historical drafts saved by shared
+recipients in an unrelated owner's namespace cannot safely be attributed; they
+are not automatically migrated into another account's namespace. Browser storage
+failure retains drafts in memory for SPA navigation only, not reliably across a
+full reload.
 
 Permission rejection stops automatic/retry/reconciliation writes in that mounted
 editor. Reopening with current permission allows editing again. If the resource
@@ -81,8 +86,8 @@ Real server-handler tests cover two writers, explicit reconciliation, omitted
 legacy bases, empty initialization, API keys/scopes, revoked editors and viewer
 downgrades, and nondisclosing errors. Mounted React tests cover delayed offline
 reconnect, conflict retention, conditional resubmission, denial before subscription
-updates, revoked/downgraded recovery, exact export bytes, account isolation, and
-both callers of the autosave hook. The reusable fixture builder at
+updates, revoked/downgraded recovery, exact export bytes, account isolation, both callers of the autosave hook, and recovery of verified same-account legacy
+DID drafts with account-switch isolation. The reusable fixture builder at
 `scripts/helpers/note-view-fixture.mjs` can also bundle the real note page for a
 local browser preview with mocked server/account controls.
 

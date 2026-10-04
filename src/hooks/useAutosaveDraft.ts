@@ -7,15 +7,16 @@ import { clampNote } from "../lib/noteEditor";
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "denied";
 
 /** Callers remount this hook when the account/resource key changes. */
-export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persist }: {
+export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = [], canEdit, persist }: {
   saved: string | undefined;
   draftKey?: string;
+  draftAliases?: readonly string[];
   canEdit: boolean;
   persist: (text: string, expectedBody: string) => Promise<void>;
 }) {
   const [session] = useState(() => ({
     key: documentKey ? `${documentKey}:session:${draftRevision()}` : undefined,
-    source: documentKey ? listDrafts(documentKey)[0] : undefined,
+    source: documentKey ? listDrafts(documentKey, draftAliases)[0] : undefined,
   }));
   const draftKey = session.key;
   const sourceRef = useRef(session.source);
@@ -166,7 +167,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, canEdit, persis
     setDraft(stored.text);
     setStatus("idle");
   };
-  const otherDrafts = documentKey ? listDrafts(documentKey).filter(candidate =>
+  const otherDrafts = documentKey ? listDrafts(documentKey, draftAliases).filter(candidate =>
     candidate.key !== draftKey && candidate.key !== sourceRef.current?.key) : [];
 
   useEffect(() => {

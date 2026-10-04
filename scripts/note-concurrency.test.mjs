@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
-import { fixture, credentials } from './helpers/private-sharing-fixture.mjs';
+import { fixture, credentials, PRIVATE_SHARING_JWT_SECRET as fixtureSecret } from './helpers/private-sharing-fixture.mjs';
 
 await build({ entryPoints: ['convex/notes.ts'], outfile: 'tmp/note-concurrency.mjs', bundle: true,
-  platform: 'node', format: 'esm', external: ['convex/*'] });
+  platform: 'node', format: 'esm', external: ['convex/*'],
+  define: { 'process.env.JWT_SECRET': JSON.stringify(fixtureSecret) } });
 const notes = await import(pathToFileURL(`${process.cwd()}/tmp/note-concurrency.mjs`));
 const make = () => fixture({ notes });
 const conflict = error => {

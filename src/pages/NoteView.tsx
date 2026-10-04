@@ -35,12 +35,15 @@ type NoteBody = { body: string; updatedAt: number; canEdit: boolean };
 export function NoteView() {
   const { id } = useParams<{ id: string }>();
   const listId = id as Id<"lists">;
-  const { did } = useCurrentUser();
+  const { did, legacyDid, isLoading: identityLoading } = useCurrentUser();
   const draftKey = did && id ? `${did}:note:${id}` : undefined;
+  // Only server-verified aliases of this account can recover pre-upgrade drafts.
+  // This also works after source access is lost; the owner is not consulted.
+  const draftAliases = did && legacyDid && id && legacyDid !== did ? [`${legacyDid}:note:${id}`] : [];
   const list = useQuery(api.lists.getList, { listId });
   const note = useQuery(api.notes.getNoteBody, { listId });
 
-  if (list === undefined || note === undefined) {
+  if (identityLoading || list === undefined || note === undefined) {
     return (
       <div className="max-w-3xl mx-auto">
         <div className="animate-pulse h-8 w-56 bg-stone-200 dark:bg-gray-800 rounded mb-4" />
@@ -55,7 +58,7 @@ export function NoteView() {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
         <p className="text-stone-600 dark:text-stone-400">This note isn't available.</p>
-        <UnsentNoteDrafts documentKey={draftKey} />
+        <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} />
         <Link to="/d" className="rounded-full px-4 py-2 text-sm font-semibold bg-amber-500 text-white">
           Back to lists
         </Link>
@@ -63,11 +66,11 @@ export function NoteView() {
     );
   }
 
-  return <LoadedNote key={draftKey} list={list} note={note} draftKey={draftKey} />;
+  return <LoadedNote key={draftKey} list={list} note={note} draftKey={draftKey} draftAliases={draftAliases} />;
 }
 
 // Split out so the initial mode can be derived once from the first loaded body.
-function LoadedNote({ list, note, draftKey }: { list: Doc<"lists">; note: NoteBody; draftKey?: string }) {
+function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">; note: NoteBody; draftKey?: string; draftAliases: readonly string[] }) {
   const navigate = useNavigate();
   const { haptic } = useSettings();
   const { isOnline } = useOffline();
@@ -81,6 +84,7 @@ function LoadedNote({ list, note, draftKey }: { list: Doc<"lists">; note: NoteBo
   const { value, onChange, status, retry, useServer, saveDraft, dirty, otherDrafts, recoverDraft } = useAutosaveDraft({
     saved: note.body,
     draftKey,
+    draftAliases,
     canEdit: note.canEdit && !!draftKey,
     persist: async (text, expectedBody) => {
       await updateNoteBody({ listId: list._id, body: text, expectedBody });
@@ -94,7 +98,7 @@ function LoadedNote({ list, note, draftKey }: { list: Doc<"lists">; note: NoteBo
   if (status === "denied") {
     return <div className="max-w-3xl mx-auto">
       <p>This note isn't available for editing.</p>
-      <UnsentNoteDrafts documentKey={draftKey} />
+      <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} />
       <Link to="/d" className="underline">Back to lists</Link>
     </div>;
   }
@@ -204,7 +208,7 @@ function LoadedNote({ list, note, draftKey }: { list: Doc<"lists">; note: NoteBo
       </div>
 
       {editingUnavailable
-        ? <UnsentNoteDrafts documentKey={draftKey} />
+        ? <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} />
         : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
       {!editingUnavailable && status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
       {mode === "edit" ? (
