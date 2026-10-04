@@ -1,5 +1,5 @@
 import { purgeAppDownloadCaches } from '../../lib/downloadCache';
-import { useEffect, useReducer } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import { useOffline } from '../../hooks/useOffline';
 import { useQueries } from 'convex/react';
 import { useAuth } from '../../hooks/useAuth';
@@ -9,10 +9,12 @@ import { reconcileOfflineAccess } from '../../lib/offline';
 import { draftResources, reconcileDraftAccess, subscribeDrafts } from '../../lib/noteDrafts';
 
 type ItemLocator = { itemId: Id<'items'>; listId: Id<'lists'> };
-function AccessBatch({ accountId, listIds, items = [] }: { accountId: string; listIds: Id<'lists'>[]; items?: ItemLocator[] }) {
+const noItems: ItemLocator[] = [];
+function AccessBatch({ accountId, listIds, items = noItems }: { accountId: string; listIds: Id<'lists'>[]; items?: ItemLocator[] }) {
   const { token } = useAuth();
   // Errors are values: session expiry must not unmount independent recovery.
-  const { access } = useQueries(token ? { access: { query: api.items.getOfflineAccess, args: { listIds, items, authToken: token } } } : {});
+  const queries = useMemo((): Parameters<typeof useQueries>[0] => token ? { access: { query: api.items.getOfflineAccess, args: { listIds, items, authToken: token } } } : {}, [token, listIds, items]);
+  const { access } = useQueries(queries);
   useEffect(() => {
     if (access && !(access instanceof Error)) void reconcileOfflineAccess(accountId, access);
   }, [accountId, access]);
@@ -20,7 +22,8 @@ function AccessBatch({ accountId, listIds, items = [] }: { accountId: string; li
 }
 function DraftBatch({ resources }: { resources: ReturnType<typeof draftResources> }) {
   const { token } = useAuth();
-  const { access } = useQueries(token ? { access: { query: api.items.getOfflineDraftAccess, args: { resources: resources.map(({ kind, id }) => ({ kind, id })), authToken: token } } } : {});
+  const queries = useMemo((): Parameters<typeof useQueries>[0] => token ? { access: { query: api.items.getOfflineDraftAccess, args: { resources: resources.map(({ kind, id }) => ({ kind, id })), authToken: token } } } : {}, [token, resources]);
+  const { access } = useQueries(queries);
   const keys = JSON.stringify(resources);
   useEffect(() => {
     if (!access || access instanceof Error) return;
@@ -37,7 +40,9 @@ const batches = <T,>(entries: T[]) => Array.from({ length: Math.ceil(entries.len
 export function OfflineAccessMonitor() {
   const { accountId, compaction, isOnline } = useOffline();
   const { token } = useAuth();
-  const { identity } = useQueries(token ? { identity: { query: api.items.getOfflineAccount, args: { authToken: token } } } : {});
+  // Convex useQueries requires stable request identity, including when signed out.
+  const queries = useMemo((): Parameters<typeof useQueries>[0] => token ? { identity: { query: api.items.getOfflineAccount, args: { authToken: token } } } : {}, [token]);
+  const { identity } = useQueries(queries);
   const [, refresh] = useReducer(value => value + 1, 0);
   useEffect(() => subscribeDrafts(refresh), []);
   const revokedKey = [...compaction.revokedListIds ?? []].sort().join(',');
