@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { SignJWT } from "jose";
-import { fixture, sessions, credentials, digest } from "./helpers/private-sharing-fixture.mjs";
+import { fixture, sessions, credentials, digest, PRIVATE_SHARING_JWT_SECRET } from "./helpers/private-sharing-fixture.mjs";
 
 const names = ["invitations", "invitationMail", "listGrants", "lists", "users"];
 await build({ entryPoints: names.map(name => `convex/${name}.ts`), outdir: "tmp/invitation-test",
+  define: { "process.env.JWT_SECRET": JSON.stringify(PRIVATE_SHARING_JWT_SECRET) },
   bundle: true, platform: "node", format: "esm", outExtension: { ".js": ".mjs" }, external: ["convex/*", "@originals/*"],
 });
 const modules = Object.fromEntries(await Promise.all(names.map(async name => [name, await import(pathToFileURL(`${process.cwd()}/tmp/invitation-test/${name}.mjs`))])));
@@ -23,7 +24,7 @@ const manage = value => ({ ...owner, listId: "L", ...value });
 async function login(ctx, email = "recipient@example.test", name = "pending") {
   const user = ctx.rows.users.find(u => u._id === `U-${name}`);
   const token = await new SignJWT({ email }).setProtectedHeader({ alg: "HS256" }).setSubject(user.turnkeySubOrgId)
-    .setIssuer("originals-auth").setAudience("originals-api").setExpirationTime("1h").sign(new TextEncoder().encode(process.env.JWT_SECRET));
+    .setIssuer("originals-auth").setAudience("originals-api").setExpirationTime("1h").sign(new TextEncoder().encode(PRIVATE_SHARING_JWT_SECRET));
   ctx.rows.accessSessions.push({ _id: `session-${++request}`, tokenHash: digest(token), subject: user.turnkeySubOrgId });
   return { authToken: token };
 }
@@ -250,4 +251,17 @@ test("recipient daily budget spans owners, while owner budgets are not a lifetim
   for (const row of fresh.rows.rateLimits) row.windowStart -= 3600001;
   await create(fresh, { email: "later@example.test" });
   assert.equal(fresh.rows.listInvitations.length, 31);
+});
+
+
+test("cached sharing sessions and recipient tokens are isolated from other suites' JWT secrets", async () => {
+  const previous = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = "another-suite-secret-must-not-affect-this-fixture";
+  try {
+    const ctx = make(), invite = await create(ctx), auth = await login(ctx);
+    assert.equal((await accept(ctx, invite, auth)).role, "viewer");
+  } finally {
+    if (previous === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = previous;
+  }
 });

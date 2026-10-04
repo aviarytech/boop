@@ -2,14 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
-import { fixture, sessions, credentials, digest } from "./helpers/private-sharing-fixture.mjs";
+import { fixture, sessions, credentials, digest, PRIVATE_SHARING_JWT_SECRET } from "./helpers/private-sharing-fixture.mjs";
 
 const names = ["lists", "notes", "items", "publication", "didResources", "attachments", "activity", "comments", "tags", "presence", "assignees", "itemCategories", "categories", "bitcoinAnchors", "listGrants", "lib/listGrants", "actorSession", "notifications", "notificationActions", "users", "agentReadHttp", "itemsHttp", "listsHttp", "didResourcesHttp", "didLogs"];
 const bucket = globalThis.__privateSharingBucket = { calls: [], afterDelete: null };
 await build({
   entryPoints: names.map(name => `convex/${name}.ts`), outdir: "tmp/private-sharing-test",
   bundle: true, platform: "node", format: "esm", outExtension: { ".js": ".mjs" },
-  define: { "process.env.JWT_SECRET": JSON.stringify(process.env.JWT_SECRET) },
+  define: { "process.env.JWT_SECRET": JSON.stringify(PRIVATE_SHARING_JWT_SECRET) },
   external: ["convex/*", "@originals/*", "@turnkey/*", "web-push"],
   plugins: [{ name: "no-live-storage", setup(builder) {
     builder.onResolve({ filter: /^\.\/lib\/bucket$/ }, () => ({ path: "bucket", namespace: "fixture" }));
