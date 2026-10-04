@@ -348,3 +348,36 @@ Authenticated direct operations require `authToken` (the JWT from login) or an a
 Do not supply acting DIDs. Ownership, attribution and legacy-account access are resolved from authenticated server records. Old optional identity fields are compatibility checks only and never grant access. Anonymous access is limited to explicitly public resources with active publications; shared writes require authentication.
 
 See [authentication rollout](docs/authentication-rollout.md) for the required deployed-version confirmation and coordinated client/backend cutover.
+
+### Assignments
+
+Multiple assignees are supported. Existing endpoints retain their shapes:
+
+- `POST /api/assignees/assign` — `{ itemId, assigneeDid }` adds one membership.
+- `POST /api/assignees/unassign` — `{ itemId, assigneeDid }` removes that membership.
+- `POST /api/assignees/list` — `{ itemId }` returns `{ assignees: [...] }`.
+
+Writes require `items:write`; reads require `items:read` and the existing resource
+access checks. Assigning a DID does not grant list access. Arbitrary external
+assignee DIDs remain valid; repeated assign/unassign calls are idempotent.
+
+Item reads (including `/api/v1/lists/items`) now include `assigneeDids`, the full
+sorted unique membership set. `assigneeDid` remains the legacy primary field.
+Direct authenticated `items.addItem`/`items.updateItem` also accept
+`assigneeDids: string[]`; `[]` clears all and omission leaves membership unchanged.
+Legacy scalar edits replace/clear only the primary and preserve other assignees.
+
+See [assignment reconciliation](docs/assignment-reconciliation.md) for the
+lossless union/conflict policy, inferred pre-migration row shape, bounded internal
+migration, history semantics and release validation requirements.
+
+
+Explorer collaborator counts use distinct DIDs from authoritative assignment rows.
+Before legacy reconciliation/cleanup they retain baseline behavior: scalar-only
+memberships are omitted and old orphan rows may count. Item/API reads continue
+exposing the full live union. The [mandatory release gate](docs/assignment-reconciliation.md#mandatory-backend-first-release-and-reconciliation-gate)
+requires deploying the compatible Convex backend first, reconciling the entire
+target dataset and cleaning all legacy orphans, verifying completeness with no
+unresolved exclusions, then releasing the matching frontend/native clients.
+Railway and Convex deployment ordering must be controlled by the release owner.
+This PR does not run or certify deployment, migration or convergence.

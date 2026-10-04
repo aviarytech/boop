@@ -12,6 +12,9 @@ const { createElement: h } = await import('react');
 const { MemoryRouter } = await import('react-router-dom');
 const { render, fireEvent, waitFor, cleanup, act } = await import('@testing-library/react');
 const modules = await loadReplayModules('item-details-replay');
+await build({ entryPoints: ['convex/assignees.ts'], outfile: 'tmp/item-details-assignees.mjs', bundle: true, platform: 'node', format: 'esm', external: ['convex/*'] });
+modules.assignees = await import(pathToFileURL(`${process.cwd()}/tmp/item-details-assignees.mjs`));
+
 // Render the real modal, portal, and all server-only child components. Only
 // transport/context boundaries are replaced; reject invalid IDs even when the
 // backend is reachable but the create has not yet been acknowledged.
@@ -85,7 +88,7 @@ for (const acknowledgeWhileEditing of [false, true]) {
       const edit = operations.find(op => op.type === 'updateItem');
       assert.equal(edit.payload.name, 'Draft edited');
       assert.equal(edit.payload.priority, 'high');
-      assert.equal(edit.payload.assigneeDid, f.owner.user.did);
+      assert.deepEqual(edit.payload.assigneeDids, [f.owner.user.did]);
       assert.ok(edit.expected.some(expected => expected.predecessor === source._operationId));
       await new modules.sync.SyncManager().sync(f.client, f.session);
       assert.equal((await store.getQueuedMutations(account)).length, 0);
@@ -242,4 +245,78 @@ test('sleeping tab keeps an open temporary draft when another tab acknowledges a
     assert.equal((await store.getQueuedMutations(accountId))[0].state, 'conflict');
     assert.equal(f.rows.items.find(i => i._id === realId).name, 'Collaborator while sleeping');
   } finally { view.unmount(); cleanup(); }
+});
+
+
+test('rendered details retain multiple API assignees through unrelated save, API removal and explicit browser edits', async () => {
+  const f = await replayFixture(modules), store = modules.offline, account = f.session.accountId;
+  for (const assigneeDid of ['agent:one', 'agent:two']) await f.call('assignees', 'assignItem', { itemId: 'I1', assigneeDid });
+  const snapshot = async () => (await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: [] })).items[0];
+  globalThis.__detailFixture = {
+    did: f.owner.user.did,
+    offline: { isOnline: true, queueMutation: (m, snapshots) => store.queueMutation(account, m, snapshots) },
+    query(ref, args) {
+      if (args === 'skip') return undefined;
+      const name = getFunctionName(ref);
+      if (name === 'lists:getList') return f.rows.lists[0];
+      if (name === 'users:getUsersByDids') return {};
+      return [];
+    },
+    mutate() { throw Error('Edits must use the queue'); },
+  };
+  const tree = item => h(MemoryRouter, null, h(ItemDetailsModal, { item, userDid: f.owner.user.did, canEdit: true, onClose() {} }));
+  let view = render(tree(await snapshot()));
+  try {
+    assert.ok(view.getByRole('button', { name: 'Remove assignee agent:one' }));
+    assert.ok(view.getByRole('button', { name: 'Remove assignee agent:two' }));
+    fireEvent.change(view.getByDisplayValue('Milk'), { target: { value: 'Renamed' } });
+    fireEvent.click(view.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => assert.ok((await store.getOperations(account)).length));
+    assert.equal((await store.getOperations(account))[0].payload.assigneeDids, undefined);
+    await new modules.sync.SyncManager().sync(f.client, f.session);
+    assert.deepEqual((await snapshot()).assigneeDids, ['agent:one','agent:two']);
+    view.unmount(); cleanup();
+    view = render(tree(await snapshot()));
+    await f.call('assignees', 'unassignItem', { itemId: 'I1', assigneeDid: 'agent:one' });
+    view.rerender(tree(await snapshot()));
+    await waitFor(() => assert.equal(view.queryByRole('button', { name: 'Remove assignee agent:one' }), null));
+    fireEvent.change(view.getByRole('combobox', { name: 'Add assignee' }), { target: { value: f.owner.user.did } });
+    fireEvent.click(view.getByRole('button', { name: 'Remove assignee agent:two' }));
+    fireEvent.click(view.getByRole('button', { name: 'Save' }));
+    await waitFor(async () => assert.equal((await store.getQueuedMutations(account)).length, 1));
+    await new modules.sync.SyncManager().sync(f.client, f.session);
+    assert.deepEqual((await snapshot()).assigneeDids, [f.owner.user.did]);
+  } finally { view.unmount(); cleanup(); }
+});
+
+test('unknown and null-name long-DID assignees have compact labels and remain removable', async () => {
+  const f = await replayFixture(modules), store = modules.offline, account = f.session.accountId;
+  const longDid = `did:webvh:${'Q'.repeat(70)}:example.test:users:unknown-person`;
+  for (const profile of [undefined, { displayName: null }]) {
+    await f.call('items','updateItem',{itemId:'I1',assigneeDids:[longDid]});
+    const item = (await f.call('items','getListItems',{listId:'L1'}))[0];
+    globalThis.__detailFixture = {
+      did: f.owner.user.did,
+      offline: { isOnline: true, queueMutation: (m, snapshots) => store.queueMutation(account, m, snapshots) },
+      query(ref, args) {
+        if (args === 'skip') return undefined;
+        const name = getFunctionName(ref);
+        if (name === 'lists:getList') return f.rows.lists[0];
+        if (name === 'users:getUsersByDids') return { [longDid]: profile };
+        return [];
+      },
+      mutate() { throw Error('Edits must use the queue'); },
+    };
+    const view = render(h(MemoryRouter, null, h(ItemDetailsModal, { item, userDid:f.owner.user.did, canEdit:true, onClose(){} })));
+    try {
+      const label = view.getByText(`${longDid.slice(0,16)}…${longDid.slice(-8)}`);
+      assert.equal(label.title,longDid);
+      fireEvent.click(view.getByRole('button',{name:`Remove assignee ${longDid}`}));
+      assert.equal(view.queryByText(label.textContent),null);
+      fireEvent.click(view.getByRole('button',{name:'Save'}));
+      await waitFor(async()=>assert.equal((await store.getQueuedMutations(account)).length,1));
+      await new modules.sync.SyncManager().sync(f.client,f.session);
+      assert.deepEqual((await f.call('items','getListItems',{listId:'L1'}))[0].assigneeDids,[]);
+    } finally { view.unmount(); cleanup(); }
+  }
 });

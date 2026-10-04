@@ -82,7 +82,7 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
       await ctx.db.delete(item._id);
       return false;
     }
-    for (const table of ["tags", "activities", "presence", "publications", "bookmarks", "bitcoinAnchors", "noteBodies", "listEnvelopes"] as const) {
+    for (const table of ["itemAssignees", "tags", "activities", "presence", "publications", "bookmarks", "bitcoinAnchors", "noteBodies", "listEnvelopes"] as const) {
       if (await drain(ctx.db.query(table).withIndex("by_list", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     }
     await ctx.db.delete(listId);

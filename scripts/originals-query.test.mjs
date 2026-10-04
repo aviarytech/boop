@@ -101,6 +101,7 @@ test("joins all source tables and produces rows in updatedAt desc order", async 
       publications: [{ _id: "P1", listId: "L1", webvhDid: "did:webvh:L1", status: "active", publishedAt: 200, publishedByDid: "me" }],
       bitcoinAnchors: [{ _id: "A1", listId: "L1", status: "confirmed", confirmedAt: 300, txid: "tx-abc", contentHash: "h", requestedByDid: "me", createdAt: 300 }],
       activities: [{ _id: "ACT1", listId: "L1", actorDid: "me", type: "list_updated", createdAt: 500 }],
+      items: ["I1", "I2", "I3"].map(_id => ({ _id, listId: "L1" })),
       itemAssignees: [
         { _id: "IA1", itemId: "I1", listId: "L1", assigneeDid: "u1", assignedByDid: "me", assignedAt: 1 },
         { _id: "IA2", itemId: "I2", listId: "L1", assigneeDid: "u1", assignedByDid: "me", assignedAt: 1 },

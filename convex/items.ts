@@ -1,3 +1,4 @@
+import { changeAssignments, deleteAssignments, inheritedAssignmentFields, insertInheritedAssignments, withAssignments, withAssignmentsBatch } from "./lib/assignments";
 import { getReplaySequence } from "./lib/replay";
 import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
@@ -140,6 +141,7 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
     })),
     priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
     assigneeDid: v.optional(v.string()),
+    assigneeDids: v.optional(v.array(v.string())),
     parentId: v.optional(v.id("items")), // For sub-items
   },
   handler: async (ctx, args) => withMutationObservability("items.addItem", async () => {
@@ -206,9 +208,11 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
       url: args.url,
       recurrence: args.recurrence,
       priority: args.priority,
-      assigneeDid: args.assigneeDid,
+      assignmentsVersion: 1,
       parentId: args.parentId,
     });
+
+    await changeAssignments(ctx, (await ctx.db.get(itemId))!, ctx.actor.did, { replace: args.assigneeDids ?? (args.assigneeDid ? [args.assigneeDid] : []) });
 
     // Issue Verifiable Credential proving item authorship
     const authorshipVC = createItemAuthorshipVC(
@@ -260,6 +264,7 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
     priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
     groceryAisle: v.optional(v.string()),
     assigneeDid: v.optional(v.string()),
+    assigneeDids: v.optional(v.array(v.string())),
     clearGroceryAisle: v.optional(v.boolean()),
     clearDueDate: v.optional(v.boolean()),
     clearRecurrence: v.optional(v.boolean()),
@@ -296,16 +301,19 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
     if (args.recurrence !== undefined) updates.recurrence = args.recurrence;
     if (args.priority !== undefined) updates.priority = args.priority;
     if (args.groceryAisle !== undefined) updates.groceryAisle = args.groceryAisle;
-    if (args.assigneeDid !== undefined) updates.assigneeDid = args.assigneeDid;
-    
+
     // Clear fields if requested
     if (args.clearDueDate) updates.dueDate = undefined;
     if (args.clearRecurrence) updates.recurrence = undefined;
     if (args.clearUrl) updates.url = undefined;
     if (args.clearPriority) updates.priority = undefined;
-    if (args.clearAssigneeDid) updates.assigneeDid = undefined;
     if (args.clearGroceryAisle) updates.groceryAisle = undefined;
 
+    if (args.assigneeDids !== undefined) {
+      await changeAssignments(ctx, item, ctx.actor.did, { replace: args.assigneeDids });
+    } else if (args.assigneeDid !== undefined || args.clearAssigneeDid) {
+      await changeAssignments(ctx, item, ctx.actor.did, { legacy: args.clearAssigneeDid ? null : args.assigneeDid });
+    }
     await ctx.db.patch(args.itemId, updates);
     return args.itemId;
   }),
@@ -425,8 +433,9 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
           0
         );
 
+        const { assigneeDids } = await withAssignments(ctx, item);
         // Create the new recurring item
-        await ctx.db.insert("items", {
+        const nextId = await ctx.db.insert("items", {
           listId: item.listId,
           name: item.name,
           checked: false,
@@ -439,10 +448,12 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
           url: item.url,
           recurrence: item.recurrence,
           priority: item.priority,
-          assigneeDid: item.assigneeDid,
+          ...inheritedAssignmentFields(assigneeDids, now),
           tags: item.tags,
           parentId: item.parentId,
         });
+        await insertInheritedAssignments(ctx, { sourceId: item._id, targetId: nextId, listId: item.listId,
+          assigneeDids, actorDid: ctx.actor.did, assignedAt: now, reason: "recurrence" });
       }
     }
   }),
@@ -513,6 +524,7 @@ export const { public: removeItem, internal: removeItemInternal, replay: removeI
       throw resourceUnavailable();
     }
 
+    await deleteAssignments(ctx, args.itemId);
     await ctx.db.delete(args.itemId);
   },
 });
@@ -531,11 +543,11 @@ export const { public: getListItems, internal: getListItemsInternal } = actorQue
       .collect();
 
     // Sort by order (items without order fall back to createdAt)
-    return items.sort((a, b) => {
+    return withAssignmentsBatch(ctx, items.sort((a, b) => {
       const orderA = a.order ?? a.createdAt;
       const orderB = b.order ?? b.createdAt;
       return orderA - orderB;
-    });
+    }));
   },
 });
 
@@ -608,7 +620,7 @@ export const { public: getItemForSync, internal: getItemForSyncInternal } = acto
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
     if (!item || !await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid)) throw resourceUnavailable();
-    return item;
+    return withAssignments(ctx, item);
   },
 });
 
@@ -647,10 +659,8 @@ export const { public: getSubItems, internal: getSubItemsInternal } = actorQuery
   scope: "items:read",
   args: { parentId: v.id("items") },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("items")
-      .withIndex("by_parent", (q) => q.eq("parentId", args.parentId))
-      .collect();
+    const items = await ctx.db.query("items").withIndex("by_parent", q => q.eq("parentId", args.parentId)).collect();
+    return withAssignmentsBatch(ctx, items);
   },
 });
 
@@ -667,6 +677,10 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
   },
   handler: async (ctx, args) => {
     const checkedAt = Date.now();
+    const recurrenceLists = new Map<Id<"lists">, {
+      assignments: Map<Id<"items">, string[]>;
+      minOrders: Map<Id<"items"> | undefined, number>;
+    }>();
     let listId: Id<"lists"> | null = null;
 
     for (const itemId of args.itemIds) {
@@ -700,19 +714,23 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
         // Check if end date has passed
         const endDate = item.recurrence.endDate;
         if (!endDate || nextDueDate <= endDate) {
-          // Get min order to add new item at the top
-          const existingItems = await ctx.db
-            .query("items")
-            .withIndex("by_list", (q) => q.eq("listId", item.listId))
-            .collect();
-          const sameParentItems = existingItems.filter(i => i.parentId === item.parentId);
-          const minOrder = sameParentItems.reduce(
-            (min, i) => Math.min(min, i.order ?? 0),
-            0
-          );
+          let cached = recurrenceLists.get(item.listId);
+          if (!cached) {
+            const existingItems = await ctx.db.query("items").withIndex("by_list", q => q.eq("listId", item.listId)).collect();
+            const hydrated = await withAssignmentsBatch(ctx, existingItems);
+            const minOrders = new Map<Id<"items"> | undefined, number>();
+            for (const existing of existingItems) {
+              minOrders.set(existing.parentId, Math.min(minOrders.get(existing.parentId) ?? 0, existing.order ?? 0));
+            }
+            cached = { assignments: new Map(hydrated.map(i => [i._id, i.assigneeDids])), minOrders };
+            recurrenceLists.set(item.listId, cached);
+          }
+          const minOrder = cached.minOrders.get(item.parentId) ?? 0;
+          const assigneeDids = cached.assignments.get(item._id) ?? [];
+          cached.minOrders.set(item.parentId, minOrder - 1);
 
           // Create the new recurring item
-          await ctx.db.insert("items", {
+          const nextId = await ctx.db.insert("items", {
             listId: item.listId,
             name: item.name,
             checked: false,
@@ -725,10 +743,12 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
             url: item.url,
             recurrence: item.recurrence,
             priority: item.priority,
-            assigneeDid: item.assigneeDid,
+            ...inheritedAssignmentFields(assigneeDids, checkedAt),
             tags: item.tags,
             parentId: item.parentId,
           });
+          await insertInheritedAssignments(ctx, { sourceId: item._id, targetId: nextId, listId: item.listId,
+            assigneeDids, actorDid: ctx.actor.did, assignedAt: checkedAt, reason: "recurrence" });
         }
       }
     }
@@ -803,9 +823,11 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, rep
         .collect();
       
       for (const subItem of subItems) {
+        await deleteAssignments(ctx, subItem._id);
         await ctx.db.delete(subItem._id);
       }
 
+      await deleteAssignments(ctx, itemId);
       await ctx.db.delete(itemId);
     }
   },
@@ -839,7 +861,7 @@ export const { public: getItemsWithDueDates, internal: getItemsWithDueDatesInter
       filtered = filtered.filter((item) => item.dueDate! <= args.endDate!);
     }
 
-    return filtered.sort((a, b) => (a.dueDate ?? 0) - (b.dueDate ?? 0));
+    return withAssignmentsBatch(ctx, filtered.sort((a, b) => (a.dueDate ?? 0) - (b.dueDate ?? 0)));
   },
 });
 
@@ -883,7 +905,7 @@ export const { public: getHighPriorityItems, internal: getHighPriorityItemsInter
 
     // Now fetch high-priority items from all accessible lists
     const highPriorityItems: Array<{
-      item: Awaited<ReturnType<typeof ctx.db.get<"items">>>;
+      item: Awaited<ReturnType<typeof withAssignments>>;
       listName: string;
       listId: Id<"lists">;
     }> = [];
@@ -902,7 +924,7 @@ export const { public: getHighPriorityItems, internal: getHighPriorityItemsInter
         (item) => item.priority === "high" && !item.checked && !item.parentId
       );
 
-      for (const item of highPriority) {
+      for (const item of await withAssignmentsBatch(ctx, highPriority)) {
         highPriorityItems.push({
           item,
           listName: list.name,
@@ -1022,7 +1044,7 @@ export const { public: getListItemsForReplay } = actorQuery({
       const receipt = await ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", ctx.actor.userId).eq("operationId", operationId)).unique();
       if (receipt) acknowledgments.push({ operationId, result: receipt.result, revisions: receipt.revisions, ...(receipt.sequence !== undefined ? { sequence: receipt.sequence } : {}) });
     }
-    return { items: items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)), acknowledgments, sequence: (await getReplaySequence(ctx, ctx.actor.userId)).sequence };
+    return { items: await withAssignmentsBatch(ctx, items.sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt))), acknowledgments, sequence: (await getReplaySequence(ctx, ctx.actor.userId)).sequence };
   },
 });
 

@@ -40,7 +40,7 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
 
     await Promise.all(
       lists.map(async (list) => {
-        const [pub, anchors, latestActivity, assignees] = await Promise.all([
+        const [pub, anchors, latestActivity, assignments] = await Promise.all([
           ctx.db
             .query("publications")
             .withIndex("by_list", (q) => q.eq("listId", list._id))
@@ -65,7 +65,10 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
         if (latestActivity) activitiesByList.set(list._id, { createdAt: latestActivity.createdAt });
 
         const uniqueAssignees = new Set<string>();
-        for (const a of assignees) uniqueAssignees.add(a.assigneeDid);
+        // Count the authoritative compact rows without reading full item bodies.
+        // Legacy scalar/orphan convergence is a mandatory frontend release gate;
+        // before it completes this intentionally retains baseline row-only counts.
+        for (const assignment of assignments) uniqueAssignees.add(assignment.assigneeDid);
         if (uniqueAssignees.size > 0) assigneesByList.set(list._id, uniqueAssignees.size);
       }),
     );

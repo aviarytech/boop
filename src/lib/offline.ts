@@ -2,7 +2,7 @@ import { randomId } from "./randomId";
 import { openDB, type DBSchema } from 'idb';
 import type { Doc } from '../../convex/_generated/dataModel';
 import { revision, replayTargets, type ExpectedRevision, type ReplayAck } from '../../shared/replay';
-export type OfflineItem = Doc<'items'> & { _localKey?: string };
+export type OfflineItem = Doc<'items'> & { assigneeDids?: string[]; _localKey?: string };
 export type OfflineList = Doc<'lists'>;
 export type MutationType = 'addItem' | 'checkItem' | 'uncheckItem' | 'reorderItem' | 'updateItem' | 'removeItem' | 'batchCheckItems' | 'batchUncheckItems' | 'batchDeleteItems' | 'createList' | 'renameList' | 'deleteList';
 export interface QueuedMutation {
@@ -25,7 +25,9 @@ export const RECENT_OPERATIONS = 32;
 export const RECEIPT_QUERY_LIMIT = 128;
 export interface CompactionProof { retiredThrough: number; retainedOperationIds: string[] }
 type CacheMetadata = { key: string; sequence?: number; retiredThrough?: number; discarded?: boolean };
-const cleanDocument = (doc: object) => Object.fromEntries(Object.entries(doc).filter(([key]) => !['_isOptimistic', '_syncError', '_localKey', '_operationId'].includes(key)));
+// assigneeDids is a joined read projection. assignmentsVersion in the persisted
+// item fences membership changes; hashing the projection would mismatch replay.
+const cleanDocument = (doc: object) => Object.fromEntries(Object.entries(doc).filter(([key]) => !['_isOptimistic', '_syncError', '_localKey', '_operationId', 'assigneeDids'].includes(key)));
 export function replayOperationIds(operations: QueuedMutation[], listId: string, scanOffset = 0): string[] {
   const relevant = operations.filter(m => m.listIds.includes(listId) && !m.observedListIds?.includes(listId) && m.state !== 'conflict');
   const acknowledged = relevant.filter(m => m.state === 'acked');

@@ -229,7 +229,8 @@ export default defineSchema({
     // Parent item ID for sub-items
     parentId: v.optional(v.id("items")),
     // Optional assignee DID for Mission Control workflows
-    assigneeDid: v.optional(v.string()),
+    assigneeDid: v.optional(v.string()), // Compatibility primary projection; itemAssignees is authoritative.
+    assignmentsVersion: v.optional(v.number()),
     // Attachments — Railway Bucket objects. Legacy `v.id("_storage")` entries
     // exist only until the bucketBackfill migration runs once on this deploy.
     attachments: v.optional(v.array(v.union(
@@ -262,6 +263,7 @@ export default defineSchema({
     assigneeDid: v.string(),
     assignedByDid: v.string(),
     assignedAt: v.number(),
+    inferredFromLegacyScalar: v.optional(v.boolean()),
   })
     .index("by_item", ["itemId"])
     .index("by_list", ["listId"])
