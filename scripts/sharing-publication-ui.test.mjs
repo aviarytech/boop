@@ -13,12 +13,10 @@ await build({
   outdir: "tmp/publication-ui", bundle: true, jsx: "automatic", platform: "node", format: "esm", outExtension: { ".js": ".mjs" },
   external: ["react", "react/jsx-runtime", "react-router-dom", "convex/server"],
   plugins: [{ name: "publication-ui-fixtures", setup(b) {
-    b.onResolve({ filter: /SharingControls$/ }, () => ({ path: "SharingControls", namespace: "fixture" }));
     b.onResolve({ filter: /(?:lib\/(authenticatedConvex|webvh|share|analytics|originals)|hooks\/(useCurrentUser|useSettings)|ui\/Panel|ProvenanceInfo)$/ }, ({ path }) => ({ path: path.split("/").pop(), namespace: "fixture" }));
     b.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ contents: {
-      SharingControls: 'import React from "react"; export const OwnerInvitations=({listId})=>React.createElement("div", {"data-testid":"owner-controls"}, listId);',
       authenticatedConvex: `import {getFunctionName} from "convex/server";
-        export const useQuery=ref=>getFunctionName(ref)==="publication:getPublicationStatus"?globalThis.__publicationUi.publication:null;
+        export const useQuery=ref=>({"publication:getPublicationStatus":globalThis.__publicationUi.publication,"invitations:getListInvitations":[],"listGrants:getListGrants":[],"users:getMyPublicDisplayName":{displayName:"Owner"}}[getFunctionName(ref)]);
         export const useMutation=ref=>async args=>{globalThis.__publicationUi.calls.push([getFunctionName(ref),args]);};`,
       useCurrentUser: 'export const useCurrentUser=()=>({did:"did:owner",subOrgId:"owner"});',
       useSettings: 'export const useSettings=()=>({haptic:()=>{}});',
@@ -40,7 +38,7 @@ test("Share with people embeds the selected owner invitation controls without pu
   mount(ShareModal);
   assert.ok(screen.getByRole("heading", { name: "Share with people" }));
   assert.ok(screen.getByRole("heading", { name: "Publish publicly" }));
-  assert.equal(screen.getByTestId("owner-controls").textContent, "L");
+  assert.ok(screen.getByLabelText("Recipient email"));
   assert.match(screen.getByText(/Invite someone by email/).textContent, /must accept/);
   assert.deepEqual(state.calls, []);
 });
@@ -49,6 +47,7 @@ for (const Component of [ShareModal, PublishModal]) {
   test(`${Component.name}: publication explicitly grants reading only; unpublish changes publication alone`, async () => {
     state.publication = { status: "active", webvhDid: "did:owner/resources/list-L" };
     mount(Component);
+    assert.equal(screen.queryByRole("link", { name: "Manage public publication" }), null);
     assert.match(screen.getByText(/Anyone with the link can read this list/).textContent, /accepted editors/);
     assert.match(screen.getByText(/Removing a named grant|Named access is separate/).textContent, /does not stop public reading/);
     fireEvent.click(screen.getByRole("button", { name: "Unpublish" }));

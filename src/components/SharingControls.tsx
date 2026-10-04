@@ -12,7 +12,7 @@ const primary = `${button} bg-amber-500 border-amber-500 text-white hover:bg-amb
 const input = "min-h-11 w-full rounded-xl border border-stone-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 focus:outline-2 focus:outline-amber-600";
 type Role = "viewer" | "editor";
 
-export function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
+export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lists">; embedded?: boolean }) {
   const profile = useQuery(api.users.getMyPublicDisplayName, {});
   const canSend = !!profile?.displayName;
   const invitations = useQuery(api.invitations.getListInvitations, { listId });
@@ -42,11 +42,11 @@ export function OwnerInvitations({ listId }: { listId: Id<"lists"> }) {
     finally { setBusy(false); }
   }
   return <div className="mt-6">
-    <div className="mb-5 space-y-2 text-sm" role="status">
+    {!embedded && <div className="mb-5 space-y-2 text-sm" role="status">
       <p>{publication === undefined ? "Loading publication status…" : publication?.status === "active" ? "Published publicly: anyone with the link can read this list." : "Not published publicly: only the owner and people with accepted grants have access."}</p>
       <p>Adding or removing named access does not change publication. Removing a grant does not stop public reading while publication is active. Unpublish to end public access; other accepted grants remain.</p>
       {publication?.status === "active" && <Link className="underline" to={`/list/${listId}`} state={{ openShare: true }}>Manage public publication</Link>}
-    </div>
+    </div>}
     <p className="mb-5 text-sm">Only you can see the full recipient list. Independent copies and exports survive revocation and cannot be recalled. Copies do not inherit recipients or publication settings.</p>
     <PublicDisplayNameEditor profile={profile} />
     {profile?.displayName && <p className="mt-4 text-sm">Invitations identify you as <strong>{profile.displayName}</strong>.</p>}

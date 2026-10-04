@@ -2,6 +2,7 @@ import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { App } from '@capacitor/app';
 
 let launchHandled = false;
+let nativeEventDelivered = false;
 
 export async function initDeepLinks(navigate: (path: string) => void, signal?: AbortSignal) {
   const handles: PluginListenerHandle[] = [];
@@ -27,7 +28,15 @@ export async function initDeepLinks(navigate: (path: string) => void, signal?: A
     } catch { /* Ignore malformed native launch URLs. */ }
   };
   try {
-    await listen(App.addListener('appUrlOpen', event => open(event.url)));
+    await listen(App.addListener('appUrlOpen', event => {
+      if (stopped) return;
+      // Capacitor retains the cold-start event until a listener consumes it.
+      // A delivered event takes precedence over the later launch lookup.
+      try {
+        if (new URL(event.url).origin === 'https://boop.ad') nativeEventDelivered = true;
+      } catch { /* The shared parser below ignores malformed URLs. */ }
+      open(event.url);
+    }));
     if (stopped) return cleanup;
     await listen(App.addListener('backButton', ({ canGoBack }) => {
       if (stopped) return;
@@ -39,7 +48,7 @@ export async function initDeepLinks(navigate: (path: string) => void, signal?: A
       // An aborted StrictMode setup must not consume the next setup's launch.
       if (!stopped && !launchHandled) {
         launchHandled = true;
-        if (launch?.url) open(launch.url);
+        if (launch?.url && !nativeEventDelivered) open(launch.url);
       }
     }
     return cleanup;

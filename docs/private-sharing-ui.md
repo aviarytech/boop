@@ -47,6 +47,14 @@ verified Android App Links. This task does not change production association fil
 provisioning, signing credentials, or deploy anything. Until native association is
 verified, the HTTPS link supports the normal web sign-in/acceptance fallback.
 
+Before the next iOS release, the release operator must confirm that the `ad.boop.app`
+App ID has Associated Domains enabled and that `match AppStore ad.boop.app` includes
+`com.apple.developer.associated-domains`. The `beta` lane uses read-only match and
+cannot repair a missing capability/profile. If needed, renew the profile through
+the authorized signing workflow after enabling the capability, then verify a signed
+archive. Do not run a release against an incompatible profile. No provisioning or
+signing-store changes were made by this PR.
+
 ## Verification and remaining acceptance gaps
 
 Local handler tests cover list/note acceptance-to-discovery, privacy projection,
@@ -57,15 +65,8 @@ cover discovery roles/routes, loading/empty states, confirmation, failure/retry,
 reactive removal, publication separation and the reused owner controls. Native
 routing tests use a mocked Capacitor bridge, including cold launch and web fallback.
 
-An isolated browser fixture mounts production discovery and owner controls with
-mock transport. Desktop and 390px mobile checks exercised leave/removal, found no
-page errors or horizontal overflow, and captured screenshots. T3 preview status
-and open were attempted; navigation reported no automation host, so the permitted
-headless Playwright fallback was used. No live Convex, OTP, email or data was used.
-
-App/backend/E2E TypeScript and a direct Vite build passed without codegen. Full
-bun tests passed after retrying initial ENOSPC failures. Focused ESLint passed.
-The coordinator owns the baseline OfflineAccessMonitor crash fix and full-app E2E
-fixture repairs; these files were not modified here. Native device builds, signed
-universal/App Link installation, real OTP/mail delivery, Convex subscription timing
-and concurrent transaction behavior remain unverified integration requirements.
+Component tests use isolated transport fixtures; they do not establish live Convex
+subscription timing, concurrent transaction behavior, real OTP/mail delivery, or
+installed native link association. PR #271 supplies the baseline offline-monitor
+fix and browser fixture repairs included by this branch. CI compiles the web app,
+Android debug build and unsigned iOS simulator build; these do not verify signing.

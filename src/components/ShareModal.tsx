@@ -172,7 +172,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Invite someone by email as a viewer or editor. They must accept the invitation. Adding or removing named access does not change public publication.
           </p>
-          <OwnerInvitations key={list._id} listId={list._id} />
+          <OwnerInvitations key={list._id} listId={list._id} embedded />
         </section>
         <section aria-labelledby="share-public-title" className="space-y-5 border-t border-gray-200 dark:border-gray-700 pt-5">
           <h3 id="share-public-title" className="font-semibold text-gray-900 dark:text-gray-100">Publish publicly</h3>

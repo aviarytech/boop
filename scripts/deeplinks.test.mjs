@@ -12,6 +12,7 @@ const { MemoryRouter, useLocation, useNavigate } = await import('react-router-do
 const state = globalThis.__deepLinkFixture = {
   native: true, listeners: new Map(), registrations: 0, launches: 0,
   launch: 'https://boop.ad/invitations/abc/1?continue=review#accept',
+  retained: 'https://boop.ad/invitations/abc/1?continue=review#accept',
 };
 await build({
   entryPoints: ['src/hooks/useNativeLinks.ts'], outfile: 'tmp/deeplinks.mjs',
@@ -22,7 +23,9 @@ await build({
       ? 'export const Capacitor={isNativePlatform:()=>globalThis.__deepLinkFixture.native};'
       : `export const App={
           addListener:async(name,fn)=>{const s=globalThis.__deepLinkFixture;s.registrations++;
-            const key=Symbol(name);s.listeners.set(key,{name,fn});return {remove:async()=>{s.listeners.delete(key)}};},
+            const key=Symbol(name);s.listeners.set(key,{name,fn});
+            if(name==='appUrlOpen'&&s.retained){const url=s.retained;s.retained=null;fn({url})}
+            return {remove:async()=>{s.listeners.delete(key)}};},
           getLaunchUrl:async()=>{const s=globalThis.__deepLinkFixture;s.launches++;return {url:s.launch}},
           exitApp:()=>{}
         };` }));
@@ -34,6 +37,7 @@ function NativeRouter() {
   const location = useLocation(), navigate = useNavigate();
   return React.createElement(React.Fragment, null,
     React.createElement('output', null, `${location.pathname}${location.search}${location.hash}`),
+    React.createElement('button', { onClick: () => navigate(-1) }, 'Back'),
     React.createElement('button', { onClick: () => navigate('/list/accepted') }, 'Accept'),
     React.createElement('button', { onClick: () => navigate('/shared') }, 'Shared with me'));
 }
@@ -51,6 +55,9 @@ test('native invitation is consumed once across router navigation; warm links wo
     assert.equal(state.launches, 1);
     assert.equal(state.listeners.size, 2, 'one link listener and one back listener after StrictMode setup');
     const registrations = state.registrations;
+    fireEvent.click(view.getByText('Back'));
+    await act(async () => {});
+    assert.equal(path(), '/', 'retained event plus launch lookup adds only one history entry');
     fireEvent.click(view.getByText('Accept'));
     await act(async () => {});
     assert.equal(path(), '/list/accepted', 'acceptance must not bounce to the consumed launch invitation');
