@@ -1,4 +1,4 @@
-import { withAssignments } from "./lib/assignments";
+import { withAssignmentsBatch } from "./lib/assignments";
 import { actorQuery } from "./lib/authenticated";
 
 import type { Doc } from "./_generated/dataModel";
@@ -41,7 +41,7 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
 
     await Promise.all(
       lists.map(async (list) => {
-        const [pub, anchors, latestActivity, assignees] = await Promise.all([
+        const [pub, anchors, latestActivity, items] = await Promise.all([
           ctx.db
             .query("publications")
             .withIndex("by_list", (q) => q.eq("listId", list._id))
@@ -66,8 +66,8 @@ export const { public: listOwnedOriginals, internal: listOwnedOriginalsInternal 
         if (latestActivity) activitiesByList.set(list._id, { createdAt: latestActivity.createdAt });
 
         const uniqueAssignees = new Set<string>();
-        for (const item of assignees) {
-          for (const did of (await withAssignments(ctx, item)).assigneeDids) uniqueAssignees.add(did);
+        for (const item of await withAssignmentsBatch(ctx, items)) {
+          for (const did of item.assigneeDids) uniqueAssignees.add(did);
         }
         if (uniqueAssignees.size > 0) assigneesByList.set(list._id, uniqueAssignees.size);
       }),

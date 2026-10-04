@@ -1,4 +1,4 @@
-import { inheritAssignments, withAssignments } from "./lib/assignments";
+import { inheritedAssignmentFields, insertInheritedAssignments, withAssignmentsBatch } from "./lib/assignments";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
@@ -263,14 +263,17 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
     // were rejected before any writes.
     const DROP = ["_id", "_creationTime", "parentId", "vcProofs", "assigneeDid", "assignmentsVersion"] as const;
 
-    for (const item of items) {
+    const assignedItems = await withAssignmentsBatch(ctx, items);
+    const assignedAt = Date.now();
+    for (const { assigneeDids, ...item } of assignedItems) {
       const payload: Record<string, unknown> = { ...item };
       for (const field of DROP) delete payload[field];
       const newId = await ctx.db.insert(
         "items",
-        { ...payload, listId, assignmentsVersion: 1, tags: item.tags?.flatMap(id => tagMap.has(id) ? [tagMap.get(id)!] : []) } as Omit<Doc<"items">, "_id" | "_creationTime">
+        { ...payload, listId, ...inheritedAssignmentFields(assigneeDids, assignedAt), tags: item.tags?.flatMap(id => tagMap.has(id) ? [tagMap.get(id)!] : []) } as Omit<Doc<"items">, "_id" | "_creationTime">
       );
-      await inheritAssignments(ctx, item, newId, ctx.actor.did, "copy");
+      await insertInheritedAssignments(ctx, { sourceId: item._id, targetId: newId, listId,
+        assigneeDids, actorDid: ctx.actor.did, assignedAt, reason: "copy" });
       idMap.set(item._id, newId);
     }
 
@@ -434,7 +437,7 @@ const listWithItemsOperation = actorQuery({
       (a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt)
     );
 
-    return { list, items: await Promise.all(items.map(item => withAssignments(ctx, item))) };
+    return { list, items: await withAssignmentsBatch(ctx, items) };
   },
 });
 
