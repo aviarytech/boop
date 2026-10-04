@@ -18,7 +18,8 @@
     "cap:build": "npm run build && npx cap sync",
     "generate:assets": "node scripts/generate-icons.mjs && npx capacitor-assets generate --iconBackgroundColor '#fafaf7' --iconBackgroundColorDark '#fafaf7' --splashBackgroundColor '#fafaf7' --splashBackgroundColorDark '#0c0b10' --ios --android && node scripts/generate-icons.mjs --android-native-only",
     "mission-control:readiness-drill": "node scripts/mission-control-readiness-drill.mjs",
-    "test:e2e": "e2e run"
+    "test:e2e": "e2e run",
+    "test:e2e:typecheck": "tsc -p tsconfig.e2e.json"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",

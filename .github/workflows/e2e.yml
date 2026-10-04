@@ -37,6 +37,9 @@ jobs:
       - name: Install browsers
         run: npx playwright install chromium --with-deps
 
+      - name: Check E2E types
+        run: bun run test:e2e:typecheck
+
       - name: Run e2e
         run: bun run test:e2e --reporter list,junit
         env:

@@ -1,0 +1,239 @@
+// Test-only Convex wire-protocol fixture. Never imported by the application.
+// Runs beside Vite on loopback; each test owns a separate in-memory account.
+import { createServer } from 'vite';
+import { randomUUID } from 'node:crypto';
+import { revision } from '../../shared/replay.ts';
+
+const TS_ZERO = 'AAAAAAAAAAA=';
+const accounts = new Map();
+const sockets = new Set();
+const user = {
+  _id: 'users:e2e', _creationTime: 1, turnkeySubOrgId: 'e2e-account',
+  email: 'e2e@example.test', did: 'did:webvh:e2e:boop.ad:user-e2e', displayName: 'E2E User',
+};
+
+function seed(options) {
+  const key = randomUUID();
+  const token = `e2e.${Buffer.from(JSON.stringify({ sub: key, exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url')}.fixture`;
+  const lists = Array.from({ length: options.lists ?? 0 }, (_, i) => ({
+    _id: `lists:mocklist${i}`, _creationTime: i + 1, name: `Test List ${i + 1}`,
+    ownerDid: user.did, assetDid: `did:cel:fixture-${i}`, createdAt: i + 1,
+  }));
+  const items = (options.items ?? []).map((item, i) => ({
+    _id: `items:mockitem${i}`, _creationTime: i + 1, listId: 'lists:mocklist0',
+    name: item.name, checked: item.checked ?? false, createdByDid: user.did,
+    createdAt: i + 1, updatedAt: i + 1, order: i,
+  }));
+  const account = { key, token, options, lists, items, published: options.published ?? false,
+    sequence: 0, receipts: [], calls: [], errors: [], nextId: 0 };
+  accounts.set(token, account);
+  return account;
+}
+
+function query(account, path, args) {
+  switch (path) {
+    case 'auth:getUserByTurnkeyId': return user;
+    case 'lists:getUserLists': return account.lists;
+    case 'lists:getList': return account.lists.find(l => l._id === args.listId) ?? null;
+    case 'items:getListItems': return account.items.filter(i => i.listId === args.listId);
+    case 'items:getListItemsForReplay': return {
+      items: account.items.filter(i => i.listId === args.listId),
+      acknowledgments: account.receipts.filter(r => args.operationIds.includes(r.operationId)),
+      sequence: account.sequence,
+    };
+    case 'items:getOfflineAccount': return { accountId: user.turnkeySubOrgId };
+    case 'billing:getUserPlan': return 'free';
+    case 'billing:getUserSubscription': return null;
+    case 'publication:getPublicationStatus': return account.published ? {
+      status: 'active', webvhDid: `${user.did}/resources/list-${args.listId}`,
+      publishedAt: 1, publishedByDid: user.did,
+    } : null;
+    case 'publication:isBookmarked': return false;
+    case 'users:getUsersByDids': return Object.fromEntries(args.dids.map(did => [did, { displayName: user.displayName, email: user.email }]));
+    case 'users:getUserStats': return { totalItems: account.items.length, completedItems: account.items.filter(i => i.checked).length };
+    case 'referrals:getReferralStats': return { referralCount: 0, totalCredits: 0, earnedMonths: 0 };
+    case 'referrals:getReferralCode': return { code: 'e2e-code' };
+    case 'notifications:hasSubscription': return false;
+    case 'lists:getListEnvelope': return null;
+    case 'lists:getLegacyListIds':
+    case 'publication:getUserBookmarkIds':
+    case 'categories:getUserCategories':
+    case 'templates:getUserTemplates':
+    case 'bitcoinAnchors:getListAnchors':
+    case 'bitcoinAnchors:getItemAnchors':
+    case 'items:getSubItems':
+    case 'comments:getItemComments':
+    case 'tags:getListTags': return [];
+    default: throw new Error(`Unimplemented fixture query: ${path}`);
+  }
+}
+
+async function mutation(account, path, args) {
+  const endpoint = path.replace(/Replay$/, '');
+  const previous = args.replay && account.receipts.find(r => r.operationId === args.replay.operationId);
+  if (previous) return previous;
+  let result = null;
+  const item = account.items.find(i => i._id === args.itemId);
+  const list = account.lists.find(l => l._id === args.listId);
+  switch (endpoint) {
+    case 'actorSession:establish': break;
+    case 'lists:createList': {
+      if (account.options.failCreateList) throw new Error('PLAN_LIMIT: Free plan allows a maximum of 5 lists');
+      result = `lists:created${++account.nextId}`;
+      account.lists.push({ _id: result, _creationTime: Date.now(), name: args.name,
+        assetDid: args.assetDid, ownerDid: user.did, createdAt: args.createdAt });
+      break;
+    }
+    case 'lists:renameList':
+      if (!list) throw new Error('List not found');
+      list.name = args.name;
+      break;
+    case 'lists:deleteList': account.lists = account.lists.filter(l => l._id !== args.listId); break;
+    case 'items:addItem': {
+      result = `items:created${++account.nextId}`;
+      account.items.push({ _id: result, _creationTime: Date.now(), listId: args.listId,
+        name: args.name, checked: false, createdByDid: user.did,
+        createdAt: args.createdAt, updatedAt: args.createdAt, order: account.items.length });
+      break;
+    }
+    case 'items:checkItem':
+    case 'items:uncheckItem':
+      if (!item) throw new Error('Item not found');
+      item.checked = endpoint === 'items:checkItem';
+      item.updatedAt = Date.now();
+      break;
+    case 'items:removeItem': account.items = account.items.filter(i => i._id !== args.itemId); break;
+    case 'publication:publishList': account.published = true; break;
+    case 'publication:unpublishList': account.published = false; break;
+    case 'referrals:getOrCreateReferralCode': result = 'e2e-code'; break;
+    default: throw new Error(`Unimplemented fixture mutation: ${path}`);
+  }
+  if (!args.replay) return result;
+  const revisions = {};
+  for (const doc of account.items) revisions[doc._id] = await revision(doc);
+  const ack = { operationId: args.replay.operationId, result, revisions, sequence: ++account.sequence };
+  account.receipts.push(ack);
+  return ack;
+}
+
+function transition(ws, newVersion = ws.data.version) {
+  const account = ws.data.account;
+  const modifications = [...ws.data.queries].map(([queryId, { path, args }]) => {
+    try {
+      return { type: 'QueryUpdated', queryId, value: query(account, path, args), logLines: [] };
+    } catch (error) {
+      account.errors.push(error.message);
+      return { type: 'QueryFailed', queryId, errorMessage: error.message, logLines: [] };
+    }
+  });
+  ws.send(JSON.stringify({ type: 'Transition',
+    startVersion: { querySet: ws.data.version, ts: TS_ZERO, identity: 0 },
+    endVersion: { querySet: newVersion, ts: TS_ZERO, identity: 0 }, modifications }));
+  ws.data.version = newVersion;
+}
+
+const backend = Bun.serve({
+  hostname: '127.0.0.1', port: 0,
+  async fetch(request, server) {
+    const url = new URL(request.url);
+    if (/\/api\/[^/]+\/sync$/.test(url.pathname)) {
+      if (server.upgrade(request, { data: { queries: new Map(), version: 0, account: null, pending: Promise.resolve() } })) return;
+    }
+    if (url.pathname === '/__e2e/seed' && request.method === 'POST') {
+      const account = seed(await request.json());
+      return Response.json({ token: account.token, user });
+    }
+    if (url.pathname === '/__e2e/start') {
+      const account = accounts.get(url.searchParams.get('token'));
+      const path = url.searchParams.get('path');
+      if (!account || !path?.startsWith('/') || path.startsWith('//')) return new Response('Invalid fixture', { status: 400 });
+      const storage = { 'poo-cookie-consent': 'declined' };
+      if (account.options.authenticated !== false) {
+        storage['lisa-auth-state'] = JSON.stringify({ token: account.token, user });
+        storage['lisa-jwt-token'] = account.token;
+      }
+      if (!account.options.onboarding) {
+        storage['poo_onboarding_v1'] = 'done';
+        storage['boop:onboarding_demo_created'] = 'done';
+      }
+      if (account.options.inviteNudgeDone !== false) storage['boop:onboarding_invite_nudge_done'] = 'done';
+      const literal = value => JSON.stringify(value).replaceAll('<', '\\u003c');
+      return new Response(`<script>for (const [k,v] of Object.entries(${literal(storage)})) localStorage.setItem(k,v); location.replace(${literal(path)});</script>`, {
+        headers: { 'content-type': 'text/html' },
+      });
+    }
+    const token = request.headers.get('authorization')?.replace(/^Bearer /, '');
+    const account = accounts.get(token);
+    if (url.pathname === '/__e2e/state' && account) {
+      return Response.json({ lists: account.lists, items: account.items, calls: account.calls,
+        errors: account.errors, published: account.published, receipts: account.receipts });
+    }
+    if (url.pathname === '/__e2e/account' && request.method === 'DELETE' && account) {
+      accounts.delete(token);
+      return new Response(null, { status: 204 });
+    }
+    return new Response('Unknown test endpoint', { status: 404 });
+  },
+  websocket: {
+    open(ws) { sockets.add(ws); },
+    close(ws) { sockets.delete(ws); },
+    message(ws, raw) {
+      // Keep mutations and query-set changes ordered, like Convex's stream.
+      ws.data.pending = ws.data.pending.then(async () => {
+        const msg = JSON.parse(String(raw));
+        if (msg.type === 'Connect' || msg.type === 'Authenticate' || msg.type === 'Event') return;
+        const args = msg.args?.[0] ?? {};
+        if (args.authToken) ws.data.account = accounts.get(args.authToken);
+        if (msg.type === 'ModifyQuerySet') {
+          for (const mod of msg.modifications) {
+            if (mod.type === 'Remove') ws.data.queries.delete(mod.queryId);
+            else {
+              const queryArgs = mod.args?.[0] ?? {};
+              if (queryArgs.authToken) ws.data.account = accounts.get(queryArgs.authToken);
+              ws.data.queries.set(mod.queryId, { path: mod.udfPath, args: queryArgs });
+            }
+          }
+          transition(ws, msg.newVersion);
+          return;
+        }
+        if (msg.type === 'Mutation') {
+          const account = ws.data.account;
+          try {
+            if (!account) throw new Error('No seeded test account');
+            account.calls.push({ path: msg.udfPath, args });
+            const result = await mutation(account, msg.udfPath, args);
+            ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: true, result, ts: TS_ZERO, logLines: [] }));
+            for (const socket of sockets) if (socket.data.account === account) transition(socket);
+          } catch (error) {
+            if (!error.message.startsWith('PLAN_LIMIT')) account?.errors.push(error.message);
+            ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: false, result: error.message, logLines: [] }));
+          }
+          return;
+        }
+        throw new Error(`Unimplemented fixture message: ${msg.type}`);
+      }).catch(error => {
+        ws.data.account?.errors.push(error.message);
+        console.error(error);
+      });
+    },
+  },
+});
+
+const backendUrl = `http://127.0.0.1:${backend.port}`;
+Object.assign(process.env, {
+  VITE_CONVEX_URL: backendUrl, VITE_CONVEX_HTTP_URL: backendUrl,
+  VITE_STRIPE_PRO_MONTHLY_PRICE_ID: 'price_e2e_monthly',
+  VITE_STRIPE_PRO_YEARLY_PRICE_ID: 'price_e2e_yearly',
+  VITE_STRIPE_TEAM_PRICE_ID: 'price_e2e_team',
+  VITE_WEBVH_DOMAIN: 'boop.ad', VITE_POSTHOG_KEY: '', VITE_POSTHOG_API_KEY: '', VITE_SENTRY_DSN: '',
+});
+const port = Number(process.argv[process.argv.indexOf('--port') + 1]);
+if (!Number.isInteger(port) || port <= 0) throw new Error('Expected --port from the E2E runner');
+const vite = await createServer({ server: { host: '127.0.0.1', port, strictPort: true,
+  proxy: { '/__e2e': backendUrl } } });
+await vite.listen();
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
+  await vite.close();
+  backend.stop(true);
+  process.exit(0);
+});

@@ -160,7 +160,7 @@ export function Settings({ onClose }: SettingsProps) {
   return (
     <>
     {feedbackOpen && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => setFeedbackOpen(false)}>
+      <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setFeedbackOpen(false)}>
         <div
           className="w-full sm:max-w-md bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
           onClick={e => e.stopPropagation()}

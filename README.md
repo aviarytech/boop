@@ -64,19 +64,26 @@ npx convex deploy
 
 ## Tests
 
-Run unit tests with `bun test`. Browser smoke tests use the `e2e` runner
+Run unit tests with `bun test`. Browser tests use the `e2e` runner
 installed for this project (Node 22.12+), with Playwright as its browser engine:
 
 ```bash
 npx playwright install chromium
+bun run test:e2e:typecheck
 bun run test:e2e
 ```
 
-The runner collects only `tests/**/*.e2e.ts`, starts and stops its own Vite
-server on a free local port, and supplies a placeholder Convex URL. The public
-landing-page and quickstart tests need no backend, account, or AI API key.
-They cover rendered content, the landing-to-docs link, direct docs navigation,
-and returning home. `npx e2e list` lists the selected tests without starting a browser.
+The runner collects only `tests/**/*.e2e.ts` and starts and stops its own Vite
+server and isolated Convex protocol fixture on free loopback ports. All 113
+tests from the deleted Playwright browser suite have been ported, alongside
+the three existing public-page tests. They cover auth, lists/items, sharing,
+onboarding, offline indicators, settings, accessibility, profile, pricing,
+and legal pages. No live backend, account, Stripe key, or AI API key is needed.
+
+`npx e2e list` lists the tests without starting a browser.
+`bun run test:e2e tests/items.e2e.ts` runs one file. See
+[`docs/e2e-migration.md`](docs/e2e-migration.md) for the legacy coverage map,
+fixture design, and what these mocked browser tests do not verify.
 
 CI runs this same suite and uploads `.e2e/` reports, logs, and failure artifacts.
 The configured AI agent is available for future flows; only tests that use
