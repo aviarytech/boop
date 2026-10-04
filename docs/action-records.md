@@ -34,6 +34,26 @@ or historical identity bindings. Current legacy DID migrations rewrite wrapper
 fields; the replacement must keep signed evidence out of those rewrite paths.
 This foundation does not change those migrations.
 
+## Identifier badges and evidence boundaries
+
+List/note headers and compact item badges derive identifier presence from `did`,
+not a credential/verification boolean. A recorded DID (including an unvalidated
+string) is labeled **DID (unverified)** with a neutral information icon; absence
+is **No DID** in headers and hidden in compact items. A DID alone does not prove
+ownership, authorship, or authenticity.
+
+The public list badge also says **DID (unverified)**. Displaying a supplied DID
+or parsing its document and declared verification methods does not validate
+signatures, resolve a WebVH history, establish trust, or verify the list. Missing,
+malformed, and parseable documents have the same unverified evidence boundary.
+Historical attribution records may still be unsigned.
+
+Bitcoin anchor status remains separate: confirmed anchors retain their timestamp
+and transaction details, pending anchors await confirmation, and missing anchors
+say **Not anchored**. The provenance panel's CEL replay and WebVH verification
+paths are unchanged; successful event-log verification is not action-record or
+personal-ownership verification.
+
 ## Custody and verification requirements still awaiting selection
 
 Service attestations must say that boop observed an authenticated operation. They
@@ -61,7 +81,9 @@ are not server-held.
 ## Current verification and gaps
 
 Tests exercise credential distinction/revocation and rendered historical
-unsigned/unverified presentation. Signed recording, independent signature
+unsigned/unverified presentation, header/compact/public identifier badges, and
+separate anchor states. Local Originals tests exercise genuine CEL verification
+and tamper rejection. Signed recording, independent signature
 verification, individual/batch history parity, recurring records, key rotation,
 and signing-availability behavior remain unimplemented pending custody. Native
 and live flows have not been exercised. No live Convex operations are required

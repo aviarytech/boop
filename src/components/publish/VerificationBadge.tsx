@@ -1,7 +1,7 @@
 /**
- * Verification badge component for published lists.
+ * Identifier details for published lists.
  *
- * Phase 4: Shows verification status and DID details for published lists.
+ * DID/document presence is metadata, not a verification result.
  */
 
 import { useState } from "react";
@@ -20,7 +20,10 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
   let parsedDocument: Record<string, unknown> | null = null;
   if (didDocument) {
     try {
-      parsedDocument = JSON.parse(didDocument);
+      const value: unknown = JSON.parse(didDocument);
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        parsedDocument = value as Record<string, unknown>;
+      }
     } catch {
       // Invalid JSON, ignore
     }
@@ -33,7 +36,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
         onClick={() => setShowDetails(!showDetails)}
         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
         aria-expanded={showDetails}
-        aria-label="Verification details"
+        aria-label="Identifier details"
       >
         <svg
           className="w-4 h-4"
@@ -45,10 +48,10 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeWidth={2}
-            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+            d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0"
           />
         </svg>
-        Verified
+        DID (unverified)
         <svg
           className={`w-3 h-3 transition-transform ${
             showDetails ? "rotate-180" : ""
@@ -70,7 +73,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
       {showDetails && (
         <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4 z-10">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-            Verification Details
+            Identifier Details
           </h3>
 
           <div className="space-y-3">
@@ -88,7 +91,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
             {parsedDocument && Array.isArray(parsedDocument.verificationMethod) && (
               <div>
                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Verification Method
+                  Declared verification method (unverified)
                 </label>
                 <code className="block text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded break-all text-gray-700 dark:text-gray-300">
                   {String((parsedDocument.verificationMethod[0] as Record<string, unknown>)?.id ?? "Unknown")}
@@ -99,9 +102,9 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
             {/* Explanation */}
             <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
               <p className="text-xs text-gray-600 dark:text-gray-300">
-                This list is published to a decentralized identifier (did:webvh).
-                The DID document cryptographically proves the list's authenticity
-                and ownership.
+                This list has a decentralized identifier (DID). This view does not
+                verify the DID document or the list's authenticity, ownership, or
+                authorship. Historical attribution records may be unsigned.
               </p>
             </div>
 
