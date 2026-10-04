@@ -18,6 +18,25 @@ export async function withAssignments(ctx: QueryCtx, item: Doc<'items'>) {
   return { ...item, assigneeDids };
 }
 
+/** Hydrate only the requested items, with at most one assignment query per list.
+ * The live-item map discards old orphan rows and rows outside a filtered subset.
+ * A singleton uses its narrower item index instead of reading the whole list. */
+export async function withAssignmentsBatch(ctx: QueryCtx, items: Doc<'items'>[]) {
+  const groups = new Map<Id<'lists'>, Map<Id<'items'>, Set<string>>>();
+  for (const item of items) {
+    let group = groups.get(item.listId);
+    if (!group) { group = new Map(); groups.set(item.listId, group); }
+    group.set(item._id, new Set(item.assignmentsVersion === undefined && item.assigneeDid ? [item.assigneeDid] : []));
+  }
+  await Promise.all([...groups].map(async ([listId, group]) => {
+    const rows = group.size === 1
+      ? await ctx.db.query('itemAssignees').withIndex('by_item', q => q.eq('itemId', group.keys().next().value!)).collect()
+      : await ctx.db.query('itemAssignees').withIndex('by_list', q => q.eq('listId', listId)).collect();
+    for (const row of rows) group.get(row.itemId)?.add(row.assigneeDid);
+  }));
+  return items.map(item => ({ ...item, assigneeDids: [...groups.get(item.listId)!.get(item._id)!].sort() }));
+}
+
 /** Idempotent, lossless cutover. Existing rows and historical events are untouched.
  * Imported scalar attribution is only a legacy inference, explicitly recorded as
  * such. Nothing here creates or claims a signed credential. */
@@ -78,12 +97,26 @@ export async function changeAssignments(ctx: MutationCtx, source: Doc<'items'>, 
   }
 }
 
-/** New assignments refer back to their source. Original rows/events/proofs stay
- * on the original item; they must not masquerade as events on a new asset. */
-export async function inheritAssignments(ctx: MutationCtx, source: Doc<'items'>, targetId: Id<'items'>, actorDid: string, reason: 'copy' | 'recurrence') {
-  const target = (await ctx.db.get(targetId))!;
-  const dids = (await withAssignments(ctx, source)).assigneeDids;
-  await changeAssignments(ctx, target, actorDid, { replace: dids }, `${reason} from item ${source._id}; source assignment history remains on that item`);
+/** Projection for a brand-new item: no existing membership needs reconciling.
+ * Keep the existing initial version/primary semantics without target reads. */
+export function inheritedAssignmentFields(assigneeDids: string[], assignedAt: number) {
+  return { assigneeDid: assigneeDids[0], assignmentsVersion: assigneeDids.length ? 2 : 1,
+    ...(assigneeDids.length ? { updatedAt: assignedAt } : {}) };
+}
+
+/** Only for targets inserted in this transaction, from a sorted unique source
+ * projection. Original rows/events/proofs stay on the source asset. No reads. */
+export async function insertInheritedAssignments(ctx: MutationCtx, args: {
+  sourceId: Id<'items'>; targetId: Id<'items'>; listId: Id<'lists'>;
+  assigneeDids: string[]; actorDid: string; assignedAt: number; reason: 'copy' | 'recurrence';
+}) {
+  for (const assigneeDid of args.assigneeDids) {
+    await ctx.db.insert('itemAssignees', { itemId: args.targetId, listId: args.listId,
+      assigneeDid, assignedByDid: args.actorDid, assignedAt: args.assignedAt });
+    await ctx.db.insert('activities', { listId: args.listId, itemId: args.targetId, actorDid: args.actorDid,
+      type: 'item_assigned', metadata: { assigneeDid,
+        note: `${args.reason} from item ${args.sourceId}; source assignment history remains on that item` }, createdAt: args.assignedAt });
+  }
 }
 
 /** Deleting content also deletes live membership, but leaves audit activities. */

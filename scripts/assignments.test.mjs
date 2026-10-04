@@ -265,3 +265,133 @@ for(const assigned of [false,true]) test(`older snapshot cleaner accepts unchang
   const current=(await f.call('items','getListItemsForReplay',{listId:'L1',operationIds:[]})).items[0];
   await assert.rejects(async()=>f.call('items','updateItemReplay',{itemId:'I1',name:'Must reject arbitrary projection',replay:{operationId:`old-client-partial-${assigned}`,accountId:f.session.accountId,expected:[{id:'I1',revision:await modules.shared.revision({name:current.name,assigneeDids:current.assigneeDids})}]}}),/changed on the server/);
 });
+
+// Count actual database calls made by the authenticated handlers, not helper
+// invocation counts. Fail early if an accidental per-item loop returns.
+function measureReads(f, budget = 100) {
+  const calls = { gets: 0, getIds: [], queries: [] };
+  const get = f.ctx.db.get, query = f.ctx.db.query;
+  const check = () => assert.ok(calls.gets + calls.queries.length <= budget, 'database read-call budget exceeded');
+  f.ctx.db.get = async id => { calls.gets++; calls.getIds.push(id); check(); return get(id); };
+  f.ctx.db.query = table => {
+    const entry = { table, index: undefined, bounds: {} }; calls.queries.push(entry); check();
+    const q = query(table), withIndex = q.withIndex;
+    q.withIndex = (index, fn) => {
+      entry.index = index;
+      return withIndex(index, builder => {
+        const wrapped = { eq(key, value) { entry.bounds[key] = value; builder.eq(key, value); return wrapped; } };
+        return fn?.(wrapped);
+      });
+    };
+    return q;
+  };
+  return calls;
+}
+function seedLargeList(f, count) {
+  f.rows.items = Array.from({ length: count }, (_, i) => ({ _id: `large-${i}`, _creationTime: i,
+    listId: 'L1', name: `Task ${i}`, checked: false, createdByDid: f.owner.user.did, createdAt: i,
+    order: i, ...(i < 8 ? { dueDate: 10, priority: 'high', parentId: 'large-10' } : {}),
+    ...(i === 0 ? { assigneeDid: 'legacy' } : {}),
+    ...(i === 1 ? { assigneeDid: 'conflict-scalar' } : {}),
+    ...(i === 2 ? { assigneeDid: 'stale-scalar', assignmentsVersion: 5 } : {}),
+  }));
+  f.rows.itemAssignees = [
+    ['large-1', 'row-member'], ['large-1', 'row-member'], ['large-2', 'authoritative'],
+    ['large-3', 'multi-a'], ['large-3', 'multi-b'], ['deleted-item', 'orphan'],
+  ].map(([itemId,assigneeDid],i)=>({_id:`large-row-${i}`,listId:'L1',itemId,assigneeDid,assignedByDid:`historical-${i}`,assignedAt:i}));
+}
+const largeExpected = [ ['legacy'], ['conflict-scalar','row-member'], ['authoritative'], ['multi-a','multi-b'] ];
+function assertLargeProjection(items) {
+  for(let i=0;i<4;i++) assert.deepEqual(items.find(item=>item._id===`large-${i}`).assigneeDids,largeExpected[i]);
+  for(const item of items) {
+    assert.ok(!item.assigneeDids.includes('orphan'));
+    assert.ok(!item.assigneeDids.includes('stale-scalar'));
+  }
+}
+
+for(const count of [20,4500]) test(`Explorer ${count} items uses one assignment read and filters legacy/orphan data`,async()=>{
+  const f=await fixture(); seedLargeList(f,count); const reads=measureReads(f);
+  const rows=await f.call('originals','listOwnedOriginals',{});
+  assert.equal(rows[0].collaborators,6);
+  assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_list',bounds:{listId:'L1'}}]);
+  assert.ok(reads.queries.length<15);
+});
+
+for(const operation of ['getListItems','getListItemsForReplay','getListWithItemsForViewer','getSubItems','getItemsWithDueDates','getHighPriorityItems']) test(`${operation} batches a 4500-item list without querying assignments on unrelated lists`,async()=>{
+  const f=await fixture(); seedLargeList(f,4500);
+  if(operation==='getHighPriorityItems') for(const item of f.rows.items) delete item.parentId;
+  f.rows.lists.push({_id:'L-empty',ownerDid:f.owner.user.did,name:'Empty',createdAt:1});
+  f.rows.items.push({_id:'other-1',listId:'L-unrelated',name:'Unrelated',checked:false,createdAt:1,createdByDid:'other'});
+  const reads=measureReads(f);
+  const result=await f.call(operation==='getListWithItemsForViewer'?'lists':'items',operation,{listId:'L1',parentId:'large-10',operationIds:[],startDate:1,endDate:20});
+  const items=operation==='getHighPriorityItems'?result.map(row=>row.item):(result.items??result);
+  assert.equal(items.length,['getSubItems','getItemsWithDueDates','getHighPriorityItems'].includes(operation)?8:4500);
+  assertLargeProjection(items);
+  assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_list',bounds:{listId:'L1'}}]);
+});
+
+test('singleton and empty filtered results avoid whole-list assignment reads',async()=>{
+  const f=await fixture(); seedLargeList(f,4500);
+  for(const item of f.rows.items) delete item.dueDate;
+  f.rows.items[0].dueDate=10;
+  const reads=measureReads(f);
+  const result=await f.call('items','getItemsWithDueDates',{listId:'L1'});
+  assert.equal(result.length,1);
+  assert.deepEqual(result[0].assigneeDids,['legacy']);
+  assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_item',bounds:{itemId:'large-0'}}]);
+  const before=reads.queries.length;
+  assert.deepEqual(await f.call('items','getItemsWithDueDates',{listId:'L1',startDate:100}),[]);
+  assert.equal(reads.queries.slice(before).filter(q=>q.table==='itemAssignees').length,0);
+});
+
+for(const count of [20,1200]) test(`copy ${count} mostly unassigned items uses constant assignment/source reads and no new-target reads`,async()=>{
+  const f=await fixture(); seedLargeList(f,count);
+  const sourceItems=structuredClone(f.rows.items), sourceRows=structuredClone(f.rows.itemAssignees);
+  const sourceEvent={_id:'source-event',listId:'L1',itemId:'large-1',actorDid:'historical',type:'item_assigned',metadata:{assigneeDid:'row-member'},createdAt:1};
+  f.rows.activities=[sourceEvent];
+  f.rows.items[0].vcProofs=[{type:'ExistingSigned',proof:'source-only',issuer:'historical'}];
+  sourceItems[0].vcProofs=structuredClone(f.rows.items[0].vcProofs);
+  const reads=measureReads(f,50);
+  const copied=await f.call('lists','copyList',{sourceListId:'L1',assetDid:'did:new',celEnvelope:'{}',name:'Large copy',createdAt:100});
+  assert.equal(copied.itemsCopied,count);
+  assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_list',bounds:{listId:'L1'}}]);
+  assert.ok(reads.gets<15,'no reads of new items, including unassigned ones');
+  assert.deepEqual(f.rows.items.filter(i=>i.listId==='L1'),sourceItems);
+  assert.deepEqual(f.rows.itemAssignees.filter(i=>i.listId==='L1'),sourceRows);
+  assert.deepEqual(f.rows.activities.filter(i=>i.listId==='L1'),[sourceEvent]);
+  const targets=f.rows.items.filter(i=>i.listId===copied.listId);
+  assert.equal(targets.length,count);
+  assert.equal(targets.some(target=>reads.getIds.includes(target._id)),false,'new target items are never reread');
+  for(let i=0;i<count;i++) {
+    const target=targets.find(t=>t.name===`Task ${i}`), expected=largeExpected[i]??[];
+    assert.equal(target.vcProofs,undefined);
+    assert.equal(target.assigneeDid,expected[0]);
+    assert.equal(target.assignmentsVersion,expected.length?2:1);
+    assert.deepEqual(f.rows.itemAssignees.filter(r=>r.itemId===target._id).map(r=>r.assigneeDid).sort(),expected);
+    const events=f.rows.activities.filter(a=>a.itemId===target._id);
+    assert.equal(events.length,expected.length);
+    for(const event of events) {assert.equal(event.actorDid,f.owner.user.did);assert.match(event.metadata.note,new RegExp(`copy from item large-${i};`));}
+    if(i<8) assert.equal(target.parentId,targets.find(t=>t.name==='Task 10')._id);
+  }
+});
+
+test('batch recurrence preloads assignment/order once per list and inserts truthful new memberships without target reads',async()=>{
+  const f=await fixture(); seedLargeList(f,80);
+  for(const item of f.rows.items) {item.recurrence={frequency:'daily'};item.dueDate=10;}
+  const source=structuredClone(f.rows.itemAssignees);
+  const reads=measureReads(f,1000);
+  await f.call('items','batchCheckItems',{itemIds:f.rows.items.map(i=>i._id)});
+  assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_list',bounds:{listId:'L1'}}]);
+  assert.equal(reads.queries.filter(q=>q.table==='items').length,1);
+  assert.deepEqual(f.rows.itemAssignees.filter(r=>r.itemId.startsWith('large-')),source.filter(r=>r.itemId.startsWith('large-')));
+  const targets=f.rows.items.filter(i=>!i._id.startsWith('large-'));
+  assert.equal(targets.length,80);
+  assert.equal(targets.some(target=>reads.getIds.includes(target._id)),false,'new recurring items are never reread');
+  for(let i=0;i<80;i++) {
+    const target=targets.find(t=>t.name===`Task ${i}`), expected=largeExpected[i]??[];
+    assert.deepEqual(f.rows.itemAssignees.filter(r=>r.itemId===target._id).map(r=>r.assigneeDid).sort(),expected);
+    assert.equal(target.assignmentsVersion,expected.length?2:1);
+    assert.equal(target.order,i<8?-i-1:-(i-8)-1);
+    for(const event of f.rows.activities.filter(a=>a.itemId===target._id)) {assert.equal(event.actorDid,f.owner.user.did);assert.match(event.metadata.note,/recurrence from item large-/);}
+  }
+});
