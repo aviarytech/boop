@@ -1,10 +1,8 @@
 # Private-sharing verification evidence (#262)
 
 This is bounded local evidence for parent #255, not a release attestation or full
-closure of #262. Baseline: `888a980c754030be1c3350955c3211e0e6e79423`;
-assignment `boop-262-a927-impl`, coordinator
-`a927d4f3-e9fa-46df-ad3a-9893b9168fb2`. Only the new verification test and this
-document are part of this assignment. No production handlers, rollout policy,
+closure of #262. Baseline: `888a980c754030be1c3350955c3211e0e6e79423`.
+The verification change adds tests and documentation only. No production handlers, rollout policy,
 build gates, live data, deployments or signing configuration were changed.
 
 ## Contract and authorization matrix
@@ -135,9 +133,7 @@ validation is authorized or performed by this assignment.
 
 ## Local execution record
 
-The following completed in the shared checkout based on the baseline above.
-Parallel #203 edits may be present; repeat validation on the isolated integrated
-revision before treating these results as PR evidence:
+The following focused checks passed during implementation and independent review:
 
 ```sh
 node --test scripts/private-sharing-verification.test.mjs
@@ -162,7 +158,8 @@ SENTRY_AUTH_TOKEN= VITE_CONVEX_URL=https://placeholder.convex.cloud node_modules
 The Vite build used an isolated output directory and disabled Sentry uploads;
 large-chunk warnings remain. It is not a live-service check.
 
-Full `bun test`, E2E typecheck/browser suite, integrated web/Android/iOS builds,
-Lighthouse and automated review remain coordinator/PR delivery checks; their
-results must be attached to the integrated revision. This assignment does not
-claim those CI results or complete cross-platform acceptance for #262.
+PR #274 at `5334063` was then validated in an isolated checkout: 664/664 Bun
+tests, 116/116 browser tests, and E2E typechecking passed. An initial local unit
+run timed out in the existing offline-compaction stress test while browser tests
+ran concurrently; a serialized rerun passed without code changes. CI unit tests
+and the web build also passed on that revision. See the PR for later CI results.
