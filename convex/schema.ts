@@ -155,6 +155,7 @@ export default defineSchema({
 
   // Lists table - each list is an Originals asset
   lists: defineTable({
+    templateSource: v.optional(v.string()), // Catalog/source identity for safe creation retries
     assetDid: v.string(), // Originals asset DID (did:cel at genesis, did:webvh once published)
     name: v.string(),
     ownerDid: v.string(), // Creator's DID

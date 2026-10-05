@@ -5,6 +5,9 @@ import { actorMutation, actorQuery } from "./lib/authenticated";
 
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { BUILTIN_TEMPLATES } from "./lib/templateCatalog";
+import { assertListQuota, createListOwnershipVC, grantFirstListReferral } from "./lists";
+import { createItemAuthorshipVC } from "./items";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 // Id type used in function arguments via v.id()
 
@@ -182,38 +185,54 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
   resources: () => ({}),
   scope: "items:write",
   args: {
-    templateId: v.id("listTemplates"),
+    templateId: v.optional(v.id("listTemplates")),
+    builtinId: v.optional(v.string()),
+    expectedOwnerDid: v.optional(v.string()),
     listName: v.string(),
     // Genesis happens client-side (only the client holds the key), same as lists.createList.
     assetDid: v.string(),
     celEnvelope: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const template = await ctx.db.get(args.templateId);
+    if (args.expectedOwnerDid && args.expectedOwnerDid !== ctx.actor.did) throw new Error("Account changed; select the template again");
+    const templateSource = args.builtinId ? `builtin:${args.builtinId}` : `saved:${args.templateId}`;
+    if (!!args.templateId === !!args.builtinId) throw new Error("Choose exactly one template");
+    const template = args.builtinId
+      ? BUILTIN_TEMPLATES.find(t => t.id === args.builtinId)
+      : await ctx.db.get(args.templateId!);
     if (!template) throw new Error("Template not found");
-
-    // Check if template is accessible
-    if (!template.isPublic && ![ctx.actor.did, ctx.actor.legacyDid].includes(template.ownerDid)) {
+    if ("ownerDid" in template && !template.isPublic && ![ctx.actor.did, ctx.actor.legacyDid].includes(template.ownerDid)) {
       throw new Error("Not authorized to use this template");
     }
+    if (!args.listName.trim() || args.listName.length > 200) throw new Error("List name must be between 1 and 200 characters");
+    // A client retains the minted asset across transport retries. Convex serializes
+    // this indexed read with insertion, so concurrent retries create one list.
+    const existing = await ctx.db.query("lists").withIndex("by_asset_did", q => q.eq("assetDid", args.assetDid)).first();
+    if (existing) {
+      if (existing.ownerDid !== ctx.actor.did || existing.templateSource !== templateSource) throw new Error("Asset already used");
+      return existing._id;
+    }
+    const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
 
     const now = Date.now();
 
     // Create the list
     const listId = await ctx.db.insert("lists", {
       assetDid: args.assetDid,
+      templateSource,
       name: args.listName,
       ownerDid: ctx.actor.did,
       createdAt: now,
     });
 
+    await ctx.db.patch(listId, { vcProof: createListOwnershipVC(listId, args.assetDid, ctx.actor.did, args.listName, now) });
     if (args.celEnvelope) {
       await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
     }
 
     // Create items from template
     for (const templateItem of template.items) {
-      await ctx.db.insert("items", {
+      const itemId = await ctx.db.insert("items", {
         listId,
         name: templateItem.name,
         description: templateItem.description,
@@ -221,10 +240,18 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
         checked: false,
         createdByDid: ctx.actor.did,
         createdAt: now,
+        updatedAt: now,
+        assignmentsVersion: 1,
         order: templateItem.order,
+      });
+      // Preserve the same historical authorship record as ordinary item creation.
+      // This is the existing unsigned placeholder, not a new signature claim.
+      await ctx.db.patch(itemId, {
+        vcProofs: [createItemAuthorshipVC(itemId, listId, ctx.actor.did, templateItem.name, now)],
       });
     }
 
+    await grantFirstListReferral(ctx, owner, isFirstList);
     return listId;
   },
 });

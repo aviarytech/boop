@@ -71,7 +71,7 @@ export function createListOwnershipVC(
  * Extracted rather than inlined so copyList cannot become a way around the
  * limit — a copy is a new list and counts like one.
  */
-async function assertListQuota(
+export async function assertListQuota(
   ctx: MutationCtx,
   ownerDid: string
 ): Promise<{ owner: Doc<"users"> | null; isFirstList: boolean }> {
@@ -105,6 +105,24 @@ async function assertListQuota(
   }
 
   return { owner, isFirstList: existingLists.length === 0 };
+}
+
+/** Shared transaction-local first-list benefit for every template/list entry point. */
+export async function grantFirstListReferral(ctx: MutationCtx, owner: Doc<"users"> | null, isFirstList: boolean) {
+  // Award 30-day referral Pro to both referee and referrer on first list creation
+  if (owner && isFirstList) {
+    const referral = await ctx.db
+      .query("referrals")
+      .withIndex("by_referee", (q) => q.eq("refereeId", owner._id))
+      .first();
+    if (referral && !referral.proGrantedAt) {
+      const proUntil = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+      await ctx.db.patch(owner._id, { referralProUntil: proUntil });
+      await ctx.db.patch(referral.referrerId, { referralProUntil: proUntil });
+      await ctx.db.patch(referral._id, { proGrantedAt: Date.now() });
+    }
+  }
+
 }
 
 export const { public: createList, internal: createListInternal, replay: createListReplay } = actorMutation({
@@ -162,19 +180,7 @@ export const { public: createList, internal: createListInternal, replay: createL
       await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
     }
 
-    // Award 30-day referral Pro to both referee and referrer on first list creation
-    if (owner && isFirstList) {
-      const referral = await ctx.db
-        .query("referrals")
-        .withIndex("by_referee", (q) => q.eq("refereeId", owner._id))
-        .first();
-      if (referral && !referral.proGrantedAt) {
-        const proUntil = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
-        await ctx.db.patch(owner._id, { referralProUntil: proUntil });
-        await ctx.db.patch(referral.referrerId, { referralProUntil: proUntil });
-        await ctx.db.patch(referral._id, { proGrantedAt: Date.now() });
-      }
-    }
+    await grantFirstListReferral(ctx, owner, isFirstList);
 
     return listId;
   }),

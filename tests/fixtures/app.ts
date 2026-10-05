@@ -9,6 +9,8 @@ export interface ScenarioOptions {
   items?: { name: string; checked?: boolean }[];
   published?: boolean;
   failCreateList?: boolean;
+  loseTemplateResponseOnce?: boolean;
+  pendingReferralCode?: string;
   authenticated?: boolean;
   onboarding?: boolean;
   inviteNudgeDone?: boolean;
@@ -26,6 +28,7 @@ interface FixtureState {
 export interface Scenario {
   open(path: string, options?: ScenarioOptions): Promise<void>;
   state(): Promise<FixtureState>;
+  resumeTemplateResponses(): Promise<void>;
   httpCalls: { path: string; body: Record<string, unknown> }[];
 }
 
@@ -42,6 +45,10 @@ export const test = webTest.extend<{ scenario: Scenario }>({
     try {
       await runTest({
         httpCalls, state,
+        async resumeTemplateResponses() {
+          const response = await fetch(new URL('/__e2e/resume-template', base), {method:'POST',headers:{authorization:`Bearer ${token}`}});
+          if (!response.ok) throw new Error('Could not resume fixture responses');
+        },
         async open(path, options = {}) {
           if (token) throw new Error('Use app.open/browser.reload after scenario.open; a scenario is seeded once per test.');
           const response = await fetch(new URL('/__e2e/seed', base), {

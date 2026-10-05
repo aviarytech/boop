@@ -1,3 +1,4 @@
+import { writeTemplatePages } from './scripts/template-pages'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -64,6 +65,7 @@ export default defineConfig({
       },
     }),
     buildServiceWorker(),
+    { name: "template-pages", apply: "build", async closeBundle() { await writeTemplatePages(resolve(__dirname, "dist")); } },
     // Upload source maps to Sentry on production builds (no-op if env vars not set)
     sentryVitePlugin({
       org: process.env.SENTRY_ORG,

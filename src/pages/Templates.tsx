@@ -10,6 +10,8 @@ import { api } from "../../convex/_generated/api";
 import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
+import { trackTemplate } from "../lib/analytics";
+import { getRunbook } from "../../convex/lib/templateCatalog";
 import { createListAsset } from "../lib/originals";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
@@ -32,8 +34,6 @@ export function Templates() {
   const publicTemplates = useQuery(api.templates.getPublicTemplates) ?? [];
 
   // Mutations
-  const createList = useMutation(api.lists.createList);
-  const addItem = useMutation(api.items.addItem);
   const deleteTemplate = useMutation(api.templates.deleteTemplate);
   const createListFromTemplate = useMutation(api.templates.createListFromTemplate);
 
@@ -45,24 +45,15 @@ export function Templates() {
 
     try {
       const listAsset = await createListAsset(template.name, did);
-      const listId = await createList({
+      if (getRunbook(template.id)) trackTemplate("template_use_clicked", template.id);
+      const listId = await createListFromTemplate({
+        builtinId: template.id,
         assetDid: listAsset.assetDid,
         celEnvelope: listAsset.envelope,
-        name: template.name,
-        createdAt: Date.now(),
+        listName: template.name,
       });
 
-      const now = Date.now();
-      for (const item of template.items) {
-        await addItem({
-          listId,
-          name: item.name,
-          createdAt: now,
-          priority: item.priority,
-          description: item.description,
-        });
-      }
-
+      if (getRunbook(template.id)) trackTemplate("template_activated", template.id, listId);
       haptic('success');
       navigate(`/list/${listId}`);
     } catch (err) {
@@ -151,6 +142,7 @@ export function Templates() {
         </div>
       )}
 
+      <p className="mb-6"><Link to="/templates" className="underline">Explore agent runbooks and step-by-step previews →</Link></p>
       {/* Built-in Templates */}
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">

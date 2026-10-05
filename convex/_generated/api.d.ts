@@ -71,6 +71,7 @@ import type * as lib_planError from "../lib/planError.js";
 import type * as lib_session from "../lib/session.js";
 import type * as lib_sessionTokens from "../lib/sessionTokens.js";
 import type * as lib_sitePlans from "../lib/sitePlans.js";
+import type * as lib_templateCatalog from "../lib/templateCatalog.js";
 import type * as lib_turnkeyClient from "../lib/turnkeyClient.js";
 import type * as lib_turnkeySigner from "../lib/turnkeySigner.js";
 import type * as listGrants from "../listGrants.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   "lib/session": typeof lib_session;
   "lib/sessionTokens": typeof lib_sessionTokens;
   "lib/sitePlans": typeof lib_sitePlans;
+  "lib/templateCatalog": typeof lib_templateCatalog;
   "lib/turnkeyClient": typeof lib_turnkeyClient;
   "lib/turnkeySigner": typeof lib_turnkeySigner;
   listGrants: typeof listGrants;

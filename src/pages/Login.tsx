@@ -9,10 +9,12 @@
  */
 
 import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { OtpInput } from "../components/auth/OtpInput";
 import { trackSignupStarted, trackSignupCompleted } from "../lib/analytics";
+
+import { templateLoginDestination } from "../../convex/lib/templateCatalog";
 
 type LoginStep = "email" | "otp";
 
@@ -33,6 +35,7 @@ function getGreeting(): string {
 export function Login({ embedded = false }: LoginProps) {
   const { startOtp, verifyOtp, isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [step, setStep] = useState<LoginStep>("email");
   const [email, setEmail] = useState("");
@@ -41,7 +44,7 @@ export function Login({ embedded = false }: LoginProps) {
 
   // Redirect if already authenticated (unless embedded)
   if (isAuthenticated && !embedded) {
-    navigate("/d", { replace: true });
+    navigate(templateLoginDestination(location.search), { replace: true });
     return null;
   }
 
@@ -87,7 +90,7 @@ export function Login({ embedded = false }: LoginProps) {
       // On successful verification, useAuth will update isAuthenticated
       // If not embedded, redirect to app; if embedded, parent handles navigation
       if (!embedded) {
-        navigate("/d", { replace: true });
+        navigate(templateLoginDestination(location.search), { replace: true });
       }
     } catch (err) {
       console.error("Failed to verify OTP:", err);
