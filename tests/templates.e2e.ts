@@ -1,6 +1,6 @@
 import { expect } from 'e2e';
 import { test } from './fixtures/app';
-import { AGENT_RUNBOOKS } from '../shared/templates';
+import { AGENT_RUNBOOKS } from '../convex/lib/templateCatalog';
 
 test('public gallery exposes all ten linked runbooks and handles unknown slugs', async ({ scenario, screen, app }) => {
   await scenario.open('/templates', { authenticated: false });

@@ -1,2 +1,2 @@
-export { BUILTIN_TEMPLATES, AGENT_RUNBOOKS, getRunbook } from '../../shared/templates';
-export type { BuiltinTemplate, BuiltinTemplateItem } from '../../shared/templates';
+export { BUILTIN_TEMPLATES, AGENT_RUNBOOKS, getRunbook } from '../../convex/lib/templateCatalog';
+export type { BuiltinTemplate, BuiltinTemplateItem } from '../../convex/lib/templateCatalog';

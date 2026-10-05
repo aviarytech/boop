@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AGENT_RUNBOOKS, getRunbook } from '../../shared/templates';
+import { AGENT_RUNBOOKS, getRunbook } from '../../convex/lib/templateCatalog';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { useMutation, useQuery } from '../lib/authenticatedConvex';
 import { api } from '../../convex/_generated/api';

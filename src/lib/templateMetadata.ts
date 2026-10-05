@@ -1,4 +1,4 @@
-import type { BuiltinTemplate } from "../../shared/templates";
+import type { BuiltinTemplate } from "../../convex/lib/templateCatalog";
 
 /** Restore the app shell on exit even when entry HTML was a prerendered runbook. */
 export function applyTemplateMetadata(template?: BuiltinTemplate, unknownSlug = false) {

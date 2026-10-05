@@ -17,7 +17,7 @@ import { CookieConsent } from './components/CookieConsent'
 import { useSwipeBack } from './hooks/useSwipeBack'
 import { useNativeLinks } from './hooks/useNativeLinks'
 import { initPushNotifications } from './lib/pushNotifications'
-import { templateLoginDestination } from '../shared/templates'
+import { templateLoginDestination } from '../convex/lib/templateCatalog'
 import { incrementMetric } from './lib/observability'
 
 // Lazy-loaded routes for better code splitting

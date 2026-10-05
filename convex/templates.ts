@@ -5,8 +5,9 @@ import { actorMutation, actorQuery } from "./lib/authenticated";
 
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { BUILTIN_TEMPLATES } from "../shared/templates";
+import { BUILTIN_TEMPLATES } from "./lib/templateCatalog";
 import { assertListQuota, createListOwnershipVC, grantFirstListReferral } from "./lists";
+import { createItemAuthorshipVC } from "./items";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 // Id type used in function arguments via v.id()
 
@@ -231,7 +232,7 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
 
     // Create items from template
     for (const templateItem of template.items) {
-      await ctx.db.insert("items", {
+      const itemId = await ctx.db.insert("items", {
         listId,
         name: templateItem.name,
         description: templateItem.description,
@@ -239,7 +240,14 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
         checked: false,
         createdByDid: ctx.actor.did,
         createdAt: now,
+        updatedAt: now,
+        assignmentsVersion: 1,
         order: templateItem.order,
+      });
+      // Preserve the same historical authorship record as ordinary item creation.
+      // This is the existing unsigned placeholder, not a new signature claim.
+      await ctx.db.patch(itemId, {
+        vcProofs: [createItemAuthorshipVC(itemId, listId, ctx.actor.did, templateItem.name, now)],
       });
     }
 

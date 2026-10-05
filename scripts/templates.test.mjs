@@ -95,7 +95,7 @@ const create = unwrap(mod.createListFromTemplate);
 const args = { builtinId: 'release-checklist', listName: 'Release checklist', assetDid: 'did:cel:template-test', authToken: ownerSession.authToken, expectedOwnerDid: OWNER };
 
 test('all ten catalog runbooks have actionable, ordered steps and distinct landing copy', async () => {
-  const { AGENT_RUNBOOKS, templateLoginDestination } = await import('../shared/templates.ts');
+  const { AGENT_RUNBOOKS, templateLoginDestination } = await import('../convex/lib/templateCatalog.ts');
   assert.equal(AGENT_RUNBOOKS.length, 10);
   assert.equal(new Set(AGENT_RUNBOOKS.map(t => t.id)).size, 10);
   for (const template of AGENT_RUNBOOKS) {
@@ -118,6 +118,38 @@ test('retry returns the complete original list without extra items, even at quot
   assert.equal(ctx.rows.items.length, 6);
   assert.ok(ctx.rows.items.every(i => i.checked === false && i.createdByDid === OWNER));
   assert.ok((await ctx.db.get(id)).vcProof);
+});
+test('quick-start and saved template items retain authorship and revision metadata across retries', async () => {
+  for (const saved of [false, true]) {
+    const ctx = makeCtx();
+    const source = saved
+      ? { builtinId: undefined, templateId: await ctx.db.insert('listTemplates', {
+        name: 'Saved runbook', ownerDid: OWNER, isPublic: false,
+        items: [{ name: 'Review evidence', order: 0 }],
+      }) }
+      : { builtinId: 'grocery' };
+    const request = { ...args, ...source };
+    const listId = await create(ctx, request);
+    const items = ctx.rows.items.filter(item => item.listId === listId);
+    assert.ok(items.length > 0);
+    for (const item of items) {
+      assert.equal(item.updatedAt, item.createdAt);
+      assert.equal(item.assignmentsVersion, 1);
+      assert.equal(item.vcProofs.length, 1);
+      const [record] = item.vcProofs;
+      assert.equal(record.type, 'ItemAuthorshipCredential');
+      assert.equal(record.actorDid, OWNER);
+      assert.equal(record.issuanceDate, item.createdAt);
+      const historicalPayload = JSON.parse(record.proof);
+      assert.deepEqual(historicalPayload.credentialSubject, {
+        id: OWNER, itemId: item._id, listId, itemName: item.name, action: 'created',
+      });
+      assert.equal(historicalPayload.proof, undefined); // Preserve unsigned historical semantics.
+    }
+    const before = structuredClone(items);
+    assert.equal(await create(ctx, request), listId);
+    assert.deepEqual(ctx.rows.items, before);
+  }
 });
 test('new creation enforces free-plan quota before writing', async () => {
   const ctx = makeCtx({ lists: Array.from({length:4}, (_,i) => ({_id:`extra-${i}`, ownerDid:OWNER})) });

@@ -4,7 +4,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { writeFile } from 'node:fs/promises';
 import { writeTemplatePages } from './template-pages.ts';
 import { applyTemplateMetadata } from '../src/lib/templateMetadata.ts';
-import { AGENT_RUNBOOKS } from '../shared/templates.ts';
+import { AGENT_RUNBOOKS } from '../convex/lib/templateCatalog.ts';
 
 const out='tmp/template-seo-test';
 await mkdir(out,{recursive:true});

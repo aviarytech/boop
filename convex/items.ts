@@ -22,7 +22,7 @@ import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
  * 
  * @see https://www.w3.org/TR/vc-data-model/
  */
-function createItemAuthorshipVC(
+export function createItemAuthorshipVC(
   itemId: Id<"items">,
   listId: Id<"lists">,
   creatorDid: string,

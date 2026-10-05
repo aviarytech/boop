@@ -11,7 +11,7 @@ import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { trackTemplate } from "../lib/analytics";
-import { getRunbook } from "../../shared/templates";
+import { getRunbook } from "../../convex/lib/templateCatalog";
 import { createListAsset } from "../lib/originals";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";

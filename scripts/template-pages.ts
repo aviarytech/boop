@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { AGENT_RUNBOOKS } from '../shared/templates';
+import { AGENT_RUNBOOKS } from '../convex/lib/templateCatalog';
 
 const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 /** Emit real crawlable HTML, using the same public-only catalog as the app/backend. */

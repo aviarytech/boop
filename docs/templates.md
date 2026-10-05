@@ -1,6 +1,6 @@
 # Agent runbook templates
 
-The public catalog at `/templates` contains ten editorial runbooks in `shared/templates.ts`. Each has a stable slug, use-case copy, expected outcome, six ordered steps, priorities, and explicit agent/human responsibilities. The existing quick-start templates remain available. Personal and community templates remain in the authenticated `/templates/saved` manager; anonymous landing pages only read the source-controlled catalog, never saved-template records.
+The public catalog at `/templates` contains ten editorial runbooks in `convex/lib/templateCatalog.ts`. Each has a stable slug, use-case copy, expected outcome, six ordered steps, priorities, and explicit agent/human responsibilities. The existing quick-start templates remain available. Personal and community templates remain in the authenticated `/templates/saved` manager; anonymous landing pages only read the source-controlled catalog, never saved-template records.
 
 ## Creation and continuation
 
@@ -23,6 +23,12 @@ Build a per-template PostHog funnel `template_use_clicked → template_activated
 ## Indexing and serving
 
 Vite emits `/templates/index.html` and one `/templates/<slug>/index.html` for every runbook, with static use-case copy and steps, unique title/description, canonical URL, social metadata, and links. The generated sitemap adds all eleven URLs. `server.ts` serves directory indexes. Static hosts must serve directory indexes before their SPA fallback. Public pages do not require Convex to render their catalog. Metadata updates on client navigation; arbitrary slugs display a not-found page and are absent from the sitemap.
+
+## Release compatibility
+
+The release owner must make the compatible Convex backend available before the new frontend. The previous backend validator rejects `builtinId`, so releasing the frontend first temporarily breaks quick-start creation. Railway and the Convex workflow run independently; they do not enforce this order. Existing saved-template calls remain compatible. No deployment is performed by this change.
+
+The shared catalog lives under `convex/lib/`, within the existing deployment workflow’s `convex/**` filter, so future catalog-only edits update both frontend previews and backend creation data without changing workflow permissions. Coordinate both releases when adding or changing runbooks.
 
 ## Verification
 

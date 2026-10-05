@@ -14,7 +14,7 @@ import { useAuth } from "../hooks/useAuth";
 import { OtpInput } from "../components/auth/OtpInput";
 import { trackSignupStarted, trackSignupCompleted } from "../lib/analytics";
 
-import { templateLoginDestination } from "../../shared/templates";
+import { templateLoginDestination } from "../../convex/lib/templateCatalog";
 
 type LoginStep = "email" | "otp";
 

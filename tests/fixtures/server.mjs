@@ -2,7 +2,7 @@
 // Runs beside Vite on loopback; each test owns a separate in-memory account.
 import { createServer } from 'vite';
 import { randomUUID } from 'node:crypto';
-import { BUILTIN_TEMPLATES } from '../../shared/templates.ts';
+import { BUILTIN_TEMPLATES } from '../../convex/lib/templateCatalog.ts';
 import { revision } from '../../shared/replay.ts';
 
 const TS_ZERO = 'AAAAAAAAAAA=';
