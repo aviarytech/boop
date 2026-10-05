@@ -363,6 +363,7 @@ export function Landing() {
                 <li>Verified sharing</li>
                 <li>Priority sync</li>
               </ul>
+              <Link to="/templates">Agent runbooks</Link>
               <Link to="/pricing" className="btn btn-primary plan-cta plan-cta-invert" onClick={cta('pricing', 'pricing')}>
                 Go Pro
               </Link>

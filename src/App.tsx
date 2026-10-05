@@ -17,6 +17,7 @@ import { CookieConsent } from './components/CookieConsent'
 import { useSwipeBack } from './hooks/useSwipeBack'
 import { useNativeLinks } from './hooks/useNativeLinks'
 import { initPushNotifications } from './lib/pushNotifications'
+import { templateLoginDestination } from '../shared/templates'
 import { incrementMetric } from './lib/observability'
 
 // Lazy-loaded routes for better code splitting
@@ -34,6 +35,7 @@ const PublicList = lazy(() => import('./pages/PublicList').then(m => ({ default:
 const SharedListResource = lazy(() => import('./components/SharedListResource').then(m => ({ default: m.SharedListResource })))
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })))
 const Explorer = lazy(() => import('./pages/Explorer').then(m => ({ default: m.Explorer })))
+const TemplateGallery = lazy(() => import('./pages/TemplateGallery').then(m => ({ default: m.TemplateGallery })))
 const Templates = lazy(() => import('./pages/Templates').then(m => ({ default: m.Templates })))
 const PriorityFocus = lazy(() => import('./pages/PriorityFocus').then(m => ({ default: m.PriorityFocus })))
 const Pricing = lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })))
@@ -251,6 +253,8 @@ function App() {
         <Routes>
           {/* Static marketing/docs pages — no user data, reachable without app unlock */}
           <Route path="/" element={isAuthenticated ? <Navigate to="/d" replace /> : <Landing />} />
+          <Route path="/templates" element={<TemplateGallery />} />
+          <Route path="/templates/:slug" element={<TemplateGallery />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/terms" element={<Terms />} />
@@ -274,11 +278,12 @@ function App() {
           >
             {/* Public routes - accessible without authentication */}
             <Route path="/invite/:code" element={<InviteLanding />} />
-            <Route path="/login" element={isAuthenticated ? <Navigate to="/d" replace /> : <Login />} />
+            <Route path="/login" element={isAuthenticated ? <Navigate to={templateLoginDestination(location.search)} replace /> : <Login />} />
             <Route path="/join/:listId/:token" element={<JoinList />} />
             <Route path="/public/:did" element={<PublicList />} />
             <Route path="/:userPath/resources/:resourceId" element={<SharedListResource />} />
 
+            <Route path="/templates/:slug/use" element={<AuthGuard><TemplateGallery activation /></AuthGuard>} />
             <Route path="/shared" element={<ProtectedRoute><SharedWithMe /></ProtectedRoute>} />
             <Route path="/invitations" element={isAuthenticated ? <ProtectedRoute><Invitations /></ProtectedRoute> : <InvitationSignIn />} />
             <Route path="/invitations/:invitationId/:version" element={isAuthenticated ? <ProtectedRoute><Invitations /></ProtectedRoute> : <InvitationSignIn />} />
@@ -289,7 +294,7 @@ function App() {
             <Route path="/s" element={<ProtectedRoute><Sites /></ProtectedRoute>} />
             <Route path="/s/:siteId" element={<ProtectedRoute><SiteDetail /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
+            <Route path="/templates/saved" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
             <Route path="/priority" element={<ProtectedRoute><PriorityFocus /></ProtectedRoute>} />
             <Route path="/list/:id" element={<ProtectedRoute><ListView /></ProtectedRoute>} />
             <Route path="/n/:id" element={<ProtectedRoute><NoteView /></ProtectedRoute>} />

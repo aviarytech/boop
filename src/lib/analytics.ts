@@ -126,3 +126,8 @@ export function trackUpgradeClicked(plan: string, source: string): void {
 export function trackUpgradeCompleted(plan: string): void {
   capture('upgrade_completed', { plan });
 }
+
+/** Public runbook funnel; only catalog IDs, never task text or user template names. */
+export function trackTemplate(event: 'template_viewed' | 'template_use_clicked' | 'template_activated', templateId: string, listId?: string): void {
+  capture(event, { template_id: templateId, ...(listId ? { list_id: listId, $insert_id: `template_activated:${listId}` } : {}) });
+}

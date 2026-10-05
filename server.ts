@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { anonDistinctId, captureEvent } from "./convex/lib/analytics";
 
@@ -49,6 +49,7 @@ function contentTypeFor(pathname: string): string {
   if (pathname.endsWith(".js")) return "application/javascript; charset=utf-8";
   if (pathname.endsWith(".css")) return "text/css; charset=utf-8";
   if (pathname.endsWith(".json")) return "application/json; charset=utf-8";
+  if (pathname.endsWith(".xml")) return "application/xml; charset=utf-8";
   if (pathname.endsWith(".png")) return "image/png";
   if (pathname.endsWith(".svg")) return "image/svg+xml";
   if (pathname.endsWith(".ico")) return "image/x-icon";
@@ -65,6 +66,8 @@ function safeDistPath(pathname: string): string {
 async function serveApp(request: Request): Promise<Response> {
   const url = new URL(request.url);
   let filePath = safeDistPath(url.pathname);
+
+  if (existsSync(filePath) && statSync(filePath).isDirectory()) filePath = join(filePath, "index.html");
 
   if (!existsSync(filePath)) {
     filePath = join(distDir, "index.html");

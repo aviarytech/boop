@@ -12,6 +12,8 @@ interface AppLockGuardProps {
 }
 
 export function AppLockGuard({ children }: AppLockGuardProps) {
+  const [settingsReady, setSettingsReady] = useState(false);
+  const [settingsError, setSettingsError] = useState(false);
   const [isLocked, setIsLocked] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [biometricLockEnabled, setBiometricLockEnabled] = useState(false);
@@ -19,6 +21,7 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
   useEffect(() => {
     getBiometricLockEnabled().then((lockEnabled) => {
       setBiometricLockEnabled(lockEnabled);
+      setSettingsReady(true);
       if (lockEnabled) {
         // Attempt authentication on mount
         authenticate();
@@ -26,7 +29,7 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
         // If lock is not enabled, unlock immediately
         setIsLocked(false);
       }
-    });
+    }).catch(() => setSettingsError(true));
   }, []);
 
   const authenticate = async () => {
@@ -42,6 +45,12 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
       setIsAuthenticating(false);
     }
   };
+
+  // Do not mount children (including mutations in effects) before the async
+  // preference is known. A read failure must never silently bypass the lock.
+  if (!settingsReady) return <div role="status" className="min-h-screen flex items-center justify-center">
+    {settingsError ? 'Unable to read app lock settings. Reload to try again.' : 'Checking app lock…'}
+  </div>;
 
   // If lock is not enabled or already unlocked, render children
   if (!biometricLockEnabled || !isLocked) {

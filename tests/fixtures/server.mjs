@@ -2,6 +2,7 @@
 // Runs beside Vite on loopback; each test owns a separate in-memory account.
 import { createServer } from 'vite';
 import { randomUUID } from 'node:crypto';
+import { BUILTIN_TEMPLATES } from '../../shared/templates.ts';
 import { revision } from '../../shared/replay.ts';
 
 const TS_ZERO = 'AAAAAAAAAAA=';
@@ -74,6 +75,7 @@ function query(account, path, args) {
     case 'lists:getLegacyListIds':
     case 'publication:getUserBookmarkIds':
     case 'categories:getUserCategories':
+    case 'templates:getPublicTemplates':
     case 'templates:getUserTemplates':
     case 'bitcoinAnchors:getListAnchors':
     case 'bitcoinAnchors:getItemAnchors':
@@ -93,6 +95,26 @@ async function mutation(account, path, args) {
   const list = account.lists.find(l => l._id === args.listId);
   switch (endpoint) {
     case 'actorSession:establish': break;
+    case 'referrals:redeemReferral': {
+      account.referralRedeemed = true;
+      result = {success:true};
+      break;
+    }
+    case 'templates:createListFromTemplate': {
+      if (account.options.pendingReferralCode && !account.referralRedeemed) throw new Error('Template created before referral redemption');
+      if (args.expectedOwnerDid && args.expectedOwnerDid !== user.did) throw new Error('Account changed');
+      const template = BUILTIN_TEMPLATES.find(t => t.id === args.builtinId);
+      if (!template) throw new Error('Template not found');
+      const previous = account.lists.find(l => l.assetDid === args.assetDid);
+      if (previous) { result = previous._id; break; }
+      if (account.options.failCreateList || account.lists.length >= 5) throw new Error('PLAN_LIMIT: Free plan allows a maximum of 5 lists');
+      result = `lists:created${++account.nextId}`;
+      account.lists.push({ _id: result, _creationTime: Date.now(), name: args.listName,
+        assetDid: args.assetDid, ownerDid: user.did, createdAt: Date.now() });
+      account.items.push(...template.items.map((item, i) => ({ ...item, _id: `items:template${++account.nextId}`,
+        _creationTime: Date.now(), listId: result, checked: false, createdByDid: user.did, createdAt: Date.now(), order: i })));
+      break;
+    }
     case 'lists:createList': {
       if (account.options.failCreateList) throw new Error('PLAN_LIMIT: Free plan allows a maximum of 5 lists');
       result = `lists:created${++account.nextId}`;
@@ -164,6 +186,7 @@ const backend = Bun.serve({
       const path = url.searchParams.get('path');
       if (!account || !path?.startsWith('/') || path.startsWith('//')) return new Response('Invalid fixture', { status: 400 });
       const storage = { 'poo-cookie-consent': 'declined' };
+      if (account.options.pendingReferralCode) storage['poo-referral-code'] = account.options.pendingReferralCode;
       if (account.options.authenticated !== false) {
         storage['lisa-auth-state'] = JSON.stringify({ token: account.token, user });
         storage['lisa-jwt-token'] = account.token;
@@ -183,6 +206,10 @@ const backend = Bun.serve({
     if (url.pathname === '/__e2e/state' && account) {
       return Response.json({ lists: account.lists, items: account.items, calls: account.calls,
         errors: account.errors, published: account.published, receipts: account.receipts });
+    }
+    if (url.pathname === '/__e2e/resume-template' && account && request.method === 'POST') {
+      account.options.loseTemplateResponseOnce = false;
+      return new Response(null, {status:204});
     }
     if (url.pathname === '/__e2e/account' && request.method === 'DELETE' && account) {
       accounts.delete(token);
@@ -218,6 +245,12 @@ const backend = Bun.serve({
             if (!account) throw new Error('No seeded test account');
             account.calls.push({ path: msg.udfPath, args });
             const result = await mutation(account, msg.udfPath, args);
+            if (msg.udfPath === 'templates:createListFromTemplate' && account.options.loseTemplateResponseOnce) {
+              // The write committed, but the caller receives an error instead
+              // of its acknowledgment. Keep failing retries until the test resumes.
+              ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: false, result: 'Fixture: committed response lost', logLines: [] }));
+              return;
+            }
             ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: true, result, ts: TS_ZERO, logLines: [] }));
             for (const socket of sockets) if (socket.data.account === account) transition(socket);
           } catch (error) {
