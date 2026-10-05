@@ -1,4 +1,11 @@
 import { legacyActionEvidence } from "../../shared/legacyActionEvidence";
+import {
+  parseActionRecordPayload,
+  parseEd25519PublicKey,
+  verifyActionRecord,
+  type ActionRecordEvidence,
+  type ActionType,
+} from "../../shared/actionRecord";
 /**
  * ProvenanceInfo - Shows Originals DID/provenance chain information
  * 
@@ -15,6 +22,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import type { FunctionReturnType } from "convex/server";
 import { useNavigate } from "react-router-dom";
 import { useSettings } from "../hooks/useSettings";
 import { useCurrentUser } from "../hooks/useCurrentUser";
@@ -505,6 +513,170 @@ function VcProofRow({
   );
 }
 
+type StoredActionRecord = FunctionReturnType<typeof api.actionRecords.getItemActionRecords>[number];
+
+const ACTION_RECORD_LABELS: Record<ActionType, string> = {
+  "item.created": "Creation record",
+  "item.completed": "Completion record",
+  "item.reopened": "Reopen record",
+  "list.created": "List creation record",
+  "list.renamed": "Rename record",
+};
+
+/**
+ * verified: checked against the key the owner's own DID encodes.
+ * unbound: the signature matches the key boop recorded, which proves integrity
+ *   but not whose key it is. invalid: even that check fails.
+ */
+type SignatureCheck = "verified" | "unbound" | "invalid";
+
+async function checkSignedRecord(record: ActionRecordEvidence, ownerDid: string): Promise<SignatureCheck> {
+  // Only a did:key owner DID carries its own key; other DIDs need a pinned key.
+  if (ownerDid.startsWith("did:key:") && parseEd25519PublicKey(ownerDid)
+    && (await verifyActionRecord(record, { trustedKeys: { [ownerDid]: [ownerDid] } })).verified) return "verified";
+  const recordedKey = record.publicKeyMultibase ? [record.publicKeyMultibase] : [];
+  return (await verifyActionRecord(record, { trustedKeys: { [ownerDid]: recordedKey } })).verified ? "unbound" : "invalid";
+}
+
+/** Signature checks hash and verify, so they run in an effect, keyed by record. */
+function useSignatureChecks(records: StoredActionRecord[] | undefined): Record<string, SignatureCheck> {
+  const [checks, setChecks] = useState<Record<string, SignatureCheck>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const signed = (records ?? []).filter((record) => record.status === "signed");
+    if (signed.length === 0) return;
+    void Promise.all(signed.map(async (record) => {
+      const ownerDid = parseActionRecordPayload(record.payload)?.owner.did;
+      return [record._id, ownerDid ? await checkSignedRecord(record, ownerDid) : "invalid"] as const;
+    })).then((entries) => {
+      if (!cancelled) setChecks(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [records]);
+
+  return checks;
+}
+
+function actionRecordPresentation(
+  record: StoredActionRecord,
+  check: SignatureCheck | undefined
+): { status: string; detail: string; tone: string } {
+  const neutral = "text-gray-500 dark:text-gray-400";
+  if (record.status === "pending") {
+    return { status: "Pending signature", detail: "Waiting for the account's Turnkey-held key to sign this record.", tone: neutral };
+  }
+  if (record.status === "failed") {
+    return { status: "Signing failed", detail: "Signing did not complete, so this record carries no signature.", tone: "text-red-600 dark:text-red-400" };
+  }
+  if (record.status === "unsigned") {
+    return { status: "Unsigned", detail: "This account has no Turnkey signing key, so no signature exists.", tone: neutral };
+  }
+  if (check === "invalid") {
+    return { status: "Signature check failed", detail: "The stored signature does not match this record. Treat it as unverified.", tone: "text-red-600 dark:text-red-400" };
+  }
+  return {
+    status: "Signed (Turnkey-held owner key)",
+    detail: check === "verified"
+      ? "Signature verified against the key in the authorizing account's DID."
+      : check === "unbound"
+        ? "The signature matches the key boop recorded for this account. That key is not independently verified here."
+        : "Checking signature…",
+    tone: "text-green-600 dark:text-green-400",
+  };
+}
+
+/**
+ * A signed-path action record with its truthful signing status.
+ */
+function ActionRecordRow({
+  record,
+  check,
+  displayNames,
+  haptic,
+}: {
+  record: StoredActionRecord;
+  check: SignatureCheck | undefined;
+  displayNames: Record<string, { displayName: string | null }> | undefined;
+  haptic: HapticFn;
+}) {
+  const payload = parseActionRecordPayload(record.payload);
+  if (!payload) {
+    return <div className="py-3 text-xs text-gray-500 dark:text-gray-400">Unreadable action record</div>;
+  }
+  const { status, detail, tone } = actionRecordPresentation(record, check);
+  const credential = payload.credential.kind === "apiKey" ? "API key" : "signed-in session";
+
+  return (
+    <div className="py-3">
+      <div className="flex items-center gap-2 mb-1">
+        <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M6 3h9l3 3v15H6z" />
+        </svg>
+        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+          {ACTION_RECORD_LABELS[payload.action]}
+        </span>
+      </div>
+      <div className={`text-sm ${tone}`}>{status}</div>
+      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{detail}</div>
+      <DidRow
+        label="Authorized by"
+        did={payload.owner.did}
+        displayName={displayNames?.[payload.owner.did]?.displayName ?? null}
+        haptic={haptic}
+      />
+      <div className="text-xs text-gray-500 dark:text-gray-400">
+        Via {credential} …{payload.credential.id.slice(-6)} • Recorded {formatDate(payload.occurredAt)}
+        {record.signedAt !== undefined && <span> • Signed {formatDate(record.signedAt)}</span>}
+      </div>
+    </div>
+  );
+}
+
+function ActionRecordList({
+  records,
+  displayNames,
+  haptic,
+}: {
+  records: StoredActionRecord[] | undefined;
+  displayNames: Record<string, { displayName: string | null }> | undefined;
+  haptic: HapticFn;
+}) {
+  const checks = useSignatureChecks(records);
+  if (!records || records.length === 0) return null;
+
+  return (
+    <div className="py-2">
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+        🖊️ Action records ({records.length})
+      </div>
+      <div className="space-y-2">
+        {records.map((record) => (
+          <ActionRecordRow
+            key={record._id}
+            record={record}
+            check={checks[record._id]}
+            displayNames={displayNames}
+            haptic={haptic}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mt-2">
+        A signature shows that the account's Turnkey-held key signed this record at boop's
+        request, after an operation authenticated by the named session or API key. It does
+        not show personal intent or who was using that credential.
+      </p>
+    </div>
+  );
+}
+
+/** Owner DIDs named by action records, for display-name lookup. */
+function actionRecordOwnerDids(records: StoredActionRecord[] | undefined): string[] {
+  return (records ?? []).flatMap((record) => parseActionRecordPayload(record.payload)?.owner.did ?? []);
+}
+
 /**
  * Provenance Timeline - shows the chain of events
  */
@@ -570,9 +742,11 @@ function ProvenanceTimeline({
 export function ListProvenanceInfo({ list }: ListProvenanceProps) {
   const { haptic } = useSettings();
   
-  // Look up the owner's display name
-  const userInfo = useQuery(api.users.getUsersByDids, { 
-    dids: [list.ownerDid] 
+  const actionRecords = useQuery(api.actionRecords.getListActionRecords, { listId: list._id });
+
+  // Look up the owner's display name, and whoever authorized recorded actions
+  const userInfo = useQuery(api.users.getUsersByDids, {
+    dids: [...new Set([list.ownerDid, ...actionRecordOwnerDids(actionRecords)])]
   });
   
   // Fetch Bitcoin anchors for this list
@@ -653,6 +827,8 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
         <CopyForProvenance list={list} />
       )}
 
+      <ActionRecordList records={actionRecords} displayNames={userInfo} haptic={haptic} />
+
       {/* Ownership VC */}
       {list.vcProof && (
         <VcProofRow
@@ -728,6 +904,11 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
     }
   });
   
+  const actionRecords = useQuery(api.actionRecords.getItemActionRecords, { itemId: item._id });
+  for (const did of actionRecordOwnerDids(actionRecords)) {
+    if (!didsToLookup.includes(did)) didsToLookup.push(did);
+  }
+
   const userInfo = useQuery(api.users.getUsersByDids, { 
     dids: didsToLookup 
   });
@@ -841,11 +1022,13 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
         </>
       )}
 
+      <ActionRecordList records={actionRecords} displayNames={userInfo} haptic={haptic} />
+
       {/* Item VCs */}
       {item.vcProofs && item.vcProofs.length > 0 && (
         <div className="py-2">
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            📜 Action records ({item.vcProofs.length})
+            📜 Historical action records ({item.vcProofs.length})
           </div>
           <div className="space-y-2">
             {item.vcProofs.map((vc, idx) => {
