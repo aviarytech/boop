@@ -54,8 +54,11 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
   for (const table of Object.values(rows)) for (const r of table) byId.set(r._id, r);
 
   let seq = 0;
+  const scheduled = [];
   return {
     rows,
+    scheduled,
+    scheduler: { runAfter: async (_delay, ref, args) => { scheduled.push({ ref, args }); } },
     db: {
       get: async (id) => byId.get(id) ?? null,
       patch: async (id, fields) => Object.assign(byId.get(id), fields),
@@ -92,6 +95,7 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
 
 
 const create = unwrap(mod.createListFromTemplate);
+const records = (ctx, action) => (ctx.rows.actionRecords ?? []).map(r => JSON.parse(r.payload)).filter(p => p.action === action);
 const args = { builtinId: 'release-checklist', listName: 'Release checklist', assetDid: 'did:cel:template-test', authToken: ownerSession.authToken, expectedOwnerDid: OWNER };
 
 test('all ten catalog runbooks have actionable, ordered steps and distinct landing copy', async () => {
@@ -117,9 +121,11 @@ test('retry returns the complete original list without extra items, even at quot
   assert.equal(ctx.rows.lists.length, 5);
   assert.equal(ctx.rows.items.length, 6);
   assert.ok(ctx.rows.items.every(i => i.checked === false && i.createdByDid === OWNER));
-  assert.ok((await ctx.db.get(id)).vcProof);
+  assert.equal((await ctx.db.get(id)).vcProof, undefined, 'no new unsigned ownership placeholder');
+  assert.equal(records(ctx, 'list.created').length, 1);
+  assert.equal(ctx.scheduled.length, 1, 'the retry queues no second signer run');
 });
-test('quick-start and saved template items retain authorship and revision metadata across retries', async () => {
+test('quick-start and saved template items get one creation record each, like ordinary creation, across retries', async () => {
   for (const saved of [false, true]) {
     const ctx = makeCtx();
     const source = saved
@@ -132,23 +138,27 @@ test('quick-start and saved template items retain authorship and revision metada
     const listId = await create(ctx, request);
     const items = ctx.rows.items.filter(item => item.listId === listId);
     assert.ok(items.length > 0);
+    const origin = { kind: 'template', source: saved ? `saved:${source.templateId}` : 'builtin:grocery' };
+    assert.deepEqual(records(ctx, 'list.created').map(r => [r.subject, r.after, r.origin]),
+      [[{ listId, listAssetDid: args.assetDid }, { name: args.listName, kind: 'list' }, origin]]);
     for (const item of items) {
       assert.equal(item.updatedAt, item.createdAt);
       assert.equal(item.assignmentsVersion, 1);
-      assert.equal(item.vcProofs.length, 1);
-      const [record] = item.vcProofs;
-      assert.equal(record.type, 'ItemAuthorshipCredential');
-      assert.equal(record.actorDid, OWNER);
-      assert.equal(record.issuanceDate, item.createdAt);
-      const historicalPayload = JSON.parse(record.proof);
-      assert.deepEqual(historicalPayload.credentialSubject, {
-        id: OWNER, itemId: item._id, listId, itemName: item.name, action: 'created',
-      });
-      assert.equal(historicalPayload.proof, undefined); // Preserve unsigned historical semantics.
+      assert.equal(item.vcProofs, undefined, 'no new unsigned authorship placeholder');
+      const [record, ...extra] = records(ctx, 'item.created').filter(r => r.subject.itemId === item._id);
+      assert.deepEqual(extra, []);
+      assert.deepEqual(record.subject, { listId, listAssetDid: args.assetDid, itemId: item._id });
+      assert.deepEqual(record.after, { name: item.name, checked: false });
+      assert.deepEqual(record.origin, origin);
+      assert.deepEqual(record.owner, { did: OWNER, userId: ownerSession.user._id });
+      assert.deepEqual(record.credential, { kind: 'session', id: ownerSession.accessSession._id });
     }
-    const before = structuredClone(items);
+    // One signer run covers the whole mutation's records.
+    assert.deepEqual(ctx.scheduled.map(job => job.args.recordIds.length), [items.length + 1]);
+    assert.ok(ctx.rows.actionRecords.every(r => r.status === 'pending' && r.signature === undefined));
+    const before = structuredClone([ctx.rows.items, ctx.rows.actionRecords]);
     assert.equal(await create(ctx, request), listId);
-    assert.deepEqual(ctx.rows.items, before);
+    assert.deepEqual([ctx.rows.items, ctx.rows.actionRecords], before);
   }
 });
 test('new creation enforces free-plan quota before writing', async () => {

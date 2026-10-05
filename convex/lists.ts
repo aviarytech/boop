@@ -11,56 +11,7 @@ import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { upsertListEnvelope } from "./lib/listEnvelope";
 import { isLegacyGenesis } from "./lib/legacyList";
 import { isNote } from "./lib/noteBody";
-
-/**
- * Creates a placeholder Verifiable Credential for list ownership.
- *
- * Exported for migrations/celAssetDids — the credential embeds assetDid in both
- * credentialSubject.id and the serialized proof, so rewriting a list's DID has
- * to rebuild the VC or the subject points at a DID that no longer names it.
- */
-export function createListOwnershipVC(
-  listId: Id<"lists">,
-  assetDid: string,
-  ownerDid: string,
-  listName: string,
-  createdAt: number
-): {
-  type: string;
-  issuer: string;
-  issuanceDate: number;
-  credentialSubject: { id: string; ownerDid: string };
-  proof?: string;
-} {
-  const fullVc = {
-    "@context": [
-      "https://www.w3.org/2018/credentials/v1",
-      "https://originals.tech/credentials/v1"
-    ],
-    type: ["VerifiableCredential", "ListOwnershipCredential"],
-    id: `urn:uuid:${crypto.randomUUID()}`,
-    issuer: ownerDid,
-    issuanceDate: new Date(createdAt).toISOString(),
-    credentialSubject: {
-      id: ownerDid,
-      listId: listId.toString(),
-      assetDid,
-      listName,
-      role: "owner",
-    },
-  };
-
-  return {
-    type: "ListOwnershipCredential",
-    issuer: ownerDid,
-    issuanceDate: createdAt,
-    credentialSubject: {
-      id: assetDid,
-      ownerDid,
-    },
-    proof: JSON.stringify(fullVc),
-  };
-}
+import { deleteActionRecords, listCreated, listRenamed, recordActions } from "./lib/actionRecords";
 
 /**
  * Create a new list.
@@ -166,15 +117,7 @@ export const { public: createList, internal: createListInternal, replay: createL
       await ctx.db.insert("noteBodies", { listId, body: "", updatedAt: args.createdAt });
     }
 
-    const vcProof = createListOwnershipVC(
-      listId,
-      args.assetDid,
-      ctx.actor.did,
-      args.name,
-      args.createdAt
-    );
-
-    await ctx.db.patch(listId, { vcProof });
+    await recordActions(ctx, [listCreated({ _id: listId, assetDid: args.assetDid, name: args.name, kind: args.kind })]);
 
     if (args.celEnvelope) {
       await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
@@ -242,9 +185,12 @@ export const { public: copyList, internal: copyListInternal } = actorMutation({
       itemViewMode: source.itemViewMode,
     });
 
-    await ctx.db.patch(listId, {
-      vcProof: createListOwnershipVC(listId, args.assetDid, ctx.actor.did, args.name, args.createdAt),
-    });
+    // Only the list is recorded: copied items keep their original attribution
+    // fields, so a per-item creation record here would claim someone else's work.
+    await recordActions(ctx, [listCreated(
+      { _id: listId, assetDid: args.assetDid, name: args.name },
+      { kind: "copy", sourceListId: args.sourceListId },
+    )]);
 
     await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
 
@@ -332,15 +278,9 @@ export const { public: renameList, internal: renameListInternal, replay: renameL
       throw resourceUnavailable();
     }
 
-    const vcProof = createListOwnershipVC(
-      args.listId,
-      list.assetDid ?? "",
-      list.ownerDid,
-      args.name,
-      list.createdAt
-    );
-
-    await ctx.db.patch(args.listId, { name: args.name, vcProof });
+    // The historical vcProof is left as issued; the rename is its own record.
+    await ctx.db.patch(args.listId, { name: args.name });
+    await recordActions(ctx, [listRenamed(list, args.name)]);
   },
 });
 
@@ -575,6 +515,7 @@ export const { public: deleteList, internal: deleteListInternal, replay: deleteL
     for (const item of items) {
       await ctx.db.delete(item._id);
     }
+    await deleteActionRecords(ctx, { listId: args.listId });
 
     // Includes historical orphan membership rows whose items were already removed.
     for (const row of await ctx.db.query("itemAssignees").withIndex("by_list", q => q.eq("listId", args.listId)).collect()) await ctx.db.delete(row._id);
