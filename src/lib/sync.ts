@@ -28,7 +28,7 @@ export class SyncManager {
     }
     this.running.add(accountId);
     const notify = (status: SyncStatus) => { if (isCurrent()) this.listeners.forEach(fn => fn({ ...status, accountId })); };
-    notify({ status: 'syncing' });
+    let announcedSyncing = false;
     try {
       const attempted = new Set<string>();
       while (isCurrent()) {
@@ -43,6 +43,12 @@ export class SyncManager {
           if (!isCurrent()) return;
           if (!current) continue;
           attempted.add(m.operationId);
+          // Background polling also runs with no eligible work. Only surface
+          // syncing once an edit is actually ready to send.
+          if (!announcedSyncing) {
+            notify({ status: 'syncing' });
+            announcedSyncing = true;
+          }
           try {
             const ack = await this.executeMutation(convex, current, token, acknowledged);
             if (ack.operationId !== m.operationId) throw new Error('Missing operation acknowledgment');
