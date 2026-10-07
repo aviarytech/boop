@@ -28,7 +28,7 @@ export function OfflineIndicator() {
   }, [isOnline]);
 
   // Show syncing state after reconnection
-  if (isOnline && syncStatus.status === 'syncing') {
+  if (isOnline && pendingCount > 0 && syncStatus.status === 'syncing') {
     return (
       <div className="fixed top-0 left-0 right-0 z-50 safe-area-top">
         <div className="bg-amber-500 text-white px-4 py-2.5 text-center text-sm font-medium shadow-lg">

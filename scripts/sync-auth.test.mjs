@@ -12,6 +12,38 @@ async function seed() {
   await store.queueMutation(f.session.accountId, { type: 'uncheckItem', payload: { itemId: 'I1' } }, f.rows.items);
   return f;
 }
+test('idle polling and acknowledged work never announce syncing', async () => {
+  const f = await replayFixture(modules), manager = new SyncManager(), statuses = [];
+  manager.subscribe(s => statuses.push(s.status));
+  await manager.sync(f.client, f.session);
+  await manager.sync(f.client, f.session);
+  assert.deepEqual(statuses, ['synced', 'synced']);
+
+  await store.queueMutation(f.session.accountId, { type: 'checkItem', payload: { itemId: 'I1', checkedAt: 1 } }, f.rows.items);
+  statuses.length = 0;
+  await manager.sync(f.client, f.session);
+  assert.deepEqual(statuses, ['syncing', 'synced']);
+  statuses.length = 0;
+  await manager.sync(f.client, f.session);
+  assert.deepEqual(statuses, ['synced']);
+});
+
+for (const patch of [
+  { state: 'conflict' },
+  { state: 'failed', retryCount: 5 },
+  { state: 'failed', nextAttemptAt: Date.now() + 60_000 },
+]) {
+  test(`polling ineligible work stays out of syncing: ${JSON.stringify(patch)}`, async () => {
+    const f = await seed(), manager = new SyncManager(), statuses = [];
+    for (const operation of await store.getQueuedMutations(f.session.accountId)) {
+      await store.saveOperation(f.session.accountId, { ...operation, ...patch });
+    }
+    manager.subscribe(s => statuses.push(s.status));
+    await manager.sync({ mutation: () => { assert.fail('Ineligible edits must not be sent'); } }, f.session);
+    assert.deepEqual(statuses, ['error']);
+    assert.equal((await store.getQueuedMutations(f.session.accountId)).length, 2);
+  });
+}
 for (const code of ['UNAUTHORIZED', 'INVALID_TOKEN', 'EXPIRED_TOKEN']) {
   test(`${code} across RPC preserves queue/retry budget and resumes with the same account`, async () => {
     const f = await seed(); const manager = new SyncManager(), statuses = [];
