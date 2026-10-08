@@ -402,10 +402,13 @@ This change persists it as an optional `credential` field (`{ kind: "session" | 
 on:
 - activity rows: assignment, unassignment, inherited assignments and presence events;
 - comments;
-- a new `comment_deleted` activity row, which records the comment ID and author but not
-  its text.
+- a new `comment_deleted` activity row, which records only the comment ID (not its
+  text or author).
 
-Two keys on one account therefore leave distinguishable history.
+Two keys on one account therefore leave distinguishable history. Credentials are stored
+for audit but stripped from every read response (`getListActivity`, `getItemComments` and
+their HTTP routes), because published lists are readable by any signed-in account.
+An owner-facing audit view is a possible follow-up.
 
 The shared assignment helpers read the credential from the actor context the wrapper
 already provides. That leaves the `items.ts` call sites that PR #277 (#237) restructures

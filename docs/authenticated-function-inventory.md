@@ -25,7 +25,8 @@ API scope, rejects identity-assertion fields (`userDid`, `ownerDid`, `checkedByD
 items, anchors, accounts) and passes only declared business arguments to the handler.
 Handlers attribute writes to `ctx.actor`. `ctx.actor.credential` identifies the session
 row or the specific API-key row that acted. Activity rows (assignment, presence) persist it
-as `credential` on activity rows (assignment, presence, comment deletion) and comments. Resources a handler loads beyond the declared
+as `credential` on activity rows (assignment, presence, comment deletion) and comments,
+and strips it from read responses. Resources a handler loads beyond the declared
 ones (tags, comments, categories, templates, sites, grants, invitations) are checked
 against the actor inside the handler.
 

@@ -11,7 +11,7 @@ import { getFunctionName } from 'convex/server';
 process.env.JWT_SECRET = 'identity-binding-test-secret-not-a-deployed-credential';
 delete process.env.WEBVH_DOMAIN;
 const outdir = 'tmp/identity-binding-test';
-const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments'];
+const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
 await build({
   entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error', define: { 'process.env.NODE_ENV': '"production"' },
@@ -173,9 +173,11 @@ test('activity rows record which session or specific API key acted, not just the
   assert.equal(ctx.rows.comments.length, 0);
   const deletion = ctx.rows.activities.at(-1);
   assert.deepEqual([deletion.type, deletion.credential], ['comment_deleted', { kind: 'apiKey', id: 'K2' }]);
-  const audit = JSON.parse(deletion.metadata.note);
-  assert.deepEqual([audit.commentId, audit.authorDid, typeof audit.createdAt], [commentId, 'did:webvh:OLD:trypoo.app:user-owner', 'number']);
-  assert.ok(!deletion.metadata.note.includes('from agent one'), 'deleted text is not retained');
+  assert.deepEqual(JSON.parse(deletion.metadata.note), { commentId }, 'neither text nor author of the deleted comment is retained');
+  // Credentials are stored for audit but never returned to readers, including published-list readers.
+  await call('comments', 'addComment', ctx, { authToken: ownerToken, itemId: 'I1', text: 'visible' });
+  for (const row of [...await call('activity', 'getListActivity', ctx, { authToken: editorToken, listId: 'L1' }), ...await call('comments', 'getItemComments', ctx, { authToken: editorToken, itemId: 'I1' })])
+    assert.equal('credential' in row, false);
   // A credential named in arguments is never what gets recorded.
   await call('assignees', 'assignItem', ctx, { apiKey: 'owner-agent-key', itemId: 'I1', assigneeDid: 'did:c', credential: { kind: 'apiKey', id: 'K2' } });
   assert.deepEqual(ctx.rows.activities.at(-1).credential, { kind: 'apiKey', id: 'K1' });

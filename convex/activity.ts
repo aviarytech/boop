@@ -1,4 +1,5 @@
 import { actorQuery } from "./lib/authenticated";
+import { withoutCredential } from "./lib/actor";
 import { v } from "convex/values";
 
 // Activity rows are written only by the server operations they describe; a public
@@ -18,6 +19,6 @@ export const { public: getListActivity, internal: getListActivityInternal } = ac
       .collect();
 
     const sorted = events.sort((a, b) => b.createdAt - a.createdAt);
-    return sorted.slice(0, Math.max(1, Math.min(args.limit ?? 50, 200)));
+    return sorted.slice(0, Math.max(1, Math.min(args.limit ?? 50, 200))).map(withoutCredential);
   },
 });

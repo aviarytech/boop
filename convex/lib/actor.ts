@@ -24,6 +24,14 @@ export function actingCredential(ctx: object): ResolvedActor["credential"] | und
   return "actor" in ctx ? (ctx.actor as ResolvedActor).credential : undefined;
 }
 
+/** Read projection: credential row IDs are stored for audit, never returned to readers
+ * (published lists are readable by any signed-in account). */
+export function withoutCredential<T extends { credential?: unknown }>(row: T): Omit<T, "credential"> {
+  const { credential: _credential, ...rest } = row;
+  void _credential;
+  return rest;
+}
+
 export function requestCredentials(request: Request): Credentials {
   return {
     authToken: extractTokenFromRequest(request) ?? undefined,
