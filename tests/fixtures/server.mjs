@@ -3,7 +3,7 @@
 import { createServer } from 'vite';
 import { randomUUID } from 'node:crypto';
 import { BUILTIN_TEMPLATES } from '../../convex/lib/templateCatalog.ts';
-import { revision } from '../../shared/replay.ts';
+import { canonical, revision, replayTargets } from '../../shared/replay.ts';
 
 const TS_ZERO = 'AAAAAAAAAAA=';
 const accounts = new Map();
@@ -26,7 +26,7 @@ function seed(options) {
     createdAt: i + 1, updatedAt: i + 1, order: i,
   }));
   const account = { key, token, options, lists, items, published: options.published ?? false,
-    sequence: 0, receipts: [], calls: [], errors: [], nextId: 0 };
+    sequence: 0, receipts: [], calls: [], errors: [], nextId: 0, offline: false, dropReplayResponses: 0 };
   accounts.set(token, account);
   return account;
 }
@@ -39,9 +39,10 @@ function query(account, path, args) {
     case 'items:getListItems': return account.items.filter(i => i.listId === args.listId);
     case 'items:getListItemsForReplay': return {
       items: account.items.filter(i => i.listId === args.listId),
-      acknowledgments: account.receipts.filter(r => args.operationIds.includes(r.operationId)),
+      acknowledgments: account.receipts.filter(r => args.operationIds.includes(r.operationId)).map(r => r.ack),
       sequence: account.sequence,
     };
+    case 'items:getItemForSync': return account.items.find(i => i._id === args.itemId) ?? null;
     case 'items:getOfflineAccount': return { accountId: user.turnkeySubOrgId, did: user.did };
     case 'items:getOfflineAccess': return [...new Set([...args.listIds, ...(args.items ?? []).map(i => i.listId)])].map(listId => {
       const canRead = account.lists.some(l => l._id === listId);
@@ -86,10 +87,54 @@ function query(account, path, args) {
   }
 }
 
+// Mirrors convex/lib/replay.ts: receipts are keyed by operation ID, and the
+// expected revision (or the acknowledged predecessor's revision) is checked in
+// the same step as the write. Client clocks are never consulted.
+const REPLAY_TYPES = {
+  'items:addItemReplay': 'addItem', 'items:checkItemReplay': 'checkItem', 'items:uncheckItemReplay': 'uncheckItem',
+  'items:updateItemReplay': 'updateItem', 'items:removeItemReplay': 'removeItem', 'items:reorderItemsReplay': 'reorderItem',
+  'items:batchCheckItemsReplay': 'batchCheckItems', 'items:batchUncheckItemsReplay': 'batchUncheckItems',
+  'items:batchDeleteItemsReplay': 'batchDeleteItems', 'lists:createListReplay': 'createList',
+  'lists:renameListReplay': 'renameList', 'lists:deleteListReplay': 'deleteList',
+};
+class ReplayConflict extends Error {
+  constructor(message) { super(message); this.errorData = { code: 'REPLAY_CONFLICT', message }; }
+}
+const findDoc = (account, id) => account.items.find(i => i._id === id) ?? account.lists.find(l => l._id === id);
+
 async function mutation(account, path, args) {
-  const endpoint = path.replace(/Replay$/, '');
-  const previous = args.replay && account.receipts.find(r => r.operationId === args.replay.operationId);
-  if (previous) return previous;
+  if (!args.replay) return apply(account, path.replace(/Replay$/, ''), args);
+  const operation = REPLAY_TYPES[path];
+  if (!operation) throw new Error(`Unimplemented fixture replay: ${path}`);
+  const { authToken: _authToken, replay, ...payload } = args;
+  const fingerprint = await revision({ operation, payload, expected: replay.expected });
+  const previous = account.receipts.find(r => r.operationId === replay.operationId);
+  if (previous) {
+    if (previous.fingerprint !== fingerprint) throw new Error('Operation ID reused with different content');
+    return previous.ack;
+  }
+  const targets = replayTargets(operation, payload);
+  if (canonical([...targets].sort()) !== canonical(replay.expected.map(e => e.id).sort())) throw new ReplayConflict('Missing expected revision. Review this saved edit before applying it.');
+  for (const expected of replay.expected) {
+    let wanted = expected.revision;
+    if (expected.predecessor) {
+      const prior = account.receipts.find(r => r.operationId === expected.predecessor);
+      if (!prior?.ack.revisions[expected.id]) throw new ReplayConflict('A preceding local edit has not been acknowledged.');
+      wanted = prior.ack.revisions[expected.id];
+    }
+    const doc = findDoc(account, expected.id);
+    if (!doc || await revision(doc) !== wanted) throw new ReplayConflict('This item changed on the server. Your edit is saved for review.');
+  }
+  const result = await apply(account, path.replace(/Replay$/, ''), payload);
+  const revisions = {};
+  for (const id of targets) revisions[id] = await revision(findDoc(account, id) ?? null);
+  if (typeof result === 'string' && (operation === 'addItem' || operation === 'createList')) revisions[result] = await revision(findDoc(account, result));
+  const ack = { operationId: replay.operationId, result, revisions, sequence: ++account.sequence };
+  account.receipts.push({ operationId: replay.operationId, fingerprint, ack });
+  return ack;
+}
+
+async function apply(account, endpoint, args) {
   let result = null;
   const item = account.items.find(i => i._id === args.itemId);
   const list = account.lists.find(l => l._id === args.listId);
@@ -146,12 +191,7 @@ async function mutation(account, path, args) {
     case 'referrals:getOrCreateReferralCode': result = 'e2e-code'; break;
     default: throw new Error(`Unimplemented fixture mutation: ${path}`);
   }
-  if (!args.replay) return result;
-  const revisions = {};
-  for (const doc of account.items) revisions[doc._id] = await revision(doc);
-  const ack = { operationId: args.replay.operationId, result, revisions, sequence: ++account.sequence };
-  account.receipts.push(ack);
-  return ack;
+  return result;
 }
 
 function transition(ws, newVersion = ws.data.version) {
@@ -205,7 +245,25 @@ const backend = Bun.serve({
     const account = accounts.get(token);
     if (url.pathname === '/__e2e/state' && account) {
       return Response.json({ lists: account.lists, items: account.items, calls: account.calls,
-        errors: account.errors, published: account.published, receipts: account.receipts });
+        errors: account.errors, published: account.published, receipts: account.receipts.map(r => r.ack) });
+    }
+    if (url.pathname === '/__e2e/network' && account && request.method === 'POST') {
+      // A backend outage for this account only: live sockets drop, and new ones
+      // are closed as soon as they identify the account, until it is restored.
+      const { online, dropReplayResponses } = await request.json();
+      account.offline = !online;
+      if (dropReplayResponses !== undefined) account.dropReplayResponses = dropReplayResponses;
+      if (account.offline) for (const socket of sockets) if (socket.data.account === account) socket.close();
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname === '/__e2e/collaborator-edit' && account && request.method === 'POST') {
+      // Another member's write, committed without any of this client's receipts.
+      const { itemId, changes } = await request.json();
+      const item = account.items.find(i => i._id === itemId);
+      if (!item) return new Response('Unknown item', { status: 404 });
+      Object.assign(item, changes, { updatedAt: Date.now() });
+      for (const socket of sockets) if (socket.data.account === account) transition(socket);
+      return new Response(null, { status: 204 });
     }
     if (url.pathname === '/__e2e/resume-template' && account && request.method === 'POST') {
       account.options.loseTemplateResponseOnce = false;
@@ -227,12 +285,14 @@ const backend = Bun.serve({
         if (msg.type === 'Connect' || msg.type === 'Authenticate' || msg.type === 'Event') return;
         const args = msg.args?.[0] ?? {};
         if (args.authToken) ws.data.account = accounts.get(args.authToken);
+        if (ws.data.account?.offline) { ws.close(); return; }
         if (msg.type === 'ModifyQuerySet') {
           for (const mod of msg.modifications) {
             if (mod.type === 'Remove') ws.data.queries.delete(mod.queryId);
             else {
               const queryArgs = mod.args?.[0] ?? {};
               if (queryArgs.authToken) ws.data.account = accounts.get(queryArgs.authToken);
+              if (ws.data.account?.offline) { ws.close(); return; }
               ws.data.queries.set(mod.queryId, { path: mod.udfPath, args: queryArgs });
             }
           }
@@ -251,11 +311,18 @@ const backend = Bun.serve({
               ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: false, result: 'Fixture: committed response lost', logLines: [] }));
               return;
             }
+            if (args.replay && account.dropReplayResponses > 0) {
+              // The write and its receipt committed; the connection dies first.
+              account.dropReplayResponses--;
+              ws.close();
+              return;
+            }
             ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: true, result, ts: TS_ZERO, logLines: [] }));
             for (const socket of sockets) if (socket.data.account === account) transition(socket);
           } catch (error) {
-            if (!error.message.startsWith('PLAN_LIMIT')) account?.errors.push(error.message);
-            ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: false, result: error.message, logLines: [] }));
+            if (!error.message.startsWith('PLAN_LIMIT') && !error.errorData) account?.errors.push(error.message);
+            ws.send(JSON.stringify({ type: 'MutationResponse', requestId: msg.requestId, success: false, result: error.message,
+              ...(error.errorData ? { errorData: error.errorData } : {}), logLines: [] }));
           }
           return;
         }
