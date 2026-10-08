@@ -3,7 +3,7 @@
  * Features improved design, dark mode, and haptic feedback.
  */
 
-import { useState, useRef, type FormEvent, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect, type FormEvent, forwardRef, useImperativeHandle } from "react";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 
@@ -17,7 +17,18 @@ interface AddItemInputProps {
   }) => Promise<void>;
 }
 
-export const AddItemInput = forwardRef<HTMLInputElement, AddItemInputProps>(function AddItemInput({ onAddItem }, ref) {
+// Drafts and failed submissions must never carry into another list or account.
+export const AddItemInput = forwardRef<HTMLInputElement, AddItemInputProps>(function AddItemInput(props, ref) {
+  const { did } = useCurrentUser();
+  return <AddItemInputDraft key={JSON.stringify([did, props.assetDid])} {...props} ref={ref} />;
+});
+
+type ItemSubmission = {
+  id: number;
+  args: Parameters<AddItemInputProps["onAddItem"]>[0];
+};
+
+const AddItemInputDraft = forwardRef<HTMLInputElement, AddItemInputProps>(function AddItemInputDraft({ onAddItem }, ref) {
   const { did, legacyDid } = useCurrentUser();
   const { haptic } = useSettings();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,41 +39,73 @@ export const AddItemInput = forwardRef<HTMLInputElement, AddItemInputProps>(func
   const [name, setName] = useState("");
   const [isAdding, setIsAdding] = useState(false);
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const [failedItems, setFailedItems] = useState<ItemSubmission[]>([]);
+  const pendingRef = useRef(false);
+  const nextSubmissionId = useRef(0);
+  const submissionsRef = useRef(new Map<number, ItemSubmission>());
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-    const trimmedName = name.trim();
-    if (!trimmedName || !did || isAdding) {
-      return;
-    }
-
-    haptic('medium');
+  // onAddItem accepts the local queue entry. Subsequent server retries belong
+  // to OfflineRecovery; this only retains submissions rejected before that.
+  const submitItem = async (submission: ItemSubmission) => {
+    if (pendingRef.current || !mountedRef.current || submissionsRef.current.get(submission.id) !== submission) return;
+    pendingRef.current = true;
     setIsAdding(true);
-    setName("");
-
-    // Keep focus on the input immediately — don't wait for async.
-    // Clear the value first so the user sees it's ready for the next item.
-    inputRef.current?.focus();
+    haptic('medium');
 
     try {
-      await onAddItem({
+      await onAddItem(submission.args);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      console.error("Failed to add item:", err);
+      // Never restore an older request into the user's newer editable input.
+      // Keep every rejected submission separately, including identical names.
+      setFailedItems(items => items.some(item => item.id === submission.id)
+        ? items : [...items, submission]);
+      haptic('error');
+      return;
+    } finally {
+      pendingRef.current = false;
+      if (mountedRef.current) setIsAdding(false);
+    }
+    if (!mountedRef.current) return;
+    submissionsRef.current.delete(submission.id);
+    setFailedItems(items => items.filter(item => item.id !== submission.id));
+    // Feedback failure must not turn an accepted queue entry into a retry.
+    haptic('success');
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName || !did || pendingRef.current || !mountedRef.current) return;
+
+    const submission: ItemSubmission = {
+      id: ++nextSubmissionId.current,
+      args: {
         name: trimmedName,
         createdByDid: did,
         legacyDid: legacyDid ?? undefined,
         createdAt: Date.now(),
-      });
-      haptic('success');
-    } catch (err) {
-      console.error("Failed to add item:", err);
-      haptic('error');
-      // Restore the text on error so the user doesn't lose it
-      setName(trimmedName);
-    } finally {
-      setIsAdding(false);
-    }
+      },
+    };
+    submissionsRef.current.set(submission.id, submission);
+    setName("");
+    inputRef.current?.focus();
+    await submitItem(submission);
+  };
+
+  const handleRetry = async (submission: ItemSubmission) => {
+    // A retry never clears or replaces the next item being typed.
+    await submitItem(submission);
   };
 
   return (
+    <div>
     <form onSubmit={handleSubmit} className="flex gap-3" aria-label="Add new item">
       <div className="flex-1 relative">
         <label htmlFor="add-item-input" className="sr-only">Add new item</label>
@@ -101,5 +144,30 @@ export const AddItemInput = forwardRef<HTMLInputElement, AddItemInputProps>(func
         )}
       </button>
     </form>
+    {failedItems.length > 0 && (
+      <div className="mt-3 space-y-2" role="status" aria-live="polite">
+        <p className="text-sm text-red-700 dark:text-red-400">
+          These items haven't been saved on this device. Keep this page open to retry them.
+          Your current input has been kept.
+        </p>
+        <ul className="space-y-2">
+          {failedItems.map(item => (
+            <li key={item.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="break-all">{item.args.name}</span>
+              <button
+                type="button"
+                disabled={isAdding}
+                onClick={() => void handleRetry(item)}
+                aria-label={`Retry adding ${item.args.name}`}
+                className="min-h-11 px-3 py-2 underline disabled:opacity-50"
+              >
+                Retry adding item
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+    </div>
   );
 });
