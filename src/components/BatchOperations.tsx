@@ -7,6 +7,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
 import { useOffline } from "../hooks/useOffline";
 import type { OptimisticItem } from "../hooks/useOptimisticItems";
+import { matchesItemId } from "../lib/optimisticItems";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface BatchOperationsProps {
@@ -31,7 +32,8 @@ export function BatchOperations({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const count = selectedIds.size;
-  const selectedRows = () => items.filter(item => selectedIds.has(item._id));
+  // A selection can keep a temp- ID after its row acquires the server ID.
+  const selectedRows = () => items.filter(item => [...selectedIds].some(id => matchesItemId(item, id)));
 
   const handleCheckAll = async () => {
     if (isProcessing) return;

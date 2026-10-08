@@ -25,6 +25,28 @@ test("a draft opened on an optimistic version chains through the client's own la
   assert.equal(f.rows.items[0].checked, false);
 });
 
+test("a draft chains through the client's own later edit made after its base was acknowledged and observed", async () => {
+  const f = await replayFixture(modules);
+  await queue(f, 'checkItem', { itemId: 'I1', checkedAt: 1 });
+  const draftSource = projectItems(structuredClone(f.rows.items), await all(f), 'L1')[0];
+  await new SyncManager().sync(f.client, f.session);
+  const observe = async () => {
+    const snap = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: (await all(f)).map(m => m.operationId) });
+    await store.cacheListSnapshot(f.session.accountId, 'L1', snap.items, snap.acknowledgments, snap.sequence);
+    return snap.items;
+  };
+  // The uncheck is based on the observed server row, so it has no predecessor link.
+  await queue(f, 'uncheckItem', { itemId: 'I1' }, await observe());
+  assert.equal((await pending(f))[0].expected[0].predecessor, undefined);
+  await new SyncManager().sync(f.client, f.session);
+  await observe();
+  await queue(f, 'updateItem', { itemId: 'I1', name: 'Oat milk' }, [draftSource]);
+  await new SyncManager().sync(f.client, f.session);
+  assert.deepEqual(await pending(f), []);
+  assert.equal(f.rows.items[0].name, 'Oat milk');
+  assert.equal(f.rows.items[0].checked, false);
+});
+
 test("a draft still conflicts with a collaborator's edit made after the client's own later edits", async () => {
   const f = await replayFixture(modules);
   await queue(f, 'checkItem', { itemId: 'I1', checkedAt: 1 });

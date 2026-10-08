@@ -177,7 +177,11 @@ async function enqueueMutation(accountId: string, input: {
     let predecessorId = sourceOperations.get(id) ?? predecessor?.operationId;
     // This client's own later edits descended from a pinned draft base are not
     // competing writes. Chain through the newest, so only collaborators conflict.
-    for (let next; sourceOperations.has(id) && (next = [...prior].reverse().find(m => !m.denied && m.expected.some(e => e.predecessor === predecessorId && resolveOperationId(e.id, prior) === resolvedId)));) predecessorId = next.operationId;
+    // A descendant either names the link as predecessor, or was based on exactly
+    // the revision the link's receipt produced (queued after it was observed).
+    const descends = (m: QueuedMutation, link: QueuedMutation) => !m.denied && m.id! > link.id! && m.expected.some(e => resolveOperationId(e.id, prior) === resolvedId &&
+      (e.predecessor === link.operationId || (!e.predecessor && e.revision === link.ack?.revisions[resolvedId])));
+    for (let link, next; sourceOperations.has(id) && (link = prior.find(m => m.operationId === predecessorId)) && (next = [...prior].reverse().find(m => descends(m, link!)));) predecessorId = next.operationId;
     return { id, revision: revisions.get(id)!, ...(predecessorId ? { predecessor: predecessorId } : {}) };
   });
   const dependencies = [...expected.flatMap(e => e.predecessor ? [e.predecessor] : []), ...operationReferences({ payload, expected }).filter(id => id.startsWith('temp-')).map(id => id.slice(5))];

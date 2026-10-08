@@ -40,6 +40,17 @@ test('batch operations queue the selected rendered rows as their edit base', asy
   }
 });
 
+test('batch snapshots include a selected temporary row that has since acquired its server ID', async () => {
+  fixture.queued = [];
+  const row = item('I9', 'New', { _localKey: 'op-create' });
+  const view = render(createElement(BatchOperations, { selectedIds: new Set(['temp-op-create']), items: [row], onClearSelection() {}, userDid: 'did:a' }));
+  try {
+    fireEvent.click(view.getByLabelText('Check all selected items'));
+    await waitFor(() => assert.equal(fixture.queued.length, 1));
+    assert.deepEqual(fixture.queued[0].snapshots, [row]);
+  } finally { cleanup(); }
+});
+
 test('row remove and fallback toggles queue the rendered row as their edit base', async () => {
   const row = item('I1', 'Milk');
   for (const [label, type] of [['Remove Milk', 'removeItem'], ['Check Milk', 'checkItem']]) {
