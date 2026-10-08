@@ -91,4 +91,23 @@ test.describe("Share / publish flow (POO-14)", () => {
       screen.getByText("public", { exact: true }),
     ).toBeVisible({ timeout: 10000 });
   });
+
+  // Signed action records (#237): the list's creation record shows its true status.
+  for (const [status, label, detail] of [
+    ["signed", "Signed (Turnkey-held owner key)", /not independently verified here/],
+    ["pending", "Pending signature", /Waiting for the account's Turnkey-held key/],
+    ["failed", "Signing failed", /carries no signature/],
+    ["unsigned", "Unsigned", /no Turnkey signing key/],
+  ] as const) {
+    test(`8. provenance shows a ${status} list creation record`, async ({ screen, scenario }) => {
+      await openList(scenario, screen, { actionRecordStatus: status });
+
+      await screen.getByRole("button", { name: "Share", exact: false }).click({ timeout: 10000 });
+      await screen.getByRole("button", { name: /Originals Provenance/i }).click({ timeout: 5000 });
+
+      await expect(screen.getByText("List creation record")).toBeVisible({ timeout: 5000 });
+      await expect(screen.getByText(label, { exact: true })).toBeVisible();
+      await expect(screen.getByText(detail)).toBeVisible();
+    });
+  }
 });
