@@ -9,10 +9,12 @@ import { projectItems } from '../lib/optimisticItems';
 const EMPTY_ITEMS: OfflineItem[] = [];
 const EMPTY_ACKNOWLEDGMENTS: ReplayAck[] = [];
 const EMPTY_OPERATION_IDS: string[] = [];
+export type BatchMutationType = 'batchCheckItems' | 'batchUncheckItems' | 'batchDeleteItems';
 export interface OptimisticItem extends Doc<'items'> { assigneeDids?: string[]; _isOptimistic?: boolean; _syncError?: string; _localKey?: string; _operationId?: string }
 
 /** Durable queue entries are the optimistic state, including after reload.
- * Acknowledgments identify creates by operation ID; names and clocks never do. */
+ * Acknowledgments identify creates by operation ID; names and clocks never do.
+ * Every list edit queues against the same server/cache base rows. */
 export function useOptimisticItems(listId: Id<'lists'>) {
   const { isOnline, accountId, operations, queueMutation, aliases, compaction } = useOffline();
   const [scanOffset, setScanOffset] = useState(0);
@@ -95,7 +97,8 @@ export function useOptimisticItems(listId: Id<'lists'>) {
   const reorderItems = useCallback((itemIds: Id<'items'>[], userDid: string, legacyDid?: string) => enqueue('reorderItem', { listId, itemIds, userDid, legacyDid }), [enqueue, listId]);
   const updateItem = useCallback((args: { itemId: Id<'items'>; userDid: string; legacyDid?: string; [key: string]: unknown }) => enqueue('updateItem', args), [enqueue]);
   const removeItem = useCallback((itemId: Id<'items'>, userDid: string, legacyDid?: string) => enqueue('removeItem', { itemId, userDid, legacyDid }), [enqueue]);
-  return { items, addItem, checkItem, uncheckItem, reorderItems, updateItem, removeItem,
+  const queueBatch = useCallback((type: BatchMutationType, payload: { itemIds: Id<'items'>[]; [key: string]: unknown }) => enqueue(type, payload), [enqueue]);
+  return { items, addItem, checkItem, uncheckItem, reorderItems, updateItem, removeItem, queueBatch,
     isLoading: server === undefined && cached.scope !== scope && !last.current,
     usingCache: !isOnline && server === undefined && cached.scope === scope };
 }

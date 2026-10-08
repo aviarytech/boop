@@ -5,11 +5,13 @@
 import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
-import { useOffline } from "../hooks/useOffline";
+import type { BatchMutationType } from "../hooks/useOptimisticItems";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface BatchOperationsProps {
   selectedIds: Set<Id<"items">>;
+  /** useOptimisticItems().queueBatch: queues against the list's base rows. */
+  queueBatch: (type: BatchMutationType, payload: { itemIds: Id<"items">[]; [key: string]: unknown }) => Promise<void>;
   onClearSelection: () => void;
   userDid: string;
   legacyDid?: string;
@@ -17,12 +19,12 @@ interface BatchOperationsProps {
 
 export function BatchOperations({
   selectedIds,
+  queueBatch,
   onClearSelection,
   userDid,
   legacyDid,
 }: BatchOperationsProps) {
   const { haptic } = useSettings();
-  const { queueMutation } = useOffline();
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -39,12 +41,7 @@ export function BatchOperations({
         legacyDid,
       };
       
-      await queueMutation({
-        type: "batchCheckItems",
-        payload,
-        timestamp: Date.now(),
-        retryCount: 0,
-      });
+      await queueBatch("batchCheckItems", payload);
       
       haptic("success");
       onClearSelection();
@@ -67,12 +64,7 @@ export function BatchOperations({
         legacyDid,
       };
       
-      await queueMutation({
-        type: "batchUncheckItems",
-        payload,
-        timestamp: Date.now(),
-        retryCount: 0,
-      });
+      await queueBatch("batchUncheckItems", payload);
       
       haptic("success");
       onClearSelection();
@@ -95,12 +87,7 @@ export function BatchOperations({
         legacyDid,
       };
       
-      await queueMutation({
-        type: "batchDeleteItems",
-        payload,
-        timestamp: Date.now(),
-        retryCount: 0,
-      });
+      await queueBatch("batchDeleteItems", payload);
       
       haptic("success");
       onClearSelection();

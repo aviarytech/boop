@@ -174,7 +174,8 @@ async function enqueueMutation(accountId: string, input: {
       // whose real ID is now visible but not yet present in any cached snapshot.
       return revisions.get(id) === 'unknown' || (!observed && (createsTarget || target?.revision === revisions.get(id)));
     });
-    const predecessorId = sourceOperations.get(id) ?? predecessor?.operationId;
+    let predecessorId = sourceOperations.get(id) ?? predecessor?.operationId;
+    if (sourceOperations.has(id)) predecessorId = newestOwnDescendant(prior, predecessorId!, resolvedId);
     return { id, revision: revisions.get(id)!, ...(predecessorId ? { predecessor: predecessorId } : {}) };
   });
   const dependencies = [...expected.flatMap(e => e.predecessor ? [e.predecessor] : []), ...operationReferences({ payload, expected }).filter(id => id.startsWith('temp-')).map(id => id.slice(5))];
@@ -190,6 +191,23 @@ async function enqueueMutation(accountId: string, input: {
   await tx.done;
   changed();
   return id;
+}
+/** This client's own later edits descended from a pinned draft base are not
+ * competing writes: chain through the newest, so only collaborators conflict.
+ * A descendant names the link as predecessor, or was based on exactly the
+ * revision the link's receipt produced (queued after it was observed). Edits
+ * already rejected as conflicts are not followed: the draft would wait behind
+ * them and fall into their discard cascade. */
+function newestOwnDescendant(operations: QueuedMutation[], operationId: string, itemId: string): string {
+  const newestFirst = [...operations].reverse();
+  for (let link = operations.find(m => m.operationId === operationId); link;) {
+    const base = link;
+    const next = newestFirst.find(m => !m.denied && m.state !== 'conflict' && m.id! > base.id! && m.expected.some(e => resolveOperationId(e.id, operations) === itemId &&
+      (e.predecessor === base.operationId || (!e.predecessor && e.revision === base.ack?.revisions[itemId]))));
+    if (!next) return base.operationId;
+    link = next;
+  }
+  return operationId;
 }
 export async function saveOperation(accountId: string, mutation: QueuedMutation) {
   if (mutation.accountId !== accountId) throw new Error('Offline account mismatch');

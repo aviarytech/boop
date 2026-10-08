@@ -111,6 +111,7 @@ export function ListView() {
     uncheckItem,
     reorderItems,
     removeItem,
+    queueBatch,
     updateItem,
     isLoading: itemsLoading,
     usingCache,
@@ -1035,6 +1036,7 @@ export function ListView() {
                             onTouchStart={canUserEdit ? groceryTouchDrag.handleTouchStart : undefined}
                             onCheck={checkItemWithStreak}
                             onUncheck={uncheckItem}
+                            onRemove={removeItem}
                             isSelectMode={canUserEdit && isSelectMode}
                             isSelected={selectedIds.has(item._id)}
                             onToggleSelect={() => toggleSelection(item._id)}
@@ -1140,6 +1142,7 @@ export function ListView() {
                             isFocused={focusedIndex === globalIndex}
                             onCheck={checkItemWithStreak}
                             onUncheck={uncheckItem}
+                            onRemove={removeItem}
                             isSelectMode={canUserEdit && isSelectMode}
                             isSelected={selectedIds.has(item._id)}
                             onToggleSelect={() => toggleSelection(item._id)}
@@ -1182,6 +1185,7 @@ export function ListView() {
                         onTouchStart={canUserEdit ? touchDrag.handleTouchStart : undefined}
                         onCheck={checkItemWithStreak}
                         onUncheck={uncheckItem}
+                        onRemove={removeItem}
                         isSelectMode={canUserEdit && isSelectMode}
                         isSelected={selectedIds.has(item._id)}
                         onToggleSelect={() => toggleSelection(item._id)}
@@ -1239,6 +1243,7 @@ export function ListView() {
                               onTouchStart={canUserEdit ? touchDrag.handleTouchStart : undefined}
                               onCheck={checkItemWithStreak}
                               onUncheck={uncheckItem}
+                              onRemove={removeItem}
                               isSelectMode={canUserEdit && isSelectMode}
                               isSelected={selectedIds.has(item._id)}
                               onToggleSelect={() => toggleSelection(item._id)}
@@ -1363,6 +1368,7 @@ export function ListView() {
       {canUserEdit && (
         <BatchOperations
           selectedIds={selectedIds}
+          queueBatch={queueBatch}
           onClearSelection={clearSelection}
           userDid={did}
           legacyDid={legacyDid ?? undefined}

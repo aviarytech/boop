@@ -32,6 +32,7 @@ interface ListItemProps {
   onTouchStart?: (e: React.TouchEvent, itemId: string, element: HTMLElement) => void;
   onCheck?: (itemId: Id<"items">, checkedByDid: string, legacyDid?: string) => Promise<void>;
   onUncheck?: (itemId: Id<"items">, userDid: string, legacyDid?: string) => Promise<void>;
+  onRemove?: (itemId: Id<"items">, userDid: string, legacyDid?: string) => Promise<void>;
   // Selection mode props
   isSelectMode?: boolean;
   isSelected?: boolean;
@@ -53,6 +54,7 @@ export const ListItem = memo(function ListItem({
   onTouchStart,
   onCheck,
   onUncheck,
+  onRemove,
   isSelectMode = false,
   isSelected = false,
   onToggleSelect,
@@ -125,7 +127,8 @@ export const ListItem = memo(function ListItem({
     haptic('medium');
     setIsUpdating(true);
     try {
-      await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } });
+      if (onRemove) await onRemove(item._id, userDid, legacyDid);
+      else await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } });
     } catch (err) {
       console.error("Failed to remove item:", err);
       haptic('error');

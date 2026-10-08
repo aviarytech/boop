@@ -25,6 +25,7 @@ interface NestedListItemProps {
   onTouchStart?: (e: React.TouchEvent, itemId: string, element: HTMLElement) => void;
   onCheck?: (itemId: Id<"items">, checkedByDid: string, legacyDid?: string) => Promise<void>;
   onUncheck?: (itemId: Id<"items">, userDid: string, legacyDid?: string) => Promise<void>;
+  onRemove?: (itemId: Id<"items">, userDid: string, legacyDid?: string) => Promise<void>;
   isSelectMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: () => void;
@@ -51,6 +52,7 @@ export function NestedListItem({
   onTouchStart,
   onCheck,
   onUncheck,
+  onRemove,
   isSelectMode = false,
   isSelected = false,
   onToggleSelect,
@@ -136,6 +138,7 @@ export function NestedListItem({
             onTouchStart={onTouchStart}
             onCheck={onCheck}
             onUncheck={onUncheck}
+            onRemove={onRemove}
             isSelectMode={isSelectMode}
             isSelected={isSelected}
             onToggleSelect={onToggleSelect}
@@ -171,6 +174,7 @@ export function NestedListItem({
               canEdit={canEdit}
               onCheck={onCheck}
               onUncheck={onUncheck}
+              onRemove={onRemove}
               isSelectMode={isSelectMode}
               depth={depth + 1}
               maxDepth={maxDepth}

@@ -22,13 +22,17 @@ interface FixtureState {
   calls: { path: string; args: Record<string, unknown> }[];
   errors: string[];
   published: boolean;
-  receipts: { operationId: string }[];
+  receipts: { operationId: string; result: unknown; revisions: Record<string, string> }[];
 }
 
 export interface Scenario {
   open(path: string, options?: ScenarioOptions): Promise<void>;
   state(): Promise<FixtureState>;
   resumeTemplateResponses(): Promise<void>;
+  /** Simulates a backend outage for this account; optionally commit and then lose replay responses. */
+  setBackend(options: { online: boolean; dropReplayResponses?: number }): Promise<void>;
+  /** Commits another member's edit to an item, bypassing this client's receipts. */
+  collaboratorEdit(itemId: string, changes: Record<string, unknown>): Promise<void>;
   httpCalls: { path: string; body: Record<string, unknown> }[];
 }
 
@@ -48,6 +52,14 @@ export const test = webTest.extend<{ scenario: Scenario }>({
         async resumeTemplateResponses() {
           const response = await fetch(new URL('/__e2e/resume-template', base), {method:'POST',headers:{authorization:`Bearer ${token}`}});
           if (!response.ok) throw new Error('Could not resume fixture responses');
+        },
+        async setBackend(options) {
+          const response = await fetch(new URL('/__e2e/network', base), { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(options) });
+          if (!response.ok) throw new Error('Could not change fixture network');
+        },
+        async collaboratorEdit(itemId, changes) {
+          const response = await fetch(new URL('/__e2e/collaborator-edit', base), { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify({ itemId, changes }) });
+          if (!response.ok) throw new Error('Could not apply collaborator edit');
         },
         async open(path, options = {}) {
           if (token) throw new Error('Use app.open/browser.reload after scenario.open; a scenario is seeded once per test.');
