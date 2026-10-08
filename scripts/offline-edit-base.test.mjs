@@ -74,3 +74,45 @@ test('a rendered row is a valid edit base for an uncached item; without one the 
   assert.deepEqual(await pending(f), []);
   assert.equal(f.rows.items[0].checked, true);
 });
+
+const observe = async f => {
+  const snap = await f.call('items', 'getListItemsForReplay', { listId: 'L1', operationIds: (await all(f)).map(m => m.operationId) });
+  await store.cacheListSnapshot(f.session.accountId, 'L1', snap.items, snap.acknowledgments, snap.sequence);
+  return snap.items;
+};
+
+test('a draft does not chain through an own edit already rejected as a conflict', async () => {
+  const f = await replayFixture(modules);
+  f.rows.items.push({ ...structuredClone(f.rows.items[0]), _id: 'I2', name: 'Bread', vcProofs: [] });
+  await queue(f, 'checkItem', { itemId: 'I1', checkedAt: 1 });
+  const draftSource = projectItems(structuredClone(f.rows.items), await all(f), 'L1').find(i => i._id === 'I1');
+  await new SyncManager().sync(f.client, f.session);
+  await queue(f, 'batchUncheckItems', { itemIds: ['I1', 'I2'] }, await observe(f));
+  await f.call('items', 'updateItem', { itemId: 'I2', name: 'Rye' }, f.collaborator);
+  await new SyncManager().sync(f.client, f.session);
+  const [batch] = await pending(f);
+  assert.equal(batch.state, 'conflict');
+  await queue(f, 'updateItem', { itemId: 'I1', name: 'Oat milk' }, [draftSource]);
+  // The draft must neither wait behind the rejected batch nor join its discard cascade.
+  assert.deepEqual(store.discardCascade(await all(f), batch.operationId).map(m => m.type), ['batchUncheckItems']);
+  await new SyncManager().sync(f.client, f.session);
+  assert.equal(f.rows.items[0].name, 'Oat milk');
+  assert.deepEqual((await pending(f)).map(m => m.operationId), [batch.operationId]);
+});
+
+test('a draft chained behind a pending own edit is part of that edit when it is reviewed as a conflict', async () => {
+  const f = await replayFixture(modules);
+  await queue(f, 'checkItem', { itemId: 'I1', checkedAt: 1 });
+  const draftSource = projectItems(structuredClone(f.rows.items), await all(f), 'L1')[0];
+  await new SyncManager().sync(f.client, f.session);
+  await queue(f, 'uncheckItem', { itemId: 'I1' }, await observe(f));
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Collaborator name' }, f.collaborator);
+  await queue(f, 'updateItem', { itemId: 'I1', name: 'Oat milk' }, [draftSource]);
+  await new SyncManager().sync(f.client, f.session);
+  const [uncheck, draft] = await pending(f);
+  assert.equal(uncheck.state, 'conflict');
+  assert.equal(f.rows.items[0].name, 'Collaborator name');
+  // OfflineRecovery lists this cascade beside the reviewed conflict, so the
+  // draft's rename is never reapplied over the collaborator's without review.
+  assert.deepEqual(store.discardCascade(await all(f), uncheck.operationId).map(m => m.operationId), [uncheck.operationId, draft.operationId]);
+});

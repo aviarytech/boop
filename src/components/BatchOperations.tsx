@@ -5,15 +5,13 @@
 import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
-import { useOffline } from "../hooks/useOffline";
-import type { OptimisticItem } from "../hooks/useOptimisticItems";
-import { matchesItemId } from "../lib/optimisticItems";
+import type { BatchMutationType } from "../hooks/useOptimisticItems";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface BatchOperationsProps {
   selectedIds: Set<Id<"items">>;
-  /** Rendered rows: the versions the user acted on are the replay edit base. */
-  items: OptimisticItem[];
+  /** useOptimisticItems().queueBatch: queues against the list's base rows. */
+  queueBatch: (type: BatchMutationType, payload: { itemIds: Id<"items">[]; [key: string]: unknown }) => Promise<void>;
   onClearSelection: () => void;
   userDid: string;
   legacyDid?: string;
@@ -21,19 +19,16 @@ interface BatchOperationsProps {
 
 export function BatchOperations({
   selectedIds,
-  items,
+  queueBatch,
   onClearSelection,
   userDid,
   legacyDid,
 }: BatchOperationsProps) {
   const { haptic } = useSettings();
-  const { queueMutation } = useOffline();
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const count = selectedIds.size;
-  // A selection can keep a temp- ID after its row acquires the server ID.
-  const selectedRows = () => items.filter(item => [...selectedIds].some(id => matchesItemId(item, id)));
 
   const handleCheckAll = async () => {
     if (isProcessing) return;
@@ -46,12 +41,7 @@ export function BatchOperations({
         legacyDid,
       };
       
-      await queueMutation({
-        type: "batchCheckItems",
-        payload,
-        timestamp: Date.now(),
-        retryCount: 0,
-      }, selectedRows());
+      await queueBatch("batchCheckItems", payload);
       
       haptic("success");
       onClearSelection();
@@ -74,12 +64,7 @@ export function BatchOperations({
         legacyDid,
       };
       
-      await queueMutation({
-        type: "batchUncheckItems",
-        payload,
-        timestamp: Date.now(),
-        retryCount: 0,
-      }, selectedRows());
+      await queueBatch("batchUncheckItems", payload);
       
       haptic("success");
       onClearSelection();
@@ -102,12 +87,7 @@ export function BatchOperations({
         legacyDid,
       };
       
-      await queueMutation({
-        type: "batchDeleteItems",
-        payload,
-        timestamp: Date.now(),
-        retryCount: 0,
-      }, selectedRows());
+      await queueBatch("batchDeleteItems", payload);
       
       haptic("success");
       onClearSelection();

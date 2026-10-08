@@ -32,6 +32,7 @@ interface ListItemProps {
   onTouchStart?: (e: React.TouchEvent, itemId: string, element: HTMLElement) => void;
   onCheck?: (itemId: Id<"items">, checkedByDid: string, legacyDid?: string) => Promise<void>;
   onUncheck?: (itemId: Id<"items">, userDid: string, legacyDid?: string) => Promise<void>;
+  onRemove?: (itemId: Id<"items">, userDid: string, legacyDid?: string) => Promise<void>;
   // Selection mode props
   isSelectMode?: boolean;
   isSelected?: boolean;
@@ -53,6 +54,7 @@ export const ListItem = memo(function ListItem({
   onTouchStart,
   onCheck,
   onUncheck,
+  onRemove,
   isSelectMode = false,
   isSelected = false,
   onToggleSelect,
@@ -107,10 +109,10 @@ export const ListItem = memo(function ListItem({
     try {
       if (item.checked) {
         if (onUncheck) await onUncheck(item._id, userDid, legacyDid);
-        else await queueMutation({ type: "uncheckItem", payload: { itemId: item._id, userDid, legacyDid } }, [item]);
+        else await queueMutation({ type: "uncheckItem", payload: { itemId: item._id, userDid, legacyDid } });
       } else {
         if (onCheck) await onCheck(item._id, userDid, legacyDid);
-        else await queueMutation({ type: "checkItem", payload: { itemId: item._id, checkedByDid: userDid, legacyDid, checkedAt: Date.now() } }, [item]);
+        else await queueMutation({ type: "checkItem", payload: { itemId: item._id, checkedByDid: userDid, legacyDid, checkedAt: Date.now() } });
       }
     } catch (err) {
       console.error("Failed to toggle item:", err);
@@ -125,7 +127,8 @@ export const ListItem = memo(function ListItem({
     haptic('medium');
     setIsUpdating(true);
     try {
-      await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } }, [item]);
+      if (onRemove) await onRemove(item._id, userDid, legacyDid);
+      else await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } });
     } catch (err) {
       console.error("Failed to remove item:", err);
       haptic('error');

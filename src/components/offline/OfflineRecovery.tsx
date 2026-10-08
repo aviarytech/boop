@@ -44,6 +44,7 @@ export function OfflineRecovery() {
   const discardRoot = discard?.accountId === accountId && discard.token === token
     ? operations.find(m => m.operationId === discard.operationId && (m.state === 'conflict' || m.state === 'failed')) : undefined;
   const discardEdits = discardRoot ? discardCascade(operations, discardRoot.operationId) : [];
+  const reviewDependents = review ? discardCascade(operations, review.mutation.operationId).filter(m => m.operationId !== review.mutation.operationId) : [];
   const confirmDiscard = async () => {
     if (!isCurrent() || !discardRoot || discarding) return;
     setDiscarding(true);
@@ -88,10 +89,13 @@ export function OfflineRecovery() {
       {review?.accountId === accountId && !operations.find(m => m.operationId === review.mutation.operationId)?.denied && <div className="border p-2">
         <p>Current server version</p><pre className="whitespace-pre-wrap break-all">{JSON.stringify(review.items.map(i => ({ name: i.name, checked: i.checked, description: i.description })), null, 2)}</pre>
         <p>Your saved edit</p><pre className="whitespace-pre-wrap break-all">{JSON.stringify(review.mutation.payload, null, 2)}</pre>
+        {/* Later edits that build on this one are reapplied with it. Show them,
+            so none overwrites the newer server version without being reviewed. */}
+        {reviewDependents.length > 0 && <><p>Later edits applied with it</p>{reviewDependents.map(m => <pre key={m.operationId} className="whitespace-pre-wrap break-all">{m.type}: {m.legacyRecoveryPending ? 'Older edit retained for recovery' : JSON.stringify(m.payload, null, 2)}</pre>)}</>}
         <button className="underline" onClick={async () => {
           try { if (!isCurrent()) return; await rebaseOperation(accountId, review.mutation.id!, review.items); if (isCurrent()) { setReview(undefined); await manualSync(); } }
           catch (error) { if (isCurrent()) setMessage(error instanceof Error ? error.message : 'Recovery failed'); }
-        }}>Apply saved edit to this version</button>
+        }}>{reviewDependents.length ? `Apply ${reviewDependents.length + 1} saved edits to this version` : 'Apply saved edit to this version'}</button>
       </div>}
       {legacy && <div className="border-t pt-2"><p>Older offline edits are retained on this device. They have no verified account binding and will not replay automatically.</p><button className="underline" onClick={() => void exportLegacy()}>Export my identifiable legacy edits</button><p>Sign in to the original account to export and manually review its edits. Unattributed entries stay retained and hidden.</p></div>}
       {message && <p role="status">{message}</p>}

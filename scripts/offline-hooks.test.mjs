@@ -301,3 +301,24 @@ test('revocation notification clears mounted cache fallbacks and denied optimist
     assert.equal((await store.getOperations(accountId))[0].payload.name, 'Only my new text');
   } finally { view.unmount(); cleanup(); }
 });
+
+test('row remove and batch edits queue against the server base rows, even before the list cache is written', async () => {
+  const { revision } = await import('../shared/replay.ts');
+  fixture.user = { turnkeySubOrgId: 'hook-edit-base', did: 'did:a' }; fixture.token = 'token-edit-base';
+  // A collaborator's new row: visible in the live snapshot, never cached on this device.
+  const remote = { ...item('I7'), name: 'Collaborator row' };
+  fixture.snapshots.set('hook-edit-base:L1', { items: [remote], acknowledgments: [], sequence: 0 });
+  const view = renderHook(() => useOptimisticItems('L1'));
+  try {
+    await waitFor(() => assert.equal(view.result.current.items.length, 1));
+    await act(async () => {
+      await view.result.current.queueBatch('batchCheckItems', { itemIds: ['I7'], checkedByDid: 'did:a' });
+      await view.result.current.removeItem('I7', 'did:a');
+    });
+    const operations = await store.getOperations('hook-edit-base');
+    assert.deepEqual(operations.map(m => m.type), ['batchCheckItems', 'removeItem']);
+    assert.equal(operations[0].expected[0].revision, await revision(remote));
+    assert.deepEqual(operations.map(m => m.listIds), [['L1'], ['L1']]);
+    assert.equal(operations[1].expected[0].predecessor, operations[0].operationId);
+  } finally { view.unmount(); cleanup(); }
+});

@@ -42,7 +42,12 @@ function query(account, path, args) {
       acknowledgments: account.receipts.filter(r => args.operationIds.includes(r.operationId)).map(r => r.ack),
       sequence: account.sequence,
     };
-    case 'items:getItemForSync': return account.items.find(i => i._id === args.itemId) ?? null;
+    case 'items:getItemForSync': {
+      // Production throws resourceUnavailable() for missing and unreadable items alike.
+      const item = account.items.find(i => i._id === args.itemId);
+      if (!item) throw Object.assign(new Error('Resource unavailable'), { errorData: { kind: 'auth', code: 'FORBIDDEN', message: 'Resource unavailable' } });
+      return item;
+    }
     case 'items:getOfflineAccount': return { accountId: user.turnkeySubOrgId, did: user.did };
     case 'items:getOfflineAccess': return [...new Set([...args.listIds, ...(args.items ?? []).map(i => i.listId)])].map(listId => {
       const canRead = account.lists.some(l => l._id === listId);
@@ -189,7 +194,7 @@ async function apply(account, endpoint, args) {
     case 'publication:publishList': account.published = true; break;
     case 'publication:unpublishList': account.published = false; break;
     case 'referrals:getOrCreateReferralCode': result = 'e2e-code'; break;
-    default: throw new Error(`Unimplemented fixture mutation: ${path}`);
+    default: throw new Error(`Unimplemented fixture mutation: ${endpoint}`);
   }
   return result;
 }
@@ -200,8 +205,9 @@ function transition(ws, newVersion = ws.data.version) {
     try {
       return { type: 'QueryUpdated', queryId, value: query(account, path, args), logLines: [] };
     } catch (error) {
-      account.errors.push(error.message);
-      return { type: 'QueryFailed', queryId, errorMessage: error.message, logLines: [] };
+      if (!error.errorData) account.errors.push(error.message);
+      return { type: 'QueryFailed', queryId, errorMessage: error.message, logLines: [],
+        ...(error.errorData ? { errorData: error.errorData } : {}) };
     }
   });
   ws.send(JSON.stringify({ type: 'Transition',
@@ -314,6 +320,7 @@ const backend = Bun.serve({
             if (args.replay && account.dropReplayResponses > 0) {
               // The write and its receipt committed; the connection dies first.
               account.dropReplayResponses--;
+              for (const socket of sockets) if (socket !== ws && socket.data.account === account) transition(socket);
               ws.close();
               return;
             }
