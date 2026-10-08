@@ -89,6 +89,7 @@ export const { public: addComment, internal: addCommentInternal } = actorMutatio
     return await ctx.db.insert("comments", {
       itemId: args.itemId,
       userDid: ctx.actor.did,
+      credential: ctx.actor.credential,
       text: args.text.trim(),
       createdAt: Date.now(),
     });
@@ -129,6 +130,17 @@ export const { public: deleteComment, internal: deleteCommentInternal } = actorM
     }
 
     await ctx.db.delete(args.commentId);
+    // Deletion leaves an audit row naming who removed it with which credential;
+    // the comment text itself is not retained.
+    await ctx.db.insert("activities", {
+      listId: item.listId,
+      itemId: item._id,
+      actorDid: ctx.actor.did,
+      credential: ctx.actor.credential,
+      type: "comment_deleted",
+      metadata: { note: JSON.stringify({ commentId: comment._id, authorDid: comment.userDid, createdAt: comment.createdAt }) },
+      createdAt: Date.now(),
+    });
   },
 });
 

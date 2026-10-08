@@ -7,8 +7,9 @@ real registrations and fails when:
 - a protected function, called with validator-shaped business arguments naming real
   fixture rows, accepts an anonymous, forged-key or asserted-identity call;
 - such a call reads anything beyond the credential tables, or writes, before rejecting;
-- a non-public HTTP route answers such a request with anything other than 401/403, or
-  writes.
+- a non-public HTTP route answers such a request with anything other than 401/403,
+  writes, or reads beyond the credential tables (`/d/*` may also read public resolution
+  tables).
 
 Snapshot: 172 public registrations (156 actor-wrapped, 5 self-authenticating,
 7 rejecting compatibility names, 4 intentionally public). HTTP routes are listed
@@ -24,7 +25,7 @@ API scope, rejects identity-assertion fields (`userDid`, `ownerDid`, `checkedByD
 items, anchors, accounts) and passes only declared business arguments to the handler.
 Handlers attribute writes to `ctx.actor`. `ctx.actor.credential` identifies the session
 row or the specific API-key row that acted. Activity rows (assignment, presence) persist it
-as `activities.credential`. Resources a handler loads beyond the declared
+as `credential` on activity rows (assignment, presence, comment deletion) and comments. Resources a handler loads beyond the declared
 ones (tags, comments, categories, templates, sites, grants, invitations) are checked
 against the actor inside the handler.
 

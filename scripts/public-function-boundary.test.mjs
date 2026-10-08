@@ -225,6 +225,10 @@ test('every non-public HTTP route rejects anonymous, forged-key and asserted-ide
       const response = await handler._handler(ctx, new Request(url, { method, headers: { 'Content-Type': 'application/json', ...headers }, ...(method === 'GET' ? {} : { body: JSON.stringify(body) }) }));
       if (![401, 403].includes(response.status)) failures.push(`${method} ${path} ${JSON.stringify(headers)} → ${response.status} ${await response.text()}`);
       if (ctx.effects.length) failures.push(`${method} ${path} ${JSON.stringify(headers)} wrote ${JSON.stringify(ctx.effects)}`);
+      // Only credential tables, plus the published-resource lookups /d/* resolves first.
+      const allowed = path === '/d/*' ? new Set([...AUTH_TABLES, 'didLogs', 'lists', 'publications']) : AUTH_TABLES;
+      const leaked = [...ctx.reads].filter(t => !allowed.has(t));
+      if (leaked.length) failures.push(`${method} ${path} ${JSON.stringify(headers)} read ${leaked} before rejecting`);
     }
   }
   assert.deepEqual(failures, []);

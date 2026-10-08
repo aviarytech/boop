@@ -11,7 +11,7 @@ import { getFunctionName } from 'convex/server';
 process.env.JWT_SECRET = 'identity-binding-test-secret-not-a-deployed-credential';
 delete process.env.WEBVH_DOMAIN;
 const outdir = 'tmp/identity-binding-test';
-const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence'];
+const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments'];
 await build({
   entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error', define: { 'process.env.NODE_ENV': '"production"' },
@@ -42,7 +42,7 @@ function fixture() {
     categories: [{ _id: 'C-own', ownerDid: 'did:legacy-owner', name: 'Mine', order: 0, createdAt: 1 }, { _id: 'C-victim', ownerDid: VICTIM, name: 'Theirs', order: 0, createdAt: 1 }],
     listGrants: [{ _id: 'G1', listId: 'L1', recipientId: 'U3', role: 'editor' }],
     publications: [], didLogs: [], listTemplates: [], agentApiKeys: [{ _id: 'K1', ownerDid: 'did:webvh:OLD:trypoo.app:user-owner', keyHash: hash('owner-agent-key'), scopes: ['lists:read', 'items:write'] }, { _id: 'K2', ownerDid: 'did:webvh:OLD:trypoo.app:user-owner', keyHash: hash('second-agent-key'), scopes: ['items:write'] }],
-    itemAssignees: [], activities: [], presence: [],
+    itemAssignees: [], activities: [], presence: [], comments: [],
     accessSessions: [['S-owner', ownerToken, 'owner'], ['S-editor', editorToken, 'editor']].map(([_id, t, subject]) => ({ _id, tokenHash: hash(t), subject, expiresAt: Date.now() + 3600000 })), noteBodies: [], listEnvelopes: [], referrals: [], bookmarks: [],
   };
   let next = 1;
@@ -166,6 +166,16 @@ test('activity rows record which session or specific API key acted, not just the
     ['item_unassigned', 'did:webvh:OLD:trypoo.app:user-owner', { kind: 'apiKey', id: 'K2' }],
     ['presence_heartbeat', 'did:webvh:OLD:trypoo.app:user-owner', { kind: 'apiKey', id: 'K2' }],
   ]);
+  // Comments record the key that wrote them; deletions leave an audit row for the key that removed them.
+  const commentId = await call('comments', 'addComment', ctx, { apiKey: 'owner-agent-key', itemId: 'I1', text: 'from agent one' });
+  assert.deepEqual(ctx.rows.comments[0].credential, { kind: 'apiKey', id: 'K1' });
+  await call('comments', 'deleteComment', ctx, { apiKey: 'second-agent-key', commentId });
+  assert.equal(ctx.rows.comments.length, 0);
+  const deletion = ctx.rows.activities.at(-1);
+  assert.deepEqual([deletion.type, deletion.credential], ['comment_deleted', { kind: 'apiKey', id: 'K2' }]);
+  const audit = JSON.parse(deletion.metadata.note);
+  assert.deepEqual([audit.commentId, audit.authorDid, typeof audit.createdAt], [commentId, 'did:webvh:OLD:trypoo.app:user-owner', 'number']);
+  assert.ok(!deletion.metadata.note.includes('from agent one'), 'deleted text is not retained');
   // A credential named in arguments is never what gets recorded.
   await call('assignees', 'assignItem', ctx, { apiKey: 'owner-agent-key', itemId: 'I1', assigneeDid: 'did:c', credential: { kind: 'apiKey', id: 'K2' } });
   assert.deepEqual(ctx.rows.activities.at(-1).credential, { kind: 'apiKey', id: 'K1' });

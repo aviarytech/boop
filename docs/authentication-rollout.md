@@ -398,20 +398,27 @@ Every actor-wrapped call resolves `ctx.actor.credential`: the `accessSessions` r
 specific `agentApiKeys` row, with that key's scopes and revocation checked in the same
 transaction (#273).
 
-This change persists it on activity rows as an optional `activities.credential` field
-(`{ kind: "session" | "apiKey", id }`). It covers assignment, unassignment, inherited
-assignments and presence events, so two keys on one account leave distinguishable history.
+This change persists it as an optional `credential` field (`{ kind: "session" | "apiKey", id }`)
+on:
+- activity rows: assignment, unassignment, inherited assignments and presence events;
+- comments;
+- a new `comment_deleted` activity row, which records the comment ID and author but not
+  its text.
+
+Two keys on one account therefore leave distinguishable history.
 
 The shared assignment helpers read the credential from the actor context the wrapper
 already provides. That leaves the `items.ts` call sites that PR #277 (#237) restructures
 untouched; the branches merge cleanly. Server-originated rows (reconciliation, crons)
 and rows written earlier have no credential. #277 adds signed action records binding the
-same credential for item and list actions. Comments remain attributed by account DID only.
+same credential for item and list actions. Agents reading `/api/activity/list` may now see
+the additive `comment_deleted` type.
 
 ### Rollout order (coordinated with #262)
 
-1. **Deploy Convex first.** Everything here tightens the server. The only schema change is
-   the additive optional `activities.credential`, which existing rows satisfy. There is no
+1. **Deploy Convex first.** Everything here tightens the server. The only schema changes are
+   additive: optional `credential` on `activities` and `comments`, and the
+   `comment_deleted` activity type. Existing rows satisfy them. There is no
    new client call or public name, and no ordering in which access widens.
 2. Then deploy web/native. The only client change is the regenerated session registry,
    which drops four names no UI calls. Older clients keep working because none call the
@@ -458,8 +465,10 @@ rewrite them.
   - 6 exhaustive boundary tests: all 172 public registrations, plus every HTTP route
     queried anonymously, with a forged key, and with a forged bearer token;
   - 8 identity-binding regressions, covering re-mint, `updateDID`, publication DID,
-    resolver fallback, categories, persisted session/key attribution and credential
-    resolution.
+    resolver fallback, categories, persisted session/key attribution (activities and
+    comments) and credential resolution.
+  - The HTTP pass also fails on any read beyond the credential tables before rejection;
+    `/d/*` may additionally read the public resolution tables.
 - The boundary test was checked against deliberately reintroduced gaps: a public copy of a
   formerly internal query, and a raw mutation that trusts `checkedByDid`. It fails on both.
   Its HTTP pass found the 500-for-auth responses fixed above.

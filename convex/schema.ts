@@ -8,6 +8,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+// The authenticated session or specific API key that acted (#236). Absent on system
+// rows and on rows written before credential attribution existed.
+const actingCredential = v.optional(v.object({
+  kind: v.union(v.literal("session"), v.literal("apiKey")),
+  id: v.string(),
+}));
+
 export default defineSchema({
   listInvitations: defineTable({
     listId: v.id("lists"), ownerId: v.id("users"), email: v.string(),
@@ -311,19 +318,15 @@ export default defineSchema({
       v.literal("presence_heartbeat"),
       v.literal("presence_offline"),
       v.literal("item_updated"),
-      v.literal("list_updated")
+      v.literal("list_updated"),
+      v.literal("comment_deleted")
     ),
     metadata: v.optional(v.object({
       assigneeDid: v.optional(v.string()),
       status: v.optional(v.union(v.literal("active"), v.literal("idle"), v.literal("offline"))),
       note: v.optional(v.string()),
     })),
-    // The authenticated session or specific API key that acted (#236). Absent on
-    // system rows and rows written before credential attribution existed.
-    credential: v.optional(v.object({
-      kind: v.union(v.literal("session"), v.literal("apiKey")),
-      id: v.string(),
-    })),
+    credential: actingCredential,
     createdAt: v.number(),
   })
     .index("by_list", ["listId"])
@@ -523,6 +526,7 @@ export default defineSchema({
     itemId: v.id("items"),
     userDid: v.string(), // Author of the comment
     text: v.string(),
+    credential: actingCredential,
     createdAt: v.number(),
   })
     .index("by_item", ["itemId"])
