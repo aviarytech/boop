@@ -174,7 +174,10 @@ async function enqueueMutation(accountId: string, input: {
       // whose real ID is now visible but not yet present in any cached snapshot.
       return revisions.get(id) === 'unknown' || (!observed && (createsTarget || target?.revision === revisions.get(id)));
     });
-    const predecessorId = sourceOperations.get(id) ?? predecessor?.operationId;
+    let predecessorId = sourceOperations.get(id) ?? predecessor?.operationId;
+    // This client's own later edits descended from a pinned draft base are not
+    // competing writes. Chain through the newest, so only collaborators conflict.
+    for (let next; sourceOperations.has(id) && (next = [...prior].reverse().find(m => !m.denied && m.expected.some(e => e.predecessor === predecessorId && resolveOperationId(e.id, prior) === resolvedId)));) predecessorId = next.operationId;
     return { id, revision: revisions.get(id)!, ...(predecessorId ? { predecessor: predecessorId } : {}) };
   });
   const dependencies = [...expected.flatMap(e => e.predecessor ? [e.predecessor] : []), ...operationReferences({ payload, expected }).filter(id => id.startsWith('temp-')).map(id => id.slice(5))];

@@ -1363,6 +1363,7 @@ export function ListView() {
       {canUserEdit && (
         <BatchOperations
           selectedIds={selectedIds}
+          items={items}
           onClearSelection={clearSelection}
           userDid={did}
           legacyDid={legacyDid ?? undefined}

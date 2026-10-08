@@ -6,10 +6,13 @@ import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useSettings } from "../hooks/useSettings";
 import { useOffline } from "../hooks/useOffline";
+import type { OptimisticItem } from "../hooks/useOptimisticItems";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface BatchOperationsProps {
   selectedIds: Set<Id<"items">>;
+  /** Rendered rows: the versions the user acted on are the replay edit base. */
+  items: OptimisticItem[];
   onClearSelection: () => void;
   userDid: string;
   legacyDid?: string;
@@ -17,6 +20,7 @@ interface BatchOperationsProps {
 
 export function BatchOperations({
   selectedIds,
+  items,
   onClearSelection,
   userDid,
   legacyDid,
@@ -27,6 +31,7 @@ export function BatchOperations({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const count = selectedIds.size;
+  const selectedRows = () => items.filter(item => selectedIds.has(item._id));
 
   const handleCheckAll = async () => {
     if (isProcessing) return;
@@ -44,7 +49,7 @@ export function BatchOperations({
         payload,
         timestamp: Date.now(),
         retryCount: 0,
-      });
+      }, selectedRows());
       
       haptic("success");
       onClearSelection();
@@ -72,7 +77,7 @@ export function BatchOperations({
         payload,
         timestamp: Date.now(),
         retryCount: 0,
-      });
+      }, selectedRows());
       
       haptic("success");
       onClearSelection();
@@ -100,7 +105,7 @@ export function BatchOperations({
         payload,
         timestamp: Date.now(),
         retryCount: 0,
-      });
+      }, selectedRows());
       
       haptic("success");
       onClearSelection();

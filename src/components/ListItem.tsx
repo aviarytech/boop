@@ -107,10 +107,10 @@ export const ListItem = memo(function ListItem({
     try {
       if (item.checked) {
         if (onUncheck) await onUncheck(item._id, userDid, legacyDid);
-        else await queueMutation({ type: "uncheckItem", payload: { itemId: item._id, userDid, legacyDid } });
+        else await queueMutation({ type: "uncheckItem", payload: { itemId: item._id, userDid, legacyDid } }, [item]);
       } else {
         if (onCheck) await onCheck(item._id, userDid, legacyDid);
-        else await queueMutation({ type: "checkItem", payload: { itemId: item._id, checkedByDid: userDid, legacyDid, checkedAt: Date.now() } });
+        else await queueMutation({ type: "checkItem", payload: { itemId: item._id, checkedByDid: userDid, legacyDid, checkedAt: Date.now() } }, [item]);
       }
     } catch (err) {
       console.error("Failed to toggle item:", err);
@@ -125,7 +125,7 @@ export const ListItem = memo(function ListItem({
     haptic('medium');
     setIsUpdating(true);
     try {
-      await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } });
+      await queueMutation({ type: "removeItem", payload: { itemId: item._id, userDid, legacyDid } }, [item]);
     } catch (err) {
       console.error("Failed to remove item:", err);
       haptic('error');
