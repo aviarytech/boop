@@ -213,7 +213,8 @@ test('every non-public HTTP route rejects anonymous, forged-key and asserted-ide
   for (const [path, method, handler] of routes) {
     if (PUBLIC_ROUTES.has(`${method} ${path}`)) continue;
     const url = new URL(`https://test${path === '/d/*' ? '/d/owner/resources/list-L1/items/I1/check' : path}`);
-    for (const [k, v] of Object.entries(body)) if (method === 'GET') url.searchParams.set(k, String(v));
+    // GET routes take one target; body routes get every field a handler might read.
+    if (method === 'GET') for (const [k, v] of Object.entries({ listId: 'L1', ...assertions })) url.searchParams.set(k, String(v));
     for (const headers of [{}, { 'X-API-Key': 'forged-key' }, { Authorization: 'Bearer forged.jwt.token' }]) {
       const ctx = fixture();
       // A published list, so public-link writes reach the authenticated operation.
