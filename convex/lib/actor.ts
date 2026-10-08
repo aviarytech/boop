@@ -18,6 +18,12 @@ export type ResolvedActor = {
   credential: { kind: "session" | "apiKey"; id: string };
 };
 
+/** The credential behind an actor-wrapped operation, for audit rows written by shared
+ * helpers. Server-originated work (crons, migrations) has none. */
+export function actingCredential(ctx: object): ResolvedActor["credential"] | undefined {
+  return "actor" in ctx ? (ctx.actor as ResolvedActor).credential : undefined;
+}
+
 export function requestCredentials(request: Request): Credentials {
   return {
     authToken: extractTokenFromRequest(request) ?? undefined,

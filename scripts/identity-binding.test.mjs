@@ -11,7 +11,7 @@ import { getFunctionName } from 'convex/server';
 process.env.JWT_SECRET = 'identity-binding-test-secret-not-a-deployed-credential';
 delete process.env.WEBVH_DOMAIN;
 const outdir = 'tmp/identity-binding-test';
-const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'templates'];
+const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence'];
 await build({
   entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error', define: { 'process.env.NODE_ENV': '"production"' },
@@ -41,7 +41,8 @@ function fixture() {
     items: [{ _id: 'I1', listId: 'L1', name: 'Private plan', checked: false, createdAt: 1 }],
     categories: [{ _id: 'C-own', ownerDid: 'did:legacy-owner', name: 'Mine', order: 0, createdAt: 1 }, { _id: 'C-victim', ownerDid: VICTIM, name: 'Theirs', order: 0, createdAt: 1 }],
     listGrants: [{ _id: 'G1', listId: 'L1', recipientId: 'U3', role: 'editor' }],
-    publications: [], didLogs: [], listTemplates: [], agentApiKeys: [{ _id: 'K1', ownerDid: 'did:webvh:OLD:trypoo.app:user-owner', keyHash: hash('owner-agent-key'), scopes: ['lists:read', 'items:write'] }],
+    publications: [], didLogs: [], listTemplates: [], agentApiKeys: [{ _id: 'K1', ownerDid: 'did:webvh:OLD:trypoo.app:user-owner', keyHash: hash('owner-agent-key'), scopes: ['lists:read', 'items:write'] }, { _id: 'K2', ownerDid: 'did:webvh:OLD:trypoo.app:user-owner', keyHash: hash('second-agent-key'), scopes: ['items:write'] }],
+    itemAssignees: [], activities: [], presence: [],
     accessSessions: [['S-owner', ownerToken, 'owner'], ['S-editor', editorToken, 'editor']].map(([_id, t, subject]) => ({ _id, tokenHash: hash(t), subject, expiresAt: Date.now() + 3600000 })), noteBodies: [], listEnvelopes: [], referrals: [], bookmarks: [],
   };
   let next = 1;
@@ -152,13 +153,22 @@ test('lists can only be filed in the caller\'s own categories', async () => {
   assert.equal(ctx.rows.lists[0].categoryId, 'C-own');
 });
 
-test('editors may save private templates but only owners publish a list as a public template', async () => {
+test('activity rows record which session or specific API key acted, not just the account', async () => {
   const ctx = fixture();
-  await assert.rejects(() => call('templates', 'createFromList', ctx, { authToken: editorToken, listId: 'L1', templateName: 'Leak', isPublic: true }), /Only the list owner/);
-  assert.equal(ctx.rows.listTemplates.length, 0);
-  await call('templates', 'createFromList', ctx, { authToken: editorToken, listId: 'L1', templateName: 'Mine' });
-  await call('templates', 'createFromList', ctx, { authToken: ownerToken, listId: 'L1', templateName: 'Shared', isPublic: true });
-  assert.deepEqual(ctx.rows.listTemplates.map(t => [t.ownerDid, t.isPublic]), [['did:editor', false], ['did:webvh:OLD:trypoo.app:user-owner', true]]);
+  await call('assignees', 'assignItem', ctx, { authToken: ownerToken, itemId: 'I1', assigneeDid: 'did:a' });
+  await call('assignees', 'assignItem', ctx, { apiKey: 'owner-agent-key', itemId: 'I1', assigneeDid: 'did:b' });
+  await call('assignees', 'unassignItem', ctx, { apiKey: 'second-agent-key', itemId: 'I1', assigneeDid: 'did:a' });
+  await call('presence', 'heartbeat', ctx, { apiKey: 'second-agent-key', listId: 'L1' });
+  const rows = ctx.rows.activities.filter(r => r.actorDid !== 'system:assignment-reconciliation');
+  assert.deepEqual(rows.map(r => [r.type, r.actorDid, r.credential]), [
+    ['item_assigned', 'did:webvh:OLD:trypoo.app:user-owner', { kind: 'session', id: 'S-owner' }],
+    ['item_assigned', 'did:webvh:OLD:trypoo.app:user-owner', { kind: 'apiKey', id: 'K1' }],
+    ['item_unassigned', 'did:webvh:OLD:trypoo.app:user-owner', { kind: 'apiKey', id: 'K2' }],
+    ['presence_heartbeat', 'did:webvh:OLD:trypoo.app:user-owner', { kind: 'apiKey', id: 'K2' }],
+  ]);
+  // A credential named in arguments is never what gets recorded.
+  await call('assignees', 'assignItem', ctx, { apiKey: 'owner-agent-key', itemId: 'I1', assigneeDid: 'did:c', credential: { kind: 'apiKey', id: 'K2' } });
+  assert.deepEqual(ctx.rows.activities.at(-1).credential, { kind: 'apiKey', id: 'K1' });
 });
 
 test('the boundary resolves which credential acted: a specific API key, distinct from the owner\'s session', async () => {

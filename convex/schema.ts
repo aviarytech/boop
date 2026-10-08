@@ -318,6 +318,12 @@ export default defineSchema({
       status: v.optional(v.union(v.literal("active"), v.literal("idle"), v.literal("offline"))),
       note: v.optional(v.string()),
     })),
+    // The authenticated session or specific API key that acted (#236). Absent on
+    // system rows and rows written before credential attribution existed.
+    credential: v.optional(v.object({
+      kind: v.union(v.literal("session"), v.literal("apiKey")),
+      id: v.string(),
+    })),
     createdAt: v.number(),
   })
     .index("by_list", ["listId"])

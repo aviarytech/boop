@@ -39,6 +39,7 @@ export const { public: heartbeat, internal: heartbeatInternal } = actorMutation(
     await ctx.db.insert("activities", {
       listId: args.listId,
       actorDid: ctx.actor.did,
+      credential: ctx.actor.credential,
       type: "presence_heartbeat",
       metadata: { status },
       createdAt: now,
@@ -71,6 +72,7 @@ export const { public: markOffline, internal: markOfflineInternal } = actorMutat
     await ctx.db.insert("activities", {
       listId: args.listId,
       actorDid: ctx.actor.did,
+      credential: ctx.actor.credential,
       type: "presence_offline",
       metadata: { status: "offline" },
       createdAt: now,

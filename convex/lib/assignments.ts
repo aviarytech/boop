@@ -1,5 +1,6 @@
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { actingCredential } from './actor';
 
 export async function assignmentRows(ctx: QueryCtx, item: Doc<'items'>) {
   const storedRows = await ctx.db.query('itemAssignees').withIndex('by_item', q => q.eq('itemId', item._id)).collect();
@@ -82,12 +83,12 @@ export async function changeAssignments(ctx: MutationCtx, source: Doc<'items'>, 
   for (const did of before) if (!after.has(did)) {
     // Remove every duplicate, while retaining all prior activities.
     for (const row of rows.filter(r => r.assigneeDid === did)) await ctx.db.delete(row._id);
-    await ctx.db.insert('activities', { listId: item.listId, itemId: item._id, actorDid,
+    await ctx.db.insert('activities', { listId: item.listId, itemId: item._id, actorDid, credential: actingCredential(ctx),
       type: 'item_unassigned', metadata: { assigneeDid: did, note: JSON.stringify({ reason: note ?? 'unassigned', priorAssignments: rows.filter(r => r.assigneeDid === did).map(r => ({ assignedByDid: r.assignedByDid, assignedAt: r.assignedAt, inferredFromLegacyScalar: r.inferredFromLegacyScalar ?? false })) }) }, createdAt: now });
   }
   for (const did of after) if (!before.has(did)) {
     await ctx.db.insert('itemAssignees', { itemId: item._id, listId: item.listId, assigneeDid: did, assignedByDid: actorDid, assignedAt: now });
-    await ctx.db.insert('activities', { listId: item.listId, itemId: item._id, actorDid,
+    await ctx.db.insert('activities', { listId: item.listId, itemId: item._id, actorDid, credential: actingCredential(ctx),
       type: 'item_assigned', metadata: { assigneeDid: did, ...(note ? { note } : {}) }, createdAt: now });
   }
   const primary = change.legacy && after.has(change.legacy) ? change.legacy
@@ -113,7 +114,7 @@ export async function insertInheritedAssignments(ctx: MutationCtx, args: {
   for (const assigneeDid of args.assigneeDids) {
     await ctx.db.insert('itemAssignees', { itemId: args.targetId, listId: args.listId,
       assigneeDid, assignedByDid: args.actorDid, assignedAt: args.assignedAt });
-    await ctx.db.insert('activities', { listId: args.listId, itemId: args.targetId, actorDid: args.actorDid,
+    await ctx.db.insert('activities', { listId: args.listId, itemId: args.targetId, actorDid: args.actorDid, credential: actingCredential(ctx),
       type: 'item_assigned', metadata: { assigneeDid,
         note: `${args.reason} from item ${args.sourceId}; source assignment history remains on that item` }, createdAt: args.assignedAt });
   }

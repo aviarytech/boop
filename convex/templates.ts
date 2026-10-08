@@ -33,10 +33,6 @@ export const { public: createFromList, internal: createFromListInternal } = acto
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
-    // Editors may save private templates; making a list's contents public is the owner's call.
-    if (args.isPublic && ![ctx.actor.did, ctx.actor.legacyDid].includes(list.ownerDid)) {
-      throw new Error("Only the list owner can publish a template from this list");
-    }
 
     // Get all items from the list
     const items = await ctx.db

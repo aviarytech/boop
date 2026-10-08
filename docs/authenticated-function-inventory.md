@@ -2,9 +2,13 @@
 
 Every function a browser, native app or direct Convex client can call, classified by
 how it establishes who is acting. `scripts/public-function-boundary.test.mjs` loads the
-real registrations and fails when a new public function is not covered by one of these
-classes, or when a protected function accepts an anonymous, forged-key or
-asserted-identity call before reading or writing.
+real registrations and fails when:
+- a new public function is not covered by one of these classes;
+- a protected function, called with validator-shaped business arguments naming real
+  fixture rows, accepts an anonymous, forged-key or asserted-identity call;
+- such a call reads anything beyond the credential tables, or writes, before rejecting;
+- a non-public HTTP route answers such a request with anything other than 401/403, or
+  writes.
 
 Snapshot: 172 public registrations (156 actor-wrapped, 5 self-authenticating,
 7 rejecting compatibility names, 4 intentionally public). HTTP routes are listed
@@ -18,8 +22,9 @@ The wrapper resolves the actor from `authToken` (a signed JWT whose hash has a l
 API scope, rejects identity-assertion fields (`userDid`, `ownerDid`, `checkedByDid`,
 `legacyDid`, …) that do not match that actor, authorizes declared resources (lists,
 items, anchors, accounts) and passes only declared business arguments to the handler.
-Handlers attribute writes to `ctx.actor`; `ctx.actor.credential` identifies the session
-row or the specific API-key row that acted. Resources a handler loads beyond the declared
+Handlers attribute writes to `ctx.actor`. `ctx.actor.credential` identifies the session
+row or the specific API-key row that acted. Activity rows (assignment, presence) persist it
+as `activities.credential`. Resources a handler loads beyond the declared
 ones (tags, comments, categories, templates, sites, grants, invitations) are checked
 against the actor inside the handler.
 
@@ -74,7 +79,8 @@ generated session registry), so no deployed client depends on them.
 All authenticated routes call `authenticatedRequest` / `requireAuth` and then the
 `.internal` registration of the same actor-wrapped operation with only the request's
 credentials, so the actor is re-resolved in the transaction. API keys cannot create API
-keys. Unauthenticated routes: OTP `/auth/initiate|verify`, Stripe webhook (signature),
+keys. Category and billing routes now return 401/403 for credential failures instead of
+500. Unauthenticated routes: OTP `/auth/initiate|verify`, Stripe webhook (signature),
 `/api/sites/resolve-*`, `GET /api/did/log`, `/d/*` (active publications), public-list
 attachment downloads, `/health`.
 

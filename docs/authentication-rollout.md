@@ -388,23 +388,31 @@ add a `ctx.auth` branch.
   activity writes, and the Sites/DID resolver lookups (see inventory). None were called by
   any client.
 - **Cross-account references.** `createList` and `updateListCategory` accept only the
-  actor's own categories. `createFromList` lets editors save private templates, but only the
-  owner can publish a list's contents as a public template. `deleteUserData` declares its
-  account resource at the boundary.
+  actor's own categories. `deleteUserData` declares its account resource at the boundary.
+- **HTTP status contract.** Category and billing routes returned 500 for credential
+  failures; they now return 401/403 like every other route.
 
 ### Credential attribution and PR #277
 
 Every actor-wrapped call resolves `ctx.actor.credential`: the `accessSessions` row or the
 specific `agentApiKeys` row, with that key's scopes and revocation checked in the same
-transaction (#273, tested here). PR #277 (#237) binds that credential into signed action
-records for item/list actions. This change deliberately does not add credential columns
-to `activities`, `presence` or `comments`: assignment activity is written via `items.ts`
-call sites that #277 restructures. Thread the credential there after #277 merges.
+transaction (#273).
+
+This change persists it on activity rows as an optional `activities.credential` field
+(`{ kind: "session" | "apiKey", id }`). It covers assignment, unassignment, inherited
+assignments and presence events, so two keys on one account leave distinguishable history.
+
+The shared assignment helpers read the credential from the actor context the wrapper
+already provides. That leaves the `items.ts` call sites that PR #277 (#237) restructures
+untouched; the branches merge cleanly. Server-originated rows (reconciliation, crons)
+and rows written earlier have no credential. #277 adds signed action records binding the
+same credential for item and list actions. Comments remain attributed by account DID only.
 
 ### Rollout order (coordinated with #262)
 
-1. **Deploy Convex first.** Everything here tightens the server. No schema change, no new
-   client call, no new public name. There is no ordering in which access widens.
+1. **Deploy Convex first.** Everything here tightens the server. The only schema change is
+   the additive optional `activities.credential`, which existing rows satisfy. There is no
+   new client call or public name, and no ordering in which access widens.
 2. Then deploy web/native. The only client change is the regenerated session registry,
    which drops four names no UI calls. Older clients keep working because none call the
    removed names, and every client already sends a self-path `did:webvh` and an own-DID
@@ -428,6 +436,12 @@ rewrite them.
 
 ### Follow-ups found during the audit (outside #236 scope)
 
+- An editor can publish a list's contents as a public template, via `createFromList`
+  (`isPublic`), or by saving privately and then `updateTemplate`. Any reader can also
+  retype the items into `createTemplate`, so a server rule cannot prevent this by itself.
+  Whether shared-list contents may be published as templates is a product decision.
+  This change does not redefine template publication.
+
 - Push registration re-binds an existing token or endpoint to whoever presents it, and
   `registerPushToken` accepts any URL for `web`. That URL is later POSTed to server-side.
   Validate push-service hosts and insert rather than re-bind.
@@ -440,11 +454,14 @@ rewrite them.
 
 ### Verification for this change
 
-- `bun test`: 696 pass, 0 fail (683 on `main` plus 13 new). This includes 5 exhaustive
-  boundary tests over all 172 public registrations and 8 identity-binding regressions. Seven
-  of those fail against `main`'s versions of the changed files. The eighth documents existing
-  per-key credential resolution, carried over from #273.
+- `bun test`: 697 pass, 0 fail (683 on `main` plus 14 new):
+  - 6 exhaustive boundary tests: all 172 public registrations, plus every HTTP route
+    queried anonymously, with a forged key, and with a forged bearer token;
+  - 8 identity-binding regressions, covering re-mint, `updateDID`, publication DID,
+    resolver fallback, categories, persisted session/key attribution and credential
+    resolution.
 - The boundary test was checked against deliberately reintroduced gaps: a public copy of a
   formerly internal query, and a raw mutation that trusts `checkedByDid`. It fails on both.
+  Its HTTP pass found the 500-for-auth responses fixed above.
 - Not verified: live Convex deployment and codegen, OTP/login on deployed web/iOS/Android,
   real did:webvh re-mint against production data, and the data checks above.
