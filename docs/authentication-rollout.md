@@ -407,7 +407,7 @@ on:
 
 Two keys on one account therefore leave distinguishable history. Credentials are stored
 for audit but stripped from every read response (`getListActivity`, `getItemComments` and
-their HTTP routes), because published lists are readable by any signed-in account.
+the activity HTTP route), because published lists are readable by any signed-in account.
 An owner-facing audit view is a possible follow-up.
 
 The shared assignment helpers read the credential from the actor context the wrapper
