@@ -144,9 +144,13 @@ test('lists can only be filed in the caller\'s own categories', async () => {
   const ctx = fixture();
   for (const [name, args] of [['createList', { assetDid: 'did:cel:x', name: 'New', createdAt: 2 }], ['updateListCategory', { listId: 'L1' }]]) {
     await assert.rejects(() => call('lists', name, ctx, { ...args, authToken: ownerToken, categoryId: 'C-victim' }), /Resource unavailable/);
-    await assert.rejects(() => call('lists', name, ctx, { ...args, authToken: ownerToken, categoryId: 'missing' }), /Resource unavailable/);
   }
+  await assert.rejects(() => call('lists', 'updateListCategory', ctx, { listId: 'L1', authToken: ownerToken, categoryId: 'missing' }), /Resource unavailable/);
   assert.equal(ctx.rows.lists.length, 2);
+  // A category deleted on another device leaves a new list uncategorized rather than failing.
+  await call('lists', 'createList', ctx, { assetDid: 'did:cel:y', name: 'New', createdAt: 2, authToken: ownerToken, categoryId: 'missing' });
+  assert.equal(ctx.rows.lists.at(-1).categoryId, undefined);
+  ctx.rows.lists.pop();
   assert.equal(ctx.rows.lists[0].categoryId, undefined);
   // A migrated owner's category under the legacy DID still counts as their own.
   await call('lists', 'updateListCategory', ctx, { authToken: ownerToken, listId: 'L1', categoryId: 'C-own' });
@@ -193,4 +197,25 @@ test('the boundary resolves which credential acted: a specific API key, distinct
   assert.deepEqual(viaKey.scopes, ['lists:read', 'items:write']);
   ctx.rows.agentApiKeys[0].revokedAt = Date.now();
   await assert.rejects(() => call('actorSession', 'resolve', ctx, { apiKey: 'owner-agent-key' }), /Invalid API key/);
+});
+
+test('a logged-out token cannot be revived by re-encoding its signature', async () => {
+  const ctx = fixture();
+  ctx.rows.accessSessions = [];
+  const fresh = await token('owner');
+  await call('actorSession', 'establish', ctx, { authToken: fresh });
+  assert.equal((await call('lists', 'getUserLists', ctx, { authToken: fresh })).length, 1);
+  await call('actorSession', 'revoke', ctx, { authToken: fresh });
+  // jose decodes the signature's unused trailing bits leniently; each variant is a
+  // distinct string (and hash) carrying the same signature.
+  const [head, body, sig] = fresh.split('.');
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const last = alphabet.indexOf(sig.at(-1));
+  const variants = [1, 2, 3].map(bits => `${head}.${body}.${sig.slice(0, -1)}${alphabet[last ^ bits]}`);
+  for (const variant of variants) {
+    await assert.rejects(() => call('actorSession', 'establish', ctx, { authToken: variant }), /Invalid or expired token/);
+    await assert.rejects(() => call('lists', 'getUserLists', ctx, { authToken: variant }), /Invalid or expired token/);
+  }
+  assert.equal(ctx.rows.accessSessions.filter(s => s.revokedAt === undefined).length, 0, 'no live session was created');
+  await assert.rejects(() => call('lists', 'getUserLists', ctx, { authToken: fresh }), /restore your session/);
 });

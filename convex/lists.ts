@@ -108,11 +108,15 @@ export async function assertListQuota(
 }
 
 /** Lists may only be filed in the actor's own categories; another account's
- * category ID would let that account's later category writes touch this list. */
-async function requireOwnCategory(ctx: MutationCtx, actor: { did: string; legacyDid?: string }, categoryId: Id<"categories"> | undefined) {
-  if (!categoryId) return;
+ * category ID would let that account's later category writes touch this list.
+ * Returns the category to store: on create, a category deleted meanwhile (e.g. on
+ * another device) leaves the new list uncategorized instead of failing. */
+async function ownCategory(ctx: MutationCtx, actor: { did: string; legacyDid?: string }, categoryId: Id<"categories"> | undefined, { dropMissing = false } = {}) {
+  if (!categoryId) return undefined;
   const category = await ctx.db.get(categoryId);
+  if (!category && dropMissing) return undefined;
   if (!category || ![actor.did, actor.legacyDid].includes(category.ownerDid)) throw resourceUnavailable();
+  return categoryId;
 }
 
 /** Shared transaction-local first-list benefit for every template/list entry point. */
@@ -153,7 +157,7 @@ export const { public: createList, internal: createListInternal, replay: createL
     if (args.name.trim().length === 0) throw new Error("List name cannot be empty");
     if (args.name.length > 200) throw new Error("List name cannot exceed 200 characters");
 
-    await requireOwnCategory(ctx, ctx.actor, args.categoryId);
+    const categoryId = await ownCategory(ctx, ctx.actor, args.categoryId, { dropMissing: true });
 
     // Notes are uncapped and are not a "first list" for the referral grant.
     const { owner, isFirstList } = args.kind === "note"
@@ -164,7 +168,7 @@ export const { public: createList, internal: createListInternal, replay: createL
       assetDid: args.assetDid,
       name: args.name,
       ownerDid: ctx.actor.did,
-      categoryId: args.categoryId,
+      categoryId,
       createdAt: args.createdAt,
       kind: args.kind,
       noteSummary: args.kind === "note"
@@ -376,7 +380,7 @@ export const { public: updateListCategory, internal: updateListCategoryInternal 
       throw resourceUnavailable();
     }
 
-    await requireOwnCategory(ctx, ctx.actor, args.categoryId);
+    await ownCategory(ctx, ctx.actor, args.categoryId);
 
     await ctx.db.patch(args.listId, { categoryId: args.categoryId });
   },

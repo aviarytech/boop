@@ -388,9 +388,22 @@ add a `ctx.auth` branch.
   activity writes, and the Sites/DID resolver lookups (see inventory). None were called by
   any client.
 - **Cross-account references.** `createList` and `updateListCategory` accept only the
-  actor's own categories. `deleteUserData` declares its account resource at the boundary.
+  actor's own categories. On create, a category deleted meanwhile leaves the list
+  uncategorized instead of failing. `deleteUserData` declares its account resource at the boundary.
 - **HTTP status contract.** Category and billing routes returned 500 for credential
   failures; they now return 401/403 like every other route.
+
+- **Session revocation bypass (found by adversarial review).** `jose` decodes base64url
+  leniently: the unused low bits of a JWT signature's last character can vary, giving
+  several valid strings for one signature. Sessions and revocation tombstones are keyed
+  by the token string's hash, so a re-encoded copy of a logged-out, revoked or expired
+  token could establish a fresh session. This dates from #241. `verifyAuthToken` now
+  accepts only the canonical encoding, which is what the signer always produces, so
+  existing tokens are unaffected.
+- **Clients adopting refused DIDs.** On OTP login and session restore the client adopted
+  its newly minted `did:webvh` even when `/api/user/updateDID` failed. Since publishing and
+  ownership use the server's account DID, it now adopts the DID only after a successful
+  response; the upgrade is retried on the next restore.
 
 ### Credential attribution and PR #277
 
@@ -439,7 +452,11 @@ the additive `comment_deleted` type.
   legacy DID;
 - users sharing a `did`/`legacyDid` value;
 - anchors with `status` `inscribed`/`confirmed` not produced by `anchorListState`;
-- lists whose `categoryId` belongs to another owner.
+- lists whose `categoryId` belongs to another owner;
+- active publications served through the `/d/*` fallback whose list `ownerDid` matches no
+  user's `did`/`legacyDid` (for example a `did:temp`/`did:key` later replaced). These
+  links worked before and now return 404; repair them by rewriting `webvhDid` to the
+  owner's current DID, not by loosening the check.
 
 Any hits are evidence of earlier misuse and need an owner decision; this change does not
 rewrite them.
@@ -464,14 +481,17 @@ rewrite them.
 
 ### Verification for this change
 
-- `bun test`: 697 pass, 0 fail (683 on `main` plus 14 new):
+- `bun test`: 702 pass, 0 fail (683 on `main` plus 19 new):
   - 6 exhaustive boundary tests: all 172 public registrations, plus every HTTP route
     queried anonymously, with a forged key, and with a forged bearer token;
-  - 8 identity-binding regressions, covering re-mint, `updateDID`, publication DID,
+  - 9 identity-binding regressions, covering re-mint, `updateDID`, publication DID,
     resolver fallback, categories, persisted session/key attribution (activities and
     comments) and credential resolution.
   - The HTTP pass also fails on any read beyond the credential tables before rejection;
-    `/d/*` may additionally read the public resolution tables.
+    `/d/*` may additionally read the public resolution tables. Discovery includes
+    subdirectories such as `migrations/`.
+  - A token-revival regression (re-encoded signatures of a revoked token) and four
+    client tests: refused `updateDID` keeps the server DID on login and restore.
 - The boundary test was checked against deliberately reintroduced gaps: a public copy of a
   formerly internal query, and a raw mutation that trusts `checkedByDid`. It fails on both.
   Its HTTP pass found the 500-for-auth responses fixed above.

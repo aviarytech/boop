@@ -13,9 +13,13 @@ import { getFunctionName } from 'convex/server';
 
 process.env.JWT_SECRET = 'public-boundary-test-secret-not-a-deployed-credential';
 const outdir = 'tmp/public-function-boundary-test';
-const names = readdirSync('convex').filter(f => /^[A-Za-z]\w*\.ts$/.test(f)).map(f => f.slice(0, -3));
+// Every Convex module, including subdirectories such as migrations/ (Convex registers
+// those too); lib/ holds helpers and _generated/ is codegen.
+const names = readdirSync('convex', { recursive: true })
+  .filter(f => /^(?!lib\/|_generated\/)([\w-]+\/)*[A-Za-z]\w*\.ts$/.test(f) && !f.endsWith('.d.ts'))
+  .map(f => f.slice(0, -3));
 await build({
-  entryPoints: names.map(n => `convex/${n}.ts`), outdir, bundle: true, platform: 'node', format: 'esm',
+  entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error',
   define: { 'process.env.NODE_ENV': '"production"' },
 });
@@ -151,6 +155,7 @@ async function expectRejected(registration, extra, pattern) {
 }
 
 test('every public registration is classified', () => {
+  assert.ok(names.includes('migrations/remintUserDidDb'), 'subdirectory modules are scanned');
   assert.ok(registrations.length > 150, `discovered only ${registrations.length} public functions`);
   const ids = new Set(registrations.map(r => r.id));
   for (const id of [...Object.keys(PUBLIC), ...SELF_AUTHENTICATED, ...REJECTING]) assert.ok(ids.has(id), `stale classification: ${id}`);
