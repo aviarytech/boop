@@ -6,7 +6,7 @@
  */
 
 import { httpAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { requireAuth, AuthError } from "./lib/auth";
 import { assertDidLogOwnership, DidLogOwnershipError } from "./lib/didLogAuth";
 
@@ -89,7 +89,7 @@ export const getDidLog = httpAction(async (ctx, request) => {
       });
     }
 
-    const log = await ctx.runQuery(api.didLogs.getDidLogByPath, { path });
+    const log = await ctx.runQuery(internal.didLogs.getDidLogByPath, { path });
 
     if (!log) {
       return new Response("Not found", {

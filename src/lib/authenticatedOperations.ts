@@ -3,7 +3,6 @@ import { api } from "../../convex/_generated/api";
 import { getFunctionName } from "convex/server";
 export const authenticatedOperations = new Set([
   api.activity.getListActivity,
-  api.activity.recordActivity,
   api.assignees.assignItem,
   api.assignees.getItemAssignees,
   api.assignees.unassignItem,
@@ -17,7 +16,6 @@ export const authenticatedOperations = new Set([
   api.billing.getUserPlan,
   api.billing.getUserSubscription,
   api.bitcoinAnchors.anchorListState,
-  api.bitcoinAnchors.createAnchorRecord,
   api.bitcoinAnchors.getAnchor,
   api.bitcoinAnchors.getAnchorByTxid,
   api.bitcoinAnchors.getItemAnchors,
@@ -25,7 +23,6 @@ export const authenticatedOperations = new Set([
   api.bitcoinAnchors.getListAnchors,
   api.bitcoinAnchors.getListDataForAnchor,
   api.bitcoinAnchors.getPendingAnchors,
-  api.bitcoinAnchors.updateAnchorStatus,
   api.bitcoinAnchors.verifyAnchorState,
   api.categories.createCategory,
   api.categories.deleteCategory,
@@ -97,7 +94,6 @@ export const authenticatedOperations = new Set([
   api.notes.getNoteBody,
   api.notes.getNoteCards,
   api.notes.updateNoteBody,
-  api.notificationActions.sendListNotification,
   api.notificationActions.sendPushNotification,
   api.notifications.getUserSubscriptions,
   api.notifications.hasSubscription,

@@ -4,18 +4,19 @@ import { actorMutation } from "./lib/authenticated";
  * Queries for serving list resources publicly.
  *
  * These are used by the HTTP handlers to serve lists as Originals resources
- * at /{userPath}/resources/list-{id}.
+ * at /{userPath}/resources/list-{id}. They are internal: the HTTP handlers
+ * project the public fields, while these return whole list documents.
  */
 
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { internalQuery } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 /**
  * Get a list by its Convex ID, verifying ownership by DID.
  * Returns null if not found or owner doesn't match.
  */
-export const getPublicList = query({
+export const getPublicList = internalQuery({
   args: {
     listId: v.string(),
     ownerDid: v.string(),
@@ -43,7 +44,7 @@ export const getPublicList = query({
  * Get all items for a list (public view — no auth required).
  * Only returns non-sensitive fields.
  */
-export const getPublicListItems = query({
+export const getPublicListItems = internalQuery({
   args: {
     listId: v.id("lists"),
   },
@@ -81,36 +82,32 @@ export const getPublicListItems = query({
 });
 
 /**
- * Get a list by ID without owner check (used as fallback for legacy users
- * who don't have didLogs rows yet).
+ * Fallback for owners without a didLogs row at this path: a published list whose
+ * publication DID names this path. The controller derived from that DID must be the
+ * list owner's current or legacy DID, so one account's publication can never be
+ * served under another account's path. Returns null for every failure.
  */
-export const getListById = query({
-  args: { listId: v.string() },
+export const getPublishedListForPath = internalQuery({
+  args: { listId: v.string(), userPath: v.string() },
   handler: async (ctx, args) => {
+    let list;
     try {
-      const list = await ctx.db.get(args.listId as Id<"lists">);
-      if (!list) return null;
-      const pub = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", list._id)).first();
-      return pub?.status === "active" ? list : null;
+      list = await ctx.db.get(args.listId as Id<"lists">);
     } catch {
-      return null;
+      return null; // Invalid ID format
     }
-  },
-});
-
-/**
- * Get active publication for a list.
- */
-export const getActivePublicationByListId = query({
-  args: { listId: v.id("lists") },
-  handler: async (ctx, args) => {
-    const pub = await ctx.db
-      .query("publications")
-      .withIndex("by_list", (q) => q.eq("listId", args.listId))
-      .first();
-
-    if (!pub || pub.status !== "active") return null;
-    return pub;
+    if (!list) return null;
+    const pub = await ctx.db.query("publications").withIndex("by_list", q => q.eq("listId", list._id)).first();
+    // Expected: did:webvh:{scid}:{domain}:{userPath}/resources/list-{listId}
+    const suffix = `/resources/list-${list._id}`;
+    if (pub?.status !== "active" || !pub.webvhDid.endsWith(`:${args.userPath}${suffix}`)) return null;
+    const controllerDid = pub.webvhDid.slice(0, -suffix.length);
+    if (list.ownerDid !== controllerDid) {
+      const owner = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", list.ownerDid)).first()
+        ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", list.ownerDid)).first();
+      if (!owner || ![owner.did, owner.legacyDid].includes(controllerDid)) return null;
+    }
+    return { list, controllerDid };
   },
 });
 

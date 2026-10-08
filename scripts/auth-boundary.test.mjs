@@ -113,7 +113,7 @@ test('published reads remain public, outsider editing is denied, and unpublishin
 test('private resource aliases cannot bypass publication protection', async () => {
   const ctx=fixture();
   assert.equal(await call('didResources','getPublicList',ctx,{listId:'L1',ownerDid:'did:owner'}),null);
-  assert.equal(await call('didResources','getListById',ctx,{listId:'L1'}),null);
+  assert.equal(await call('didResources','getPublishedListForPath',ctx,{listId:'L1',userPath:'owner'}),null);
   assert.deepEqual(await call('didResources','getPublicListItems',ctx,{listId:'L1'}),[]);
 });
 test('bookmarks remain actor-owned across unpublishing, migration, and republication', async () => {
@@ -136,10 +136,10 @@ test('bookmarks remain actor-owned across unpublishing, migration, and republica
   await call('publication','unbookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
   assert.deepEqual(ctx.rows.bookmarks.map(b=>b._id),['owner-bookmark']);
   assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),false);
-  await call('publication','publishList',ctx,{authToken:ownerToken,listId:'L1',webvhDid:'did:webvh:public'});
+  await call('publication','publishList',ctx,{authToken:ownerToken,listId:'L1',webvhDid:'did:owner/resources/list-L1'});
   assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),false);
   assert.deepEqual(await call('lists','getUserLists',ctx,{authToken:strangerToken}),[]);
-  assert.ok(await call('publication','getPublicList',ctx,{webvhDid:'did:webvh:public'}));
+  assert.ok(await call('publication','getPublicList',ctx,{webvhDid:'did:owner/resources/list-L1'}));
   await call('publication','bookmarkList',ctx,{authToken:strangerToken,listId:'L1'});
   assert.equal(await call('publication','isBookmarked',ctx,{authToken:strangerToken,listId:'L1'}),true);
 
@@ -157,9 +157,13 @@ test('bookmark state and publication status still require authentication and sco
 });
 test('migrated owners can publish and edit categories, strangers cannot publish', async () => {
   const ctx=fixture({migrated:true});
-  await assert.rejects(() => call('publication','publishList',ctx,{authToken:strangerToken,listId:'L1',webvhDid:'did:pub',publisherDid:'did:legacy'}),/assertion/);
+  await assert.rejects(() => call('publication','publishList',ctx,{authToken:strangerToken,listId:'L1',webvhDid:'did:legacy/resources/list-L1',publisherDid:'did:legacy'}),/assertion/);
   await call('itemCategories','addListCategory',ctx,{authToken:ownerToken,listId:'L1',name:'Travel',emoji:'🧳'});
-  await call('publication','publishList',ctx,{authToken:ownerToken,listId:'L1',webvhDid:'did:pub'});
+  // The publication DID must be the publisher's own resource DID for this list.
+  for (const webvhDid of ['did:pub','did:stranger/resources/list-L1','did:owner/resources/list-L2'])
+    await assert.rejects(() => call('publication','publishList',ctx,{authToken:ownerToken,listId:'L1',webvhDid}),/own resource DID/);
+  assert.equal(ctx.rows.publications.length,0);
+  await call('publication','publishList',ctx,{authToken:ownerToken,listId:'L1',webvhDid:'did:legacy/resources/list-L1'});
   assert.equal(ctx.rows.publications[0].publishedByDid,'did:owner');
 });
 test('attachment registration is authorized and bound to the target item', async () => {

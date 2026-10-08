@@ -43,42 +43,8 @@ export const { public: sendPushNotification, internal: sendPushNotificationAuthe
   },
 });
 
-export const { public: sendListNotification, internal: sendListNotificationAuthenticatedInternal } = actorAction({
-  resources: args => ({ lists: [args.listId] }),
-  scope: "*",
-  args: {
-    listId: v.id("lists"),
-    excludeDid: v.optional(v.string()),
-    title: v.string(),
-    body: v.string(),
-    data: v.optional(v.any()),
-  },
-  handler: async (ctx, args): Promise<Array<{ platform: string; status: string }>> => {
-    type TokenRecord = { userDid: string; token: string; platform: string; webPushKeys?: { p256dh: string; auth: string } };
-    const tokens: TokenRecord[] = await ctx.runQuery(internal.notifications.getTokensForList, {
-      listId: args.listId,
-    });
-
-    const filtered: TokenRecord[] = args.excludeDid
-      ? tokens.filter((t: TokenRecord) => t.userDid !== args.excludeDid)
-      : tokens;
-
-    const results: PromiseSettledResult<void>[] = await Promise.allSettled(
-      filtered.map((tok: TokenRecord) => {
-        if (tok.platform === "ios") {
-          return sendAPNs(args.title, args.body, args.data, tok.token);
-        } else {
-          return sendWebPush(args.title, args.body, args.data, tok.token, tok.webPushKeys!);
-        }
-      })
-    );
-
-    return results.map((r: PromiseSettledResult<void>, i: number) => ({
-      platform: filtered[i].platform,
-      status: r.status,
-    }));
-  },
-});
+// List-wide pushes are server-originated only (sendListNotificationInternal): a
+// public variant let any editor push arbitrary text to every member and bookmarker.
 
 // ─── Internal variants (for scheduling from mutations) ──────────────
 

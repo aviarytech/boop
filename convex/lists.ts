@@ -107,6 +107,14 @@ export async function assertListQuota(
   return { owner, isFirstList: existingLists.length === 0 };
 }
 
+/** Lists may only be filed in the actor's own categories; another account's
+ * category ID would let that account's later category writes touch this list. */
+async function requireOwnCategory(ctx: MutationCtx, actor: { did: string; legacyDid?: string }, categoryId: Id<"categories"> | undefined) {
+  if (!categoryId) return;
+  const category = await ctx.db.get(categoryId);
+  if (!category || ![actor.did, actor.legacyDid].includes(category.ownerDid)) throw resourceUnavailable();
+}
+
 /** Shared transaction-local first-list benefit for every template/list entry point. */
 export async function grantFirstListReferral(ctx: MutationCtx, owner: Doc<"users"> | null, isFirstList: boolean) {
   // Award 30-day referral Pro to both referee and referrer on first list creation
@@ -144,6 +152,8 @@ export const { public: createList, internal: createListInternal, replay: createL
     // Input validation
     if (args.name.trim().length === 0) throw new Error("List name cannot be empty");
     if (args.name.length > 200) throw new Error("List name cannot exceed 200 characters");
+
+    await requireOwnCategory(ctx, ctx.actor, args.categoryId);
 
     // Notes are uncapped and are not a "first list" for the referral grant.
     const { owner, isFirstList } = args.kind === "note"
@@ -366,10 +376,7 @@ export const { public: updateListCategory, internal: updateListCategoryInternal 
       throw resourceUnavailable();
     }
 
-    if (args.categoryId) {
-      const category = await ctx.db.get(args.categoryId);
-      if (!category) throw new Error("Category not found");
-    }
+    await requireOwnCategory(ctx, ctx.actor, args.categoryId);
 
     await ctx.db.patch(args.listId, { categoryId: args.categoryId });
   },

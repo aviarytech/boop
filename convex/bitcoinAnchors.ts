@@ -81,9 +81,10 @@ function buildCanonicalState(
 
 /**
  * Internal mutation to create an anchor record.
- * Called by the action after computing the hash.
+ * Called by the action after computing the hash. Not public: a direct caller could
+ * record an arbitrary hash/snapshot instead of the server-computed state.
  */
-export const { public: createAnchorRecord, internal: createAnchorRecordInternal } = actorMutation({
+export const { internal: createAnchorRecordInternal } = actorMutation({
   authority: "owner",
   resources: args => ({ lists: [args.listId] }),
   scope: "items:write",
@@ -107,8 +108,10 @@ export const { public: createAnchorRecord, internal: createAnchorRecordInternal 
 
 /**
  * Update anchor status after Bitcoin inscription.
+ * Internal only: inscription status, txid and confirmations come from the inscription
+ * path, never from a list owner or agent key asserting them.
  */
-export const { public: updateAnchorStatus, internal: updateAnchorStatusInternal } = actorMutation({
+export const { internal: updateAnchorStatusInternal } = actorMutation({
   authority: "owner",
   resources: args => ({ anchors: [args.anchorId] }),
   scope: "items:write",

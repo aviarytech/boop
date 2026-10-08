@@ -9,7 +9,7 @@ import { authenticatedRequest } from "./lib/actor";
  */
 
 import { httpAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("Origin") || "*";
@@ -97,7 +97,7 @@ async function serveDidLog(
   headers: Record<string, string>
 ): Promise<Response> {
   try {
-    const log = await ctx.runQuery(api.didLogs.getDidLogByPath, { path: userPath });
+    const log = await ctx.runQuery(internal.didLogs.getDidLogByPath, { path: userPath });
 
     if (!log) {
       return new Response("DID not found", {
@@ -128,55 +128,34 @@ async function serveListResource(
 ): Promise<Response> {
   try {
     // Primary path: resolve owner DID via didLogs
-    const fullRecord = await ctx.runQuery(api.didLogs.getDidLogRecordByPath, { path: userPath });
+    const fullRecord = await ctx.runQuery(internal.didLogs.getDidLogRecordByPath, { path: userPath });
 
     let userDid: string | null = fullRecord?.userDid ?? null;
     let list = null;
 
     if (userDid) {
-      list = await ctx.runQuery(api.didResources.getPublicList, {
+      list = await ctx.runQuery(internal.didResources.getPublicList, {
         listId,
         ownerDid: userDid,
       });
     }
 
-    // Fallback path for legacy users without didLogs rows yet:
-    // verify the list is actively published and the publication DID matches this URL path.
+    // Fallback path for legacy users without didLogs rows yet: the publication
+    // DID must name this path and be controlled by the list owner.
     if (!list) {
-      const candidate = await ctx.runQuery(api.didResources.getListById, { listId });
-      if (!candidate) {
+      const published = await ctx.runQuery(internal.didResources.getPublishedListForPath, { listId, userPath });
+      if (!published) {
         return new Response("List not found", {
           status: 404,
           headers: { "Content-Type": "text/plain", ...headers },
         });
       }
-
-      const publication = await ctx.runQuery(api.didResources.getActivePublicationByListId, {
-        listId: candidate._id,
-      });
-      if (!publication) {
-        return new Response("List not found", {
-          status: 404,
-          headers: { "Content-Type": "text/plain", ...headers },
-        });
-      }
-
-      // Expected: did:webvh:{scid}:{domain}:{userPath}/resources/list-{listId}
-      const expectedSuffix = `:${userPath}/resources/list-${listId}`;
-      if (!publication.webvhDid.endsWith(expectedSuffix)) {
-        return new Response("List not found", {
-          status: 404,
-          headers: { "Content-Type": "text/plain", ...headers },
-        });
-      }
-
-      // Derive controller DID from resource DID by stripping /resources/... suffix
-      userDid = publication.webvhDid.replace(/\/resources\/list-.+$/, "");
-      list = candidate;
+      userDid = published.controllerDid;
+      list = published.list;
     }
 
     // Get list items
-    const items = await ctx.runQuery(api.didResources.getPublicListItems, {
+    const items = await ctx.runQuery(internal.didResources.getPublicListItems, {
       listId: list._id,
     });
 
@@ -240,28 +219,18 @@ async function toggleItem(
   try {
     const credentials = await authenticatedRequest(ctx as import("./_generated/server").ActionCtx, request);
     // Resolve list the same way as serveListResource (didLogs primary, publication fallback)
-    const fullRecord = await ctx.runQuery(api.didLogs.getDidLogRecordByPath, { path: userPath });
-    let userDid: string | null = fullRecord?.userDid ?? null;
+    const fullRecord = await ctx.runQuery(internal.didLogs.getDidLogRecordByPath, { path: userPath });
+    const userDid: string | null = fullRecord?.userDid ?? null;
     let list = null;
 
     if (userDid) {
-      list = await ctx.runQuery(api.didResources.getPublicList, { listId, ownerDid: userDid });
+      list = await ctx.runQuery(internal.didResources.getPublicList, { listId, ownerDid: userDid });
     }
 
     if (!list) {
-      const candidate = await ctx.runQuery(api.didResources.getListById, { listId });
-      if (!candidate) return new Response("List not found", { status: 404, headers });
-
-      const publication = await ctx.runQuery(api.didResources.getActivePublicationByListId, {
-        listId: candidate._id,
-      });
-      if (!publication) return new Response("List not found", { status: 404, headers });
-
-      const expectedSuffix = `:${userPath}/resources/list-${listId}`;
-      if (!publication.webvhDid.endsWith(expectedSuffix)) {
-        return new Response("List not found", { status: 404, headers });
-      }
-      list = candidate;
+      const published = await ctx.runQuery(internal.didResources.getPublishedListForPath, { listId, userPath });
+      if (!published) return new Response("List not found", { status: 404, headers });
+      list = published.list;
     }
 
     if (checked) {

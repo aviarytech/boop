@@ -20,7 +20,7 @@ import type { Doc, Id, TableNames } from "./_generated/dataModel";
  * and the user record itself.
  */
 export const { public: deleteUserData, internal: deleteUserDataInternal } = actorMutation({
-  resources: () => ({}),
+  resources: args => ({ accounts: [args.userId] }),
   scope: "*",
   allowDeletingAccount: true,
   args: {

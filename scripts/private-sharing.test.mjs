@@ -125,7 +125,6 @@ const contentWrites = [
   ["itemCategories", "addListCategory", { listId: "L", name: "New category", emoji: "a" }],
   ["presence", "heartbeat", { listId: "L" }],
   ["presence", "markOffline", { listId: "L" }],
-  ["activity", "recordActivity", { listId: "L", itemId: "I", type: "item_updated" }],
   ["attachments", "addAttachment", { itemId: "I", bucketKey: attachment.key, contentType: attachment.contentType, size: 10, sha256: "abc" }],
 ];
 
@@ -152,15 +151,17 @@ const ownerWrites = [
   ["lists", "updateItemViewMode", { listId: "L", itemViewMode: "alphabetical" }],
   ["lists", "addCustomAisle", { listId: "L", name: "New", emoji: "a" }],
   ["lists", "removeCustomAisle", { listId: "L", aisleId: "a" }],
-  ["publication", "publishList", { listId: "L", webvhDid: "did:webvh:public", celEnvelope: "new-owner-envelope" }],
+  ["publication", "publishList", { listId: "L", webvhDid: "did:owner/resources/list-L", celEnvelope: "new-owner-envelope" }],
   ["publication", "unpublishList", { listId: "L" }],
   ["bitcoinAnchors", "createAnchorRecord", { listId: "L", stateHash: "hash", stateSnapshot: "snapshot" }],
   ["bitcoinAnchors", "updateAnchorStatus", { anchorId: "ANCHOR", status: "confirmed" }],
   ["listGrants", "updateListGrant", { listId: "L", grantId: "G-L-viewer", role: "editor" }],
   ["listGrants", "revokeListGrant", { listId: "L", grantId: "G-L-viewer" }],
 ];
+// Anchor records are written only by the server anchoring path (#236); no public name.
+const internalOnly = new Set(["createAnchorRecord", "updateAnchorStatus"]);
 for (const role of roles) test(`${role}: owner-only metadata, publishing/envelopes, anchoring and grant management`, async () => {
-  for (const [module, name, args] of ownerWrites) for (const suffix of ["", "Internal"]) {
+  for (const [module, name, args] of ownerWrites) for (const suffix of internalOnly.has(name) ? ["Internal"] : ["", "Internal"]) {
     const ctx = make({ published: name === "unpublishList" });
     const before = structuredClone(ctx.rows);
     const invoke = () => call(module, name + suffix, ctx, { ...args, ...credentials(role) });
@@ -177,7 +178,7 @@ test("public reads remain public; bookmarks and historical authors are never edi
   ctx.rows.bookmarks.push({ _id: "BOOK", listId: "L", userDid: "did:outsider" });
   ctx.rows.items[0].createdByDid = "did:outsider";
   assert.ok(await call("publication", "getPublicList", ctx, { webvhDid: "did:webvh:public" }));
-  assert.ok(await call("didResources", "getListById", ctx, { listId: "L" }));
+  assert.ok(await call("didResources", "getPublicList", ctx, { listId: "L", ownerDid: "did:owner" }));
   assert.equal((await call("didResources", "getPublicListItems", ctx, { listId: "L" })).length, 1);
   for (const role of ["outsider", "pending", "viewer"]) {
     assert.ok(await call("lists", "getList", ctx, { listId: "L", ...credentials(role) }));
@@ -188,7 +189,7 @@ test("public reads remain public; bookmarks and historical authors are never edi
   }
   await call("publication", "unpublishList", ctx, { listId: "L", ...credentials("owner") });
   assert.equal(await call("lists", "getList", ctx, { listId: "L", ...credentials("outsider") }), null);
-  assert.equal(await call("didResources", "getListById", ctx, { listId: "L" }), null);
+  assert.equal(await call("didResources", "getPublicList", ctx, { listId: "L", ownerDid: "did:owner" }), null);
   assert.ok(await call("lists", "getList", ctx, { listId: "L", ...credentials("viewer") }), "accepted private access survives unpublish");
   await call("items", "checkItem", ctx, { itemId: "I", checkedAt: 4, ...credentials("editor") });
   assert.equal(ctx.rows.items[0].checkedByDid, "did:editor");
@@ -227,7 +228,7 @@ test("private missing/denied aliases and txid lookups have indistinguishable res
   for (const id of ["L", "missing"]) {
     assert.equal(await call("lists", "getList", ctx, { listId: id, ...auth }), null);
     assert.equal(await call("publication", "getPublicationStatus", ctx, { listId: id, ...auth }), null);
-    assert.equal(await call("didResources", "getListById", ctx, { listId: id }), null);
+    assert.equal(await call("didResources", "getPublicList", ctx, { listId: id, ownerDid: "did:owner" }), null);
     assert.deepEqual(await call("didResources", "getPublicListItems", ctx, { listId: id }), []);
   }
   for (const txid of ["tx", "missing"]) assert.equal(await call("bitcoinAnchors", "getAnchorByTxid", ctx, { txid, ...auth }), null);
@@ -241,7 +242,6 @@ test("cross-resource substitution fails even when both lists are editable", asyn
   const ctx = make(); ctx.rows.lists.find(l => l._id === "X").ownerDid = "did:owner";
   const before = structuredClone(ctx.rows);
   const cases = [
-    ["activity", "recordActivity", { listId: "L", itemId: "IX", type: "item_updated" }],
     ["didResources", "checkSharedItem", { listId: "L", itemId: "IX" }],
     ["didResources", "uncheckSharedItem", { listId: "L", itemId: "IX" }],
     ["items", "addItem", { listId: "L", parentId: "IX", name: "Cross child", createdAt: 4 }],
@@ -542,8 +542,8 @@ test("anchor verification is read-only for viewers/public readers and read-scope
       const keyVerify = () => call("bitcoinAnchors", "verifyAnchorStateInternal", ctx.action, { anchorId: "ANCHOR", apiKey: `key-${role}` });
       if (role === "outsider" && !published) await assert.rejects(keyVerify, denied);
       else await keyVerify();
-      await assert.rejects(() => call("bitcoinAnchors", "createAnchorRecord", ctx, { listId: "L", stateHash: "hash", stateSnapshot: "x", apiKey: `key-${role}` }), /Missing scope/);
-      if (role !== "owner") await assert.rejects(() => call("bitcoinAnchors", "createAnchorRecord", ctx, { listId: "L", stateHash: "hash", stateSnapshot: "x", ...credentials(role) }), denied);
+      await assert.rejects(() => call("bitcoinAnchors", "createAnchorRecordInternal", ctx, { listId: "L", stateHash: "hash", stateSnapshot: "x", apiKey: `key-${role}` }), /Missing scope/);
+      if (role !== "owner") await assert.rejects(() => call("bitcoinAnchors", "createAnchorRecordInternal", ctx, { listId: "L", stateHash: "hash", stateSnapshot: "x", ...credentials(role) }), denied);
     }
   }
 });
@@ -641,13 +641,13 @@ test("accepting, downgrading and revoking named access leaves public status unch
   await call("publication", "unpublishList", ctx, { listId: "L", ...owner });
   assert.deepEqual(ctx.rows.listGrants, otherGrants);
   assert.equal(await call("publication", "getPublicList", ctx, { webvhDid: "did:webvh:public" }), null);
-  assert.equal(await call("didResources", "getListById", ctx, { listId: "L" }), null);
+  assert.equal(await call("didResources", "getPublicList", ctx, { listId: "L", ownerDid: "did:owner" }), null);
   assert.deepEqual(await call("didResources", "getPublicListItems", ctx, { listId: "L" }), []);
   assert.equal((await call("lists", "getUserLists", ctx, credentials("outsider"))).some(row => row._id === "L"), false);
   assert.equal((await call("lists", "getList", ctx, { listId: "L", ...credentials("editor") })).canEdit, true);
   assert.equal((await call("lists", "getList", ctx, { listId: "L", ...credentials("viewer") })).canEdit, false);
   await call("items", "uncheckItem", ctx, { itemId: "I", ...credentials("editor") });
-  await call("publication", "publishList", ctx, { listId: "L", webvhDid: "did:webvh:public", ...owner });
+  await call("publication", "publishList", ctx, { listId: "L", webvhDid: "did:owner/resources/list-L", ...owner });
   assert.deepEqual(ctx.rows.listGrants, otherGrants);
   assert.equal((await call("lists", "getList", ctx, { listId: "L", ...credentials("outsider") })).canEdit, false);
 });

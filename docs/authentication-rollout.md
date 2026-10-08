@@ -343,3 +343,108 @@ email addresses, normalized/case-insensitive local-part matches, generic default
 and hidden characters. Preview, inbox, queued mail and acceptance all enforce this
 policy, including historical pending invitations. The account email remains private.
 The existing general attribution masking contract above is unchanged.
+
+## #236 closure: inventory, identity binding and remaining direct entry points
+
+[`authenticated-function-inventory.md`](authenticated-function-inventory.md) classifies
+every public Convex function. `scripts/public-function-boundary.test.mjs` enforces it
+against the real registrations: any new public function must be actor-wrapped or
+explicitly classified, and every protected function must reject anonymous, unknown-key
+and asserted-identity (current and legacy DID) calls before any read or write.
+
+### Authentication integration: keep the session-record boundary
+
+The boundary from #241 stays: browser and Capacitor send the OTP-issued JWT as
+`authToken`, which must match a live `accessSessions` row; agents send `apiKey`. Convex's
+built-in `ctx.auth` (`auth.config.ts` custom JWT/OIDC provider) was considered and not
+adopted, because:
+
+- it validates asymmetric (RS256/ES256) tokens against a JWKS endpoint, while the
+  Turnkey/OTP flow issues HS256 tokens under `JWT_SECRET`. Switching would need new
+  signing keys, a published JWKS and a re-login for every session, which is an
+  infrastructure decision this change does not need;
+- `ctx.auth` identities are stateless. The `accessSessions` record is what makes logout,
+  expiry and persistent-mobile-session revocation invalidate reactive queries;
+- API keys would still need the argument path, so it would add a second boundary rather
+  than replace one.
+
+The session boundary already gives server-derived identity for every caller. If a JWKS
+issuer is adopted later, `authenticate()` in `convex/lib/actor.ts` is the single place to
+add a `ctx.auth` branch.
+
+### Gaps closed
+
+- **Account DID binding.** `/api/user/remintDid` let an authenticated user move their
+  account onto any `did:webvh`, including another user's. Ownership is DID-based, so that
+  gave owner access to the victim's lists and keys. Re-mint and `/api/user/updateDID` now
+  require a `did:webvh` minted at the caller's own path. `applyRemint` refuses a DID held
+  by another account, and its publication prefix rewrite matches only `{oldDid}/…`.
+  `updateDID` no longer accepts `did:key`, which only server-side login derives.
+- **Publication DID binding.** `publishList` requires `webvhDid` to be
+  `{actor current or legacy DID}/resources/list-{listId}` (what every client sends). The
+  `/d/*` fallback serves a list under a path only when the publication's controller is the
+  list owner's current or legacy DID.
+- **Internal operations no longer public.** Anchor record writes, list-wide pushes,
+  activity writes, and the Sites/DID resolver lookups (see inventory). None were called by
+  any client.
+- **Cross-account references.** `createList` and `updateListCategory` accept only the
+  actor's own categories. `createFromList` lets editors save private templates, but only the
+  owner can publish a list's contents as a public template. `deleteUserData` declares its
+  account resource at the boundary.
+
+### Credential attribution and PR #277
+
+Every actor-wrapped call resolves `ctx.actor.credential`: the `accessSessions` row or the
+specific `agentApiKeys` row, with that key's scopes and revocation checked in the same
+transaction (#273, tested here). PR #277 (#237) binds that credential into signed action
+records for item/list actions. This change deliberately does not add credential columns
+to `activities`, `presence` or `comments`: assignment activity is written via `items.ts`
+call sites that #277 restructures. Thread the credential there after #277 merges.
+
+### Rollout order (coordinated with #262)
+
+1. **Deploy Convex first.** Everything here tightens the server. No schema change, no new
+   client call, no new public name. There is no ordering in which access widens.
+2. Then deploy web/native. The only client change is the regenerated session registry,
+   which drops four names no UI calls. Older clients keep working because none call the
+   removed names, and every client already sends a self-path `did:webvh` and an own-DID
+   `webvhDid`.
+3. Degradation: a stale or forked client that sends a foreign category, a non-self
+   publication DID, or a `did:key` to `updateDID` gets an error; nothing is written. A
+   failed re-mint keeps the old DID (the client retries on a later load).
+4. Rollback: reverting the backend reopens the gaps. Repair forward instead, as with #241.
+5. #262 is unchanged: the deployed-client inventory and staging evidence above remain
+   pending, and #262 still requires that evidence before recipient grants are enabled.
+
+**Recommended read-only data checks before or after deploy (not run here):**
+- publications whose `webvhDid` controller is neither the list owner's current nor
+  legacy DID;
+- users sharing a `did`/`legacyDid` value;
+- anchors with `status` `inscribed`/`confirmed` not produced by `anchorListState`;
+- lists whose `categoryId` belongs to another owner.
+
+Any hits are evidence of earlier misuse and need an owner decision; this change does not
+rewrite them.
+
+### Follow-ups found during the audit (outside #236 scope)
+
+- Push registration re-binds an existing token or endpoint to whoever presents it, and
+  `registerPushToken` accepts any URL for `web`. That URL is later POSTed to server-side.
+  Validate push-service hosts and insert rather than re-bind.
+- `users.getUsersByDids` has no input cap and scans users per DID.
+- Anonymous `publication.getPublicList` does not apply the owner-deletion barrier that
+  `canUserViewList` applies.
+- An `items:write` key can delete lists it owns (owner authority, write scope). Confirm
+  this is intended.
+- `/api/attachments/download` does not register a never-used cookie JWT (fails closed).
+
+### Verification for this change
+
+- `bun test`: 696 pass, 0 fail (683 on `main` plus 13 new). This includes 5 exhaustive
+  boundary tests over all 172 public registrations and 8 identity-binding regressions. Seven
+  of those fail against `main`'s versions of the changed files. The eighth documents existing
+  per-key credential resolution, carried over from #273.
+- The boundary test was checked against deliberately reintroduced gaps: a public copy of a
+  formerly internal query, and a raw mutation that trusts `checkedByDid`. It fails on both.
+- Not verified: live Convex deployment and codegen, OTP/login on deployed web/iOS/Android,
+  real did:webvh re-mint against production data, and the data checks above.
