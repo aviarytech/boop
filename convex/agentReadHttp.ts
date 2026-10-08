@@ -61,3 +61,41 @@ export const getListWithItems = httpAction(async (ctx, request) => {
     );
   }
 });
+
+/**
+ * GET /api/v1/action-records?itemId=<id>  (requires "items:read")
+ * GET /api/v1/action-records?listId=<id>  (requires "lists:read"; list-level records)
+ *
+ * Signed action records in the shape shared/actionRecord.ts verifyActionRecord
+ * takes, so a caller can verify them without trusting this server.
+ * Response: { "records": [...] }
+ */
+export const getActionRecords = httpAction(async (ctx, request) => {
+  try {
+    const params = new URL(request.url).searchParams;
+    const itemId = params.get("itemId");
+    const listId = params.get("listId");
+    if (!itemId === !listId) {
+      return errorResponse(request, "Provide exactly one of itemId or listId");
+    }
+
+    const credentials = await authenticatedRequest(ctx, request);
+    const records = itemId
+      ? await ctx.runQuery(internal.actionRecords.getItemActionRecordsInternal, {
+          itemId: itemId as Id<"items">,
+          ...credentials,
+        })
+      : await ctx.runQuery(internal.actionRecords.getListActionRecordsInternal, {
+          listId: listId as Id<"lists">,
+          ...credentials,
+        });
+    return jsonResponse(request, { records });
+  } catch (error) {
+    console.error("[agentReadHttp] getActionRecords error:", error);
+    return handlerErrorResponse(
+      request,
+      error,
+      "Failed to get action records"
+    );
+  }
+});

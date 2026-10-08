@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as actionRecordSigning from "../actionRecordSigning.js";
+import type * as actionRecords from "../actionRecords.js";
 import type * as activity from "../activity.js";
 import type * as activityHttp from "../activityHttp.js";
 import type * as actorSession from "../actorSession.js";
@@ -44,6 +46,8 @@ import type * as invitations from "../invitations.js";
 import type * as invitationMail from "../invitationMail.js";
 import type * as items from "../items.js";
 import type * as itemsHttp from "../itemsHttp.js";
+import type * as lib_actionRecordSigner from "../lib/actionRecordSigner.js";
+import type * as lib_actionRecords from "../lib/actionRecords.js";
 import type * as lib_actor from "../lib/actor.js";
 import type * as lib_analytics from "../lib/analytics.js";
 import type * as lib_apiKeyHelpers from "../lib/apiKeyHelpers.js";
@@ -112,6 +116,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  actionRecordSigning: typeof actionRecordSigning;
+  actionRecords: typeof actionRecords;
   activity: typeof activity;
   activityHttp: typeof activityHttp;
   actorSession: typeof actorSession;
@@ -148,6 +154,8 @@ declare const fullApi: ApiFromModules<{
   invitationMail: typeof invitationMail;
   items: typeof items;
   itemsHttp: typeof itemsHttp;
+  "lib/actionRecordSigner": typeof lib_actionRecordSigner;
+  "lib/actionRecords": typeof lib_actionRecords;
   "lib/actor": typeof lib_actor;
   "lib/analytics": typeof lib_analytics;
   "lib/apiKeyHelpers": typeof lib_apiKeyHelpers;

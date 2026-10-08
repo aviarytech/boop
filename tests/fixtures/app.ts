@@ -14,6 +14,8 @@ export interface ScenarioOptions {
   authenticated?: boolean;
   onboarding?: boolean;
   inviteNudgeDone?: boolean;
+  /** Status every recorded action settles to (default signed). */
+  actionRecordStatus?: 'pending' | 'signed' | 'failed' | 'unsigned';
 }
 
 interface FixtureState {

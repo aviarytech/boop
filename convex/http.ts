@@ -32,7 +32,7 @@ import { getListActivity as getListActivityHttp } from "./activityHttp";
 import { stripeWebhook, createCheckout, createPortal, getSubscription } from "./billingHttp";
 import { resolveSiteHost, resolveSiteAsset } from "./sitesHttp";
 import { createApiKey, listApiKeys, revokeApiKey } from "./apiKeysHttp";
-import { getLists, getListWithItems } from "./agentReadHttp";
+import { getActionRecords, getLists, getListWithItems } from "./agentReadHttp";
 const RATE_LIMITS = {
   initiate: { windowMs: 60000, maxAttempts: 5 },
   verify: { windowMs: 60000, maxAttempts: 5 },
@@ -442,6 +442,8 @@ http.route({ path: "/api/v1/lists", method: "GET", handler: getLists });
 http.route({ path: "/api/v1/lists", method: "OPTIONS", handler: corsHandler });
 http.route({ path: "/api/v1/lists/items", method: "GET", handler: getListWithItems });
 http.route({ path: "/api/v1/lists/items", method: "OPTIONS", handler: corsHandler });
+http.route({ path: "/api/v1/action-records", method: "GET", handler: getActionRecords });
+http.route({ path: "/api/v1/action-records", method: "OPTIONS", handler: corsHandler });
 
 // ============================================================================
 // Health check endpoint (public, no auth)

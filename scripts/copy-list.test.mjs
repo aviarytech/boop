@@ -56,6 +56,8 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
   let seq = 0;
   return {
     rows,
+    // copyList queues signing of its list.created action record.
+    scheduler: { runAfter: async () => {} },
     db: {
       get: async (id) => byId.get(id) ?? null,
       patch: async (id, fields) => Object.assign(byId.get(id), fields),
@@ -172,6 +174,11 @@ test("drops vcProofs — they attest actions against the source asset", async ()
 
   const copied = ctx.rows.items.find((i) => i.listId === listId);
   assert.equal(copied.vcProofs, undefined, "carrying these would claim another asset's provenance");
+  // The copy itself is one recorded action; copied items get no creation record.
+  assert.deepEqual(ctx.rows.actionRecords.map((r) => JSON.parse(r.payload)).map((p) => [p.action, p.subject, p.origin]), [
+    ["list.created", { listId, listAssetDid: MINTED.assetDid }, { kind: "copy", sourceListId: "L1" }],
+  ]);
+  assert.equal(ctx.rows.lists.find((l) => l._id === listId).vcProof, undefined);
 });
 
 test("an outsider cannot copy a private list", async () => {

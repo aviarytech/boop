@@ -237,6 +237,12 @@ with a key.
   - response: `{ "lists": [...] }`
 - `GET /api/v1/lists/items?listId=<id>` — get a list and its items (`items:read`).
   - response: `{ "list": {...} | null, "items": [...] }`
+- `GET /api/v1/action-records?itemId=<id>` — signed action records for an item (`items:read`).
+- `GET /api/v1/action-records?listId=<id>` — a list's own records, e.g. created/renamed (`lists:read`).
+  - response: `{ "records": [...] }`, newest first, at most 50. Each record carries the exact
+    signed `payload`, its `digest`, `status` (`pending` | `signed` | `failed` | `unsigned`) and,
+    once signed, `signature`, `publicKeyMultibase` and `verificationMethod`. See
+    [action records](docs/action-records.md) for the payload and how to verify it independently.
 
 ### Writes (JWT or `X-API-Key`)
 
@@ -247,9 +253,11 @@ The existing mutation endpoints now also accept an `X-API-Key`. All require the
 - `POST /api/items/add`, `POST /api/items/check`, `POST /api/items/uncheck`,
   `POST /api/items/remove`, `POST /api/items/reorder`
 
-Item writes made via an API key are attributed to the key's owner DID (or its
-`agentDid`, if set). The item-authorship credential remains an unsigned
-placeholder — cryptographic signing is out of scope for now.
+Writes made via an API key are authorized by the key's owner account. Creating,
+completing and reopening items and creating or renaming lists each write an
+[action record](docs/action-records.md) naming that account and the API key row
+used; it is signed asynchronously with the account's Turnkey-held key. A
+caller-supplied DID or a key's `agentDid` never establishes who acted.
 
 ### Scopes
 

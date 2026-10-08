@@ -8,8 +8,50 @@
 
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { createListOwnershipVC } from "../lists";
+import type { Id } from "../_generated/dataModel";
 import { upsertListEnvelope } from "../lib/listEnvelope";
+
+/**
+ * Rebuilds a legacy list's UNSIGNED ownership placeholder for its new asset DID.
+ * The placeholder embeds assetDid, so it must follow the rewrite. Live writers
+ * no longer issue these (see lib/actionRecords.ts); only this migration does.
+ */
+function createListOwnershipVC(
+  listId: Id<"lists">,
+  assetDid: string,
+  ownerDid: string,
+  listName: string,
+  createdAt: number
+) {
+  const fullVc = {
+    "@context": [
+      "https://www.w3.org/2018/credentials/v1",
+      "https://originals.tech/credentials/v1"
+    ],
+    type: ["VerifiableCredential", "ListOwnershipCredential"],
+    id: `urn:uuid:${crypto.randomUUID()}`,
+    issuer: ownerDid,
+    issuanceDate: new Date(createdAt).toISOString(),
+    credentialSubject: {
+      id: ownerDid,
+      listId: listId.toString(),
+      assetDid,
+      listName,
+      role: "owner",
+    },
+  };
+
+  return {
+    type: "ListOwnershipCredential",
+    issuer: ownerDid,
+    issuanceDate: createdAt,
+    credentialSubject: {
+      id: assetDid,
+      ownerDid,
+    },
+    proof: JSON.stringify(fullVc),
+  };
+}
 
 /** Rows still carrying a pre-2.0.0 genesis DID (real or `temp-` placeholder). */
 export function needsCelMigration(assetDid: string | undefined | null): boolean {

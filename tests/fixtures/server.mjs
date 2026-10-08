@@ -4,6 +4,10 @@ import { createServer } from 'vite';
 import { randomUUID } from 'node:crypto';
 import { BUILTIN_TEMPLATES } from '../../convex/lib/templateCatalog.ts';
 import { revision } from '../../shared/replay.ts';
+import { getPublicKeyAsync, signAsync } from '@noble/ed25519';
+import {
+  actionRecordSigningInput, buildActionRecord, ed25519Multikey, encodeSignature,
+} from '../../shared/actionRecord.ts';
 
 const TS_ZERO = 'AAAAAAAAAAA=';
 const accounts = new Map();
@@ -13,7 +17,36 @@ const user = {
   email: 'e2e@example.test', did: 'did:webvh:e2e:boop.ad:user-e2e', displayName: 'E2E User',
 };
 
-function seed(options) {
+// Test-only stand-in for the account's Turnkey-held Ed25519 key.
+const SIGNING_SEED = new Uint8Array(32).fill(7);
+const signingKey = ed25519Multikey(await getPublicKeyAsync(SIGNING_SEED));
+
+const listSubject = list => ({ listId: list._id, ...(list.assetDid ? { listAssetDid: list.assetDid } : {}) });
+const itemSubject = (account, item) => {
+  const list = account.lists.find(l => l._id === item.listId);
+  return { ...(list ? listSubject(list) : { listId: item.listId }), itemId: item._id };
+};
+
+// Mirrors convex/lib/actionRecords.ts recordActions, except the signer settles
+// at once to options.actionRecordStatus. Shape matches convex/actionRecords.ts evidence().
+async function recordAction(account, change) {
+  const status = account.options.actionRecordStatus ?? 'signed';
+  const { payload, digest } = buildActionRecord(change, {
+    occurredAt: Date.now(), owner: { did: user.did, userId: user._id },
+    credential: { kind: 'session', id: `actorSessions:${account.key}` },
+  });
+  const record = { _id: `actionRecords:${++account.nextId}`, payload, digest, status,
+    listId: change.subject.listId, ownerUserId: user._id };
+  if (change.subject.itemId) record.itemId = change.subject.itemId;
+  if (status === 'signed') Object.assign(record, {
+    signature: encodeSignature(await signAsync(actionRecordSigningInput(payload), SIGNING_SEED)),
+    publicKeyMultibase: signingKey, verificationMethod: `did:key:${signingKey}#${signingKey}`, signedAt: Date.now(),
+  });
+  if (status === 'failed') record.error = 'signing_key_unavailable';
+  account.actionRecords.unshift(record);
+}
+
+async function seed(options) {
   const key = randomUUID();
   const token = `e2e.${Buffer.from(JSON.stringify({ sub: key, exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url')}.fixture`;
   const lists = Array.from({ length: options.lists ?? 0 }, (_, i) => ({
@@ -26,7 +59,11 @@ function seed(options) {
     createdAt: i + 1, updatedAt: i + 1, order: i,
   }));
   const account = { key, token, options, lists, items, published: options.published ?? false,
-    sequence: 0, receipts: [], calls: [], errors: [], nextId: 0 };
+    sequence: 0, receipts: [], calls: [], errors: [], nextId: 0, actionRecords: [] };
+  for (const list of lists) await recordAction(account, { action: 'list.created', subject: listSubject(list),
+    before: null, after: { name: list.name, kind: 'list' } });
+  for (const item of items) await recordAction(account, { action: 'item.created', subject: itemSubject(account, item),
+    before: null, after: { name: item.name, checked: false } });
   accounts.set(token, account);
   return account;
 }
@@ -68,6 +105,8 @@ function query(account, path, args) {
     case 'referrals:getReferralCode': return { code: 'e2e-code' };
     case 'notifications:hasSubscription': return false;
     case 'lists:getListEnvelope': return null;
+    case 'actionRecords:getListActionRecords': return account.actionRecords.filter(r => r.listId === args.listId && !r.itemId);
+    case 'actionRecords:getItemActionRecords': return account.actionRecords.filter(r => r.itemId === args.itemId);
     case 'listGrants:getSharedWithMe':
     case 'listGrants:getListGrants':
     case 'invitations:getListInvitations':
@@ -113,6 +152,14 @@ async function mutation(account, path, args) {
         assetDid: args.assetDid, ownerDid: user.did, createdAt: Date.now() });
       account.items.push(...template.items.map((item, i) => ({ ...item, _id: `items:template${++account.nextId}`,
         _creationTime: Date.now(), listId: result, checked: false, createdByDid: user.did, createdAt: Date.now(), order: i })));
+      const origin = { kind: 'template', source: `builtin:${args.builtinId}` };
+      const created = account.lists.at(-1);
+      await recordAction(account, { action: 'list.created', subject: listSubject(created),
+        before: null, after: { name: created.name, kind: 'list' }, origin });
+      for (const item of account.items.filter(i => i.listId === result)) {
+        await recordAction(account, { action: 'item.created', subject: itemSubject(account, item),
+          before: null, after: { name: item.name, checked: false }, origin });
+      }
       break;
     }
     case 'lists:createList': {
@@ -120,27 +167,43 @@ async function mutation(account, path, args) {
       result = `lists:created${++account.nextId}`;
       account.lists.push({ _id: result, _creationTime: Date.now(), name: args.name,
         assetDid: args.assetDid, ownerDid: user.did, createdAt: args.createdAt });
+      await recordAction(account, { action: 'list.created', subject: listSubject(account.lists.at(-1)),
+        before: null, after: { name: args.name, kind: args.kind ?? 'list' } });
       break;
     }
     case 'lists:renameList':
       if (!list) throw new Error('List not found');
+      await recordAction(account, { action: 'list.renamed', subject: listSubject(list),
+        before: { name: list.name }, after: { name: args.name } });
       list.name = args.name;
       break;
-    case 'lists:deleteList': account.lists = account.lists.filter(l => l._id !== args.listId); break;
+    case 'lists:deleteList':
+      account.lists = account.lists.filter(l => l._id !== args.listId);
+      account.actionRecords = account.actionRecords.filter(r => r.listId !== args.listId);
+      break;
     case 'items:addItem': {
       result = `items:created${++account.nextId}`;
       account.items.push({ _id: result, _creationTime: Date.now(), listId: args.listId,
         name: args.name, checked: false, createdByDid: user.did,
         createdAt: args.createdAt, updatedAt: args.createdAt, order: account.items.length });
+      await recordAction(account, { action: 'item.created', subject: itemSubject(account, account.items.at(-1)),
+        before: null, after: { name: args.name, checked: false } });
       break;
     }
     case 'items:checkItem':
     case 'items:uncheckItem':
       if (!item) throw new Error('Item not found');
+      await recordAction(account, endpoint === 'items:checkItem'
+        ? { action: 'item.completed', subject: itemSubject(account, item), before: { checked: item.checked },
+          after: { checked: true, checkedAt: Number.isFinite(args.checkedAt) ? args.checkedAt : null } }
+        : { action: 'item.reopened', subject: itemSubject(account, item), before: { checked: item.checked }, after: { checked: false } });
       item.checked = endpoint === 'items:checkItem';
       item.updatedAt = Date.now();
       break;
-    case 'items:removeItem': account.items = account.items.filter(i => i._id !== args.itemId); break;
+    case 'items:removeItem':
+      account.items = account.items.filter(i => i._id !== args.itemId);
+      account.actionRecords = account.actionRecords.filter(r => r.itemId !== args.itemId);
+      break;
     case 'publication:publishList': account.published = true; break;
     case 'publication:unpublishList': account.published = false; break;
     case 'referrals:getOrCreateReferralCode': result = 'e2e-code'; break;
@@ -178,7 +241,7 @@ const backend = Bun.serve({
       if (server.upgrade(request, { data: { queries: new Map(), version: 0, account: null, pending: Promise.resolve() } })) return;
     }
     if (url.pathname === '/__e2e/seed' && request.method === 'POST') {
-      const account = seed(await request.json());
+      const account = await seed(await request.json());
       return Response.json({ token: account.token, user });
     }
     if (url.pathname === '/__e2e/start') {

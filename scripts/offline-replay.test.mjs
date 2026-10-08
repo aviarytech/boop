@@ -2,12 +2,15 @@ import 'fake-indexeddb/auto';
 import { openDB } from 'idb';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { getFunctionName } from 'convex/server';
 import { loadReplayModules, replayFixture } from './helpers/replay-fixture.mjs';
 const modules = await loadReplayModules('offline-replay-tests');
 const { offline: store, sync: { SyncManager }, shared: { revision }, optimistic: { projectItems } } = modules;
 const queue = (f, type, payload) => store.queueMutation(f.session.accountId, { type, payload }, structuredClone(f.rows.items));
 const pending = f => store.getQueuedMutations(f.session.accountId);
 const all = f => store.getOperations(f.session.accountId);
+const notifications = f => f.effects.filter(([, ref]) => getFunctionName(ref).startsWith('notificationActions:'));
+const recorded = (f, action, itemId) => (f.rows.actionRecords ?? []).map(r => JSON.parse(r.payload)).filter(p => p.action === action && (!itemId || p.subject.itemId === itemId));
 const meta = async (f, operationId, items = f.rows.items) => ({ operationId, accountId: f.session.accountId, expected: await Promise.all(items.map(async i => ({ id: i._id, revision: await revision(i) }))) });
 
 test('offline check then uncheck survives reload, clock skew, and a lost check acknowledgment without duplicate recurring items or proof records', async () => {
@@ -29,9 +32,13 @@ test('offline check then uncheck survives reload, clock skew, and a lost check a
   await new SyncManager().sync(f.client, f.session);
   assert.equal(f.rows.items[0].checked, false);
   assert.equal(f.rows.items.length, 2);
-  assert.equal(f.rows.items[0].vcProofs.length, 2);
-  assert.equal(f.rows.items[0].vcProofs[0].proof, 'do-not-replace');
-  assert.equal(f.effects.length, 1);
+  // Historical evidence is untouched; each replayed action is recorded exactly once.
+  assert.deepEqual(f.rows.items[0].vcProofs.map(p => p.proof), ['do-not-replace']);
+  assert.equal(recorded(f, 'item.completed', 'I1').length, 1);
+  assert.equal(recorded(f, 'item.reopened', 'I1').length, 1);
+  assert.equal(recorded(f, 'item.created').length, 1);
+  assert.deepEqual(recorded(f, 'item.created')[0].origin, { kind: 'recurrence', sourceItemId: 'I1' });
+  assert.equal(notifications(f).length, 1);
   assert.equal(f.rows.offlineReceipts.length, 2);
   assert.equal((await pending(f)).length, 0);
 });
@@ -48,7 +55,8 @@ test('duplicate names are distinct creates, and retrying either stable ID never 
   await new SyncManager().sync(f.client, f.session);
   assert.equal(f.rows.items.length, 3);
   assert.equal(f.rows.offlineReceipts.length, 2);
-  assert.equal(f.effects.length, 2);
+  assert.equal(notifications(f).length, 2);
+  assert.equal(recorded(f, 'item.created').length, 2);
 });
 
 test('an offline create can be checked and unchecked through its stable temporary ID', async () => {
@@ -60,7 +68,9 @@ test('an offline create can be checked and unchecked through its stable temporar
   await new SyncManager().sync(f.client, f.session);
   assert.equal((await pending(f)).length, 0);
   assert.equal(f.rows.items.find(i => i.name === 'New').checked, false);
-  assert.equal(f.rows.items.find(i => i.name === 'New').vcProofs.length, 2);
+  const created = f.rows.items.find(i => i.name === 'New');
+  assert.equal(created.vcProofs, undefined, 'new items get action records, not placeholders');
+  assert.deepEqual(['item.created', 'item.completed', 'item.reopened'].map(action => recorded(f, action, created._id).length), [1, 1, 1]);
 });
 
 test('concurrent same-revision edits admit one write; conflicts retain ordered successors and support deliberate rebase', async () => {
@@ -118,7 +128,8 @@ test('same operation ID is immutable; concurrent duplicate delivery and deletion
   const f = await replayFixture(modules);
   const args = { itemId: 'I1', checkedAt: 10, replay: await meta(f, 'one-check') };
   const [a, b] = await Promise.all([f.call('items', 'checkItemReplay', args), f.call('items', 'checkItemReplay', args)]);
-  assert.deepEqual(a, b); assert.equal(f.rows.items[0].vcProofs.length, 2);
+  assert.deepEqual(a, b); assert.equal(f.rows.items[0].vcProofs.length, 1);
+  assert.equal(recorded(f, 'item.completed', 'I1').length, 1);
   await assert.rejects(f.call('items', 'checkItemReplay', { ...args, checkedAt: 11 }), /reused/);
   const remove = { itemId: 'I1', replay: await meta(f, 'one-delete') };
   const first = await f.call('items', 'removeItemReplay', remove);
