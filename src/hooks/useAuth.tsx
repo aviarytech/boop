@@ -195,7 +195,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             });
 
             const httpUrl = getConvexHttpUrl();
-            await fetch(`${httpUrl}/api/user/updateDID`, {
+            const updated = await fetch(`${httpUrl}/api/user/updateDID`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -204,6 +204,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
               credentials: "include",
               body: JSON.stringify({ did: webvhResult.did }),
             });
+            // Only adopt a DID the server accepted; ownership and publishing are checked
+            // against the server's account DID. The upgrade is retried on the next restore.
+            if (!updated.ok) throw new Error(`updateDID failed: ${updated.status}`);
 
             // Store DID log in Convex for resolution
             await fetch(`${httpUrl}/api/did/log`, {
@@ -345,17 +348,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
               email: serverUser.email,
               subOrgId: serverUser.turnkeySubOrgId,
             });
-            userDid = webvhResult.did;
-
-            await fetch(`${httpUrl}/api/user/updateDID`, {
+            const updated = await fetch(`${httpUrl}/api/user/updateDID`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${jwtToken}`,
               },
               credentials: "include",
-              body: JSON.stringify({ did: userDid }),
+              body: JSON.stringify({ did: webvhResult.did }),
             });
+            // Keep the server's DID unless it accepted the new one (retried on restore).
+            if (!updated.ok) throw new Error(`updateDID failed: ${updated.status}`);
+            userDid = webvhResult.did;
 
             console.log("[useAuth] Upgraded user DID to did:webvh:", userDid);
           } catch (didErr) {

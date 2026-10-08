@@ -1,6 +1,7 @@
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { actorQuery, actorMutation } from "./lib/authenticated";
 import { resourceUnavailable } from "./lib/authError";
+import { withoutCredential } from "./lib/actor";
 /**
  * Comments API - Threaded discussions on items for shared lists.
  * Enables collaboration through item-level comments.
@@ -50,7 +51,7 @@ export const { public: getItemComments, internal: getItemCommentsInternal } = ac
       .collect();
 
     // Sort by createdAt ascending (oldest first for a thread)
-    return comments.sort((a, b) => a.createdAt - b.createdAt);
+    return comments.sort((a, b) => a.createdAt - b.createdAt).map(withoutCredential);
   },
 });
 
@@ -89,6 +90,7 @@ export const { public: addComment, internal: addCommentInternal } = actorMutatio
     return await ctx.db.insert("comments", {
       itemId: args.itemId,
       userDid: ctx.actor.did,
+      credential: ctx.actor.credential,
       text: args.text.trim(),
       createdAt: Date.now(),
     });
@@ -129,6 +131,18 @@ export const { public: deleteComment, internal: deleteCommentInternal } = actorM
     }
 
     await ctx.db.delete(args.commentId);
+    // Deletion leaves an audit row naming who removed it with which credential. Only
+    // the comment ID is kept: not its text or author, which readers of a later
+    // published list must not learn.
+    await ctx.db.insert("activities", {
+      listId: item.listId,
+      itemId: item._id,
+      actorDid: ctx.actor.did,
+      credential: ctx.actor.credential,
+      type: "comment_deleted",
+      metadata: { note: JSON.stringify({ commentId: comment._id }) },
+      createdAt: Date.now(),
+    });
   },
 });
 

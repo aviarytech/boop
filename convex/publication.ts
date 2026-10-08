@@ -43,6 +43,10 @@ export const { public: publishList, internal: publishListInternal } = actorMutat
     }
     // Publication grants public read only. New note publishing is a separate release.
     if (isNote(list)) throw new Error("Notes cannot be published");
+    // The resource DID is served under its controller's path, so it must name the
+    // publisher's own identity, never one asserted for another account.
+    const resourceDids = [ctx.actor.did, ctx.actor.legacyDid].filter(Boolean).map(did => `${did}/resources/list-${list._id}`);
+    if (!resourceDids.includes(args.webvhDid)) throw new Error("Publication DID must be your own resource DID for this list");
 
     // Check if already published
     const existing = await ctx.db

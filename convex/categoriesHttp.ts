@@ -9,7 +9,8 @@ import { authenticatedRequest } from "./lib/actor";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { jsonResponse, errorResponse } from "./lib/httpResponses";
+import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpResponses";
+import { authErrorData } from "./lib/authError";
 
 /**
  * POST /api/categories/create
@@ -43,6 +44,8 @@ export const createCategory = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { categoryId });
   } catch (error) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(error)) return handlerErrorResponse(request, error, "Failed");
     console.error("[categoriesHttp] createCategory error:", error);
     return errorResponse(
       request,
@@ -83,6 +86,8 @@ export const renameCategory = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { success: true });
   } catch (error) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(error)) return handlerErrorResponse(request, error, "Failed");
     console.error("[categoriesHttp] renameCategory error:", error);
     return errorResponse(
       request,
@@ -122,6 +127,8 @@ export const deleteCategory = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { success: true });
   } catch (error) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(error)) return handlerErrorResponse(request, error, "Failed");
     console.error("[categoriesHttp] deleteCategory error:", error);
     return errorResponse(
       request,
@@ -162,6 +169,8 @@ export const setListCategory = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { success: true });
   } catch (error) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(error)) return handlerErrorResponse(request, error, "Failed");
     console.error("[categoriesHttp] setListCategory error:", error);
     return errorResponse(
       request,

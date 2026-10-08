@@ -13,7 +13,8 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/auth";
-import { jsonResponse, errorResponse } from "./lib/httpResponses";
+import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpResponses";
+import { authErrorData } from "./lib/authError";
 import type { Id } from "./_generated/dataModel";
 
 /**
@@ -72,6 +73,8 @@ export const createCheckout = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { url });
   } catch (err) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(err)) return handlerErrorResponse(request, err, "Failed");
     console.error("[createCheckout] error:", err);
     return errorResponse(request, err instanceof Error ? err.message : "Failed", 500);
   }
@@ -98,6 +101,8 @@ export const createPortal = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { url });
   } catch (err) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(err)) return handlerErrorResponse(request, err, "Failed");
     console.error("[createPortal] error:", err);
     return errorResponse(request, err instanceof Error ? err.message : "Failed", 500);
   }
@@ -121,6 +126,8 @@ export const getSubscription = httpAction(async (ctx, request) => {
 
     return jsonResponse(request, { subscription: sub, plan: sub?.plan ?? "free" });
   } catch (err) {
+    // Authentication failures keep the shared 401/403 contract.
+    if (authErrorData(err)) return handlerErrorResponse(request, err, "Failed");
     console.error("[getSubscription] error:", err);
     return errorResponse(request, err instanceof Error ? err.message : "Failed", 500);
   }

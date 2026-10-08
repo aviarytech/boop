@@ -12,7 +12,7 @@ import {
   unauthorizedResponseWithCors,
 } from "./lib/auth";
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
-import { assertDidLogOwnership, DidLogOwnershipError } from "./lib/didLogAuth";
+import { assertDidLogOwnership, didLogPathForSubOrg, DidLogOwnershipError } from "./lib/didLogAuth";
 
 /** The domain encoded in a did:webvh, percent-decoded. Null if not a did:webvh. */
 function didWebvhDomain(did: string): string | null {
@@ -52,9 +52,12 @@ export const updateUserDID = httpAction(async (ctx, request) => {
       return errorResponse(request, "Cannot update to a temporary DID");
     }
 
-    if (!did.startsWith("did:webvh:") && !did.startsWith("did:key:")) {
-      return errorResponse(request, "Invalid DID format. Expected did:webvh or did:key");
+    if (!did.startsWith("did:webvh:")) {
+      return errorResponse(request, "Invalid DID format. Expected did:webvh");
     }
+    // The account identity comes from the token; the DID must be minted at this
+    // sub-org's own path. did:key is derived server-side at login, never accepted here.
+    assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: did, path: didLogPathForSubOrg(auth.turnkeySubOrgId) });
 
     console.log(`[userHttp] Updating DID for ${auth.email} to ${did}`);
 
@@ -71,6 +74,9 @@ export const updateUserDID = httpAction(async (ctx, request) => {
   } catch (err) {
     if (err instanceof AuthError) {
       return unauthorizedResponseWithCors(request, err.message);
+    }
+    if (err instanceof DidLogOwnershipError) {
+      return errorResponse(request, err.message, 403);
     }
     console.error("[userHttp] Update DID error:", err);
     return errorResponse(
@@ -140,12 +146,12 @@ export const remintUserDID = httpAction(async (ctx, request) => {
       });
     }
 
-    // Checked before applyRemint: storeDidLog patches the didLogs row matching
-    // `path`, so an unchecked body could point any other account's serving path
-    // at this caller's log. Rejecting afterwards would leave rows already moved.
-    if (didLog && path) {
-      assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: newDid, path });
-    }
+    // Checked before applyRemint, whether or not a log is supplied: the new DID
+    // must be minted at this sub-org's own path, so it cannot name another
+    // account. storeDidLog patches the didLogs row matching `path`, so an
+    // unchecked path could also point another account's serving path at this
+    // caller's log. Rejecting afterwards would leave rows already moved.
+    assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: newDid, path: path ?? didLogPathForSubOrg(auth.turnkeySubOrgId) });
 
     const { rewritten } = await ctx.runMutation(
       internal.migrations.remintUserDidDb.applyRemint,

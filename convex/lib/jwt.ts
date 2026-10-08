@@ -39,9 +39,28 @@ interface JWTPayload {
  * @returns Decoded token payload with turnkeySubOrgId and email
  * @throws Error if token is invalid, expired, or missing required fields
  */
+/**
+ * jose decodes base64url leniently: the unused low bits of a segment's final
+ * character may vary, so one signature has several valid token strings. Sessions and
+ * revocation tombstones are keyed by the token string's hash, so a re-encoded copy of a
+ * logged-out token would otherwise establish a fresh session. Accept only the single
+ * canonical encoding, which is what jose's signer produces.
+ */
+function isCanonicalJwt(token: string): boolean {
+  const parts = token.split(".");
+  return parts.length === 3 && parts.every(part => {
+    if (!/^[A-Za-z0-9_-]+$/.test(part)) return false;
+    try { return jose.base64url.encode(jose.base64url.decode(part)) === part; }
+    catch { return false; }
+  });
+}
+
 export async function verifyAuthToken(token: string): Promise<AuthTokenPayload> {
   if (!token) {
     throw new Error("Token is required");
+  }
+  if (!isCanonicalJwt(token)) {
+    throw new Error("Invalid token");
   }
 
   const jwtSecret = process.env.JWT_SECRET;

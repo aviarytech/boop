@@ -2,7 +2,7 @@ import { getSiteAllowance, requireSiteCapacity, requireCustomDomains } from "./l
 import { isResourceOwner } from "./lib/permissions";
 import { actorAction, actorQuery } from "./lib/authenticated";
 import { v } from "convex/values";
-import { internalQuery, query } from "./_generated/server";
+import { internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
   bucketKey as makeBucketKey,
@@ -131,7 +131,8 @@ export const getSiteFileBucketKey = internalQuery({
   },
 });
 
-export const getPublicSiteByHostname = query({
+// Internal: the Sites HTTP resolver projects only public fields and active hostnames.
+export const getPublicSiteByHostname = internalQuery({
   args: { hostname: v.string() },
   handler: async (ctx, args) => {
     const normalizedHostname = args.hostname.toLowerCase();

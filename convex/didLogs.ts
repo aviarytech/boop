@@ -6,7 +6,7 @@
  */
 
 import { v } from "convex/values";
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 /**
  * Store or update a user's DID log.
@@ -46,9 +46,10 @@ export const upsertDidLog = internalMutation({
 });
 
 /**
- * Get a DID log by path (for resolution).
+ * Get a DID log by path (for resolution). Served publicly by the HTTP resolver;
+ * the lookups themselves are internal so only that projection is exposed.
  */
-export const getDidLogByPath = query({
+export const getDidLogByPath = internalQuery({
   args: { path: v.string() },
   handler: async (ctx, args) => {
     const record = await ctx.db
@@ -62,7 +63,7 @@ export const getDidLogByPath = query({
 /**
  * Get the full DID log record by path (includes userDid).
  */
-export const getDidLogRecordByPath = query({
+export const getDidLogRecordByPath = internalQuery({
   args: { path: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -75,7 +76,7 @@ export const getDidLogRecordByPath = query({
 /**
  * Get a DID log by user DID.
  */
-export const getDidLogByUserDid = query({
+export const getDidLogByUserDid = internalQuery({
   args: { userDid: v.string() },
   handler: async (ctx, args) => {
     const record = await ctx.db

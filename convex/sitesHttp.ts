@@ -1,5 +1,5 @@
 import { httpAction } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { presignGet } from "./lib/bucket";
 
 function json(data: unknown, status = 200): Response {
@@ -37,7 +37,7 @@ export const resolveSiteHost = httpAction(async (ctx, request) => {
     return json({ status: "error", error: "hostname is required" }, 400);
   }
 
-  const record = await ctx.runQuery(api.sites.getPublicSiteByHostname, {
+  const record = await ctx.runQuery(internal.sites.getPublicSiteByHostname, {
     hostname,
   });
 
@@ -99,7 +99,7 @@ export const resolveSiteAsset = httpAction(async (ctx, request) => {
     return json({ status: "error", error: "hostname and fileName are required" }, 400);
   }
 
-  const record = await ctx.runQuery(api.sites.getPublicSiteByHostname, { hostname });
+  const record = await ctx.runQuery(internal.sites.getPublicSiteByHostname, { hostname });
   if (!record) return json({ status: "missing" }, 404);
   if (record.hostname.status !== "active") {
     return json({ status: "pending" }, 404);

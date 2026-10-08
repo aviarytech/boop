@@ -235,6 +235,11 @@ export const applyRemint = internalMutation({
       // Someone already re-minted this user; don't rewrite a second time.
       return { rewritten: 0, skipped: true };
     }
+    // Never move an account onto an identity another account holds: ownership is
+    // DID-based, so that would hand over the other account's lists and keys.
+    const holder = await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", args.newDid)).first()
+      ?? await ctx.db.query("users").withIndex("by_legacy_did", (q) => q.eq("legacyDid", args.newDid)).first();
+    if (holder && holder._id !== user._id) throw new Error("DID is already in use by another account");
 
     let rewritten = 0;
 
@@ -266,7 +271,8 @@ export const applyRemint = internalMutation({
         const patch: Record<string, unknown> = {};
         for (const field of fields) {
           const value = row[field];
-          if (typeof value === "string" && value.startsWith(args.oldDid)) {
+          // Whole-DID prefix only: `{oldDid}/...`, never a longer DID sharing its characters.
+          if (typeof value === "string" && value.startsWith(`${args.oldDid}/`)) {
             patch[field] = args.newDid + value.slice(args.oldDid.length);
           }
         }
