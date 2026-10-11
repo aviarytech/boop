@@ -14,6 +14,8 @@ import { createPortal } from "react-dom";
 interface PanelProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Called immediately when dismissal begins, before the closing animation. */
+  onCloseStart?: () => void;
   children: ReactNode;
   title?: string;
   /** If true, panel takes full height minus safe area */
@@ -31,6 +33,7 @@ interface PanelProps {
 export function Panel({
   isOpen,
   onClose,
+  onCloseStart,
   children,
   title,
   fullHeight = false,
@@ -39,10 +42,11 @@ export function Panel({
   footer,
   ariaLabelledBy,
 }: PanelProps) {
-  const [isAnimating, setIsAnimating] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeRequestedRef = useRef(false);
   const dragState = useRef<{
     startY: number;
     startTime: number;
@@ -52,26 +56,34 @@ export function Panel({
 
   // Handle open/close animation
   useEffect(() => {
+    closeRequestedRef.current = false;
     if (isOpen) {
-      setIsAnimating(true);
       setIsClosing(false);
       // Lock body scroll
       document.body.style.overflow = "hidden";
     }
     return () => {
+      closeRequestedRef.current = true;
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
       document.body.style.overflow = "";
     };
   }, [isOpen]);
 
   // Close with animation
   const handleClose = useCallback(() => {
+    if (!isOpen || closeRequestedRef.current) return;
+    closeRequestedRef.current = true;
     setIsClosing(true);
-    setTimeout(() => {
-      setIsAnimating(false);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
       setIsClosing(false);
       onClose();
     }, 200); // Match animation duration
-  }, [onClose]);
+    onCloseStart?.();
+  }, [isOpen, onClose, onCloseStart]);
 
   // Escape key handler
   useEffect(() => {
@@ -143,7 +155,7 @@ export function Panel({
     dragState.current = null;
   }, [handleClose]);
 
-  if (!isOpen && !isAnimating) return null;
+  if (!isOpen) return null;
 
   return createPortal(
     <div
