@@ -5,16 +5,16 @@
  * 1. User enters email, clicks "Send Code"
  * 2. User enters OTP code from email, clicks "Verify"
  *
- * On successful verification, user is redirected to Home.
+ * On successful verification, resume the intended page or selected runbook.
  */
 
 import { useState, type FormEvent } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { Navigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { OtpInput } from "../components/auth/OtpInput";
 import { trackSignupStarted, trackSignupCompleted } from "../lib/analytics";
 
-import { templateLoginDestination } from "../../convex/lib/templateCatalog";
+import { loginDestination } from "../lib/loginDestination";
 
 type LoginStep = "email" | "otp";
 
@@ -34,7 +34,6 @@ function getGreeting(): string {
 
 export function Login({ embedded = false }: LoginProps) {
   const { startOtp, verifyOtp, isLoading, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
 
   const [step, setStep] = useState<LoginStep>("email");
@@ -44,8 +43,8 @@ export function Login({ embedded = false }: LoginProps) {
 
   // Redirect if already authenticated (unless embedded)
   if (isAuthenticated && !embedded) {
-    navigate(templateLoginDestination(location.search), { replace: true });
-    return null;
+    const destination = loginDestination(location.search, location.state);
+    return <Navigate to={destination.to} state={destination.state} replace />;
   }
 
   const validateEmail = (email: string): boolean => {
@@ -87,11 +86,9 @@ export function Login({ embedded = false }: LoginProps) {
     try {
       await verifyOtp(code);
       trackSignupCompleted("free");
-      // On successful verification, useAuth will update isAuthenticated
-      // If not embedded, redirect to app; if embedded, parent handles navigation
-      if (!embedded) {
-        navigate(templateLoginDestination(location.search), { replace: true });
-      }
+      // Auth state drives the redirect while this page is still mounted.
+      // A late OTP response must not override navigation away from login.
+      // Embedded callers own their navigation.
     } catch (err) {
       console.error("Failed to verify OTP:", err);
       // Server sanitizes /auth/verify errors, so its message is safe to show.
@@ -193,3 +190,4 @@ export function Login({ embedded = false }: LoginProps) {
     </div>
   );
 }
+
