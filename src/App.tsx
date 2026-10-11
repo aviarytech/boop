@@ -17,7 +17,6 @@ import { CookieConsent } from './components/CookieConsent'
 import { useSwipeBack } from './hooks/useSwipeBack'
 import { useNativeLinks } from './hooks/useNativeLinks'
 import { initPushNotifications } from './lib/pushNotifications'
-import { templateLoginDestination } from '../convex/lib/templateCatalog'
 import { incrementMetric } from './lib/observability'
 
 // Lazy-loaded routes for better code splitting
@@ -278,7 +277,7 @@ function App() {
           >
             {/* Public routes - accessible without authentication */}
             <Route path="/invite/:code" element={<InviteLanding />} />
-            <Route path="/login" element={isAuthenticated ? <Navigate to={templateLoginDestination(location.search)} replace /> : <Login />} />
+            <Route path="/login" element={<Login />} />
             <Route path="/join/:listId/:token" element={<JoinList />} />
             <Route path="/public/:did" element={<PublicList />} />
             <Route path="/:userPath/resources/:resourceId" element={<SharedListResource />} />
@@ -311,3 +310,4 @@ function App() {
 }
 
 export default App
+
