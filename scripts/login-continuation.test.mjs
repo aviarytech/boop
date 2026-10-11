@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-GlobalRegistrator.register({ url: 'http://localhost/' });
+if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register({ url: 'http://localhost/' });
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const React = await import('react');
 const { render, cleanup, fireEvent, act, waitFor } = await import('@testing-library/react');
