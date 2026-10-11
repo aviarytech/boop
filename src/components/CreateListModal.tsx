@@ -4,7 +4,7 @@
  * Features improved design and dark mode support.
  */
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
@@ -24,8 +24,14 @@ interface CreateListModalProps {
   onListCreated?: (listId: Id<"lists">, listName: string) => void;
 }
 
-export function CreateListModal({ onClose, onListCreated }: CreateListModalProps) {
+export function CreateListModal(props: CreateListModalProps) {
   const { did } = useCurrentUser();
+  // Identity changes must not let a previous account's pending work complete
+  // into the new dialog, even if its parent remains mounted.
+  return <CreateListDialog key={did} did={did} {...props} />;
+}
+
+function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps & { did: string | null }) {
   const navigate = useNavigate();
   const { haptic } = useSettings();
   const createList = useMutation(api.lists.createList);
@@ -37,9 +43,33 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
   const [error, setError] = useState<string | null>(null);
   const [planLimitHit, setPlanLimitHit] = useState(false);
   const [createdListId, setCreatedListId] = useState<Id<"lists"> | null>(null);
+  const mountedRef = useRef(false);
+  const dismissedRef = useRef(false);
+  const closedRef = useRef(false);
+  const pendingRef = useRef(false);
+  const completedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Invalidate pending work as soon as dismissal starts, including Panel's
+  // closing animation. A mutation already sent to the server cannot be undone.
+  const handleCloseStart = () => {
+    dismissedRef.current = true;
+  };
+
+  const handleClose = () => {
+    handleCloseStart();
+    if (closedRef.current) return;
+    closedRef.current = true;
+    onClose();
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!mountedRef.current || dismissedRef.current || pendingRef.current || completedRef.current) return;
 
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -54,12 +84,16 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
       return;
     }
 
+    // React state alone does not prevent two submissions in the same event turn.
+    pendingRef.current = true;
     setError(null);
+    setPlanLimitHit(false);
     setIsCreating(true);
     haptic('medium');
 
     try {
       const listAsset = await createListAsset(trimmedName, did);
+      if (!mountedRef.current || dismissedRef.current) return;
 
       const listId = await createList({
         assetDid: listAsset.assetDid,
@@ -68,7 +102,9 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
         categoryId,
         createdAt: Date.now(),
       });
+      if (!mountedRef.current || dismissedRef.current) return;
 
+      completedRef.current = true;
       haptic('success');
       const newCount = (existingLists?.filter((l) => !isNote(l)).length ?? 0) + 1;
       trackListCreated(newCount);
@@ -77,6 +113,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
       setIsCreating(false);
       onListCreated?.(listId, trimmedName);
     } catch (err) {
+      if (!mountedRef.current || dismissedRef.current) return;
       console.error("Failed to create list:", err);
       if (isPlanLimitError(err)) {
         setPlanLimitHit(true);
@@ -86,15 +123,20 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
       }
       haptic('error');
       setIsCreating(false);
+    } finally {
+      pendingRef.current = false;
     }
   };
 
   const handleGoToList = () => {
-    if (createdListId) navigate(`/list/${createdListId}`);
+    if (!createdListId || dismissedRef.current || !mountedRef.current) return;
+    dismissedRef.current = true;
+    navigate(`/list/${createdListId}`);
   };
 
   const handleShareList = () => {
-    if (!createdListId) return;
+    if (!createdListId || dismissedRef.current || !mountedRef.current) return;
+    dismissedRef.current = true;
     trackInviteSent('native_share');
     navigate(`/list/${createdListId}`, { state: { openShare: true } });
   };
@@ -115,8 +157,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
       <button
         onClick={() => {
           haptic('light');
-          if (createdListId) handleGoToList();
-          else onClose();
+          handleClose();
         }}
         className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         aria-label="Close"
@@ -151,12 +192,11 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
         type="button"
         onClick={() => {
           haptic('light');
-          onClose();
+          handleClose();
         }}
-        disabled={isCreating}
         className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
       >
-        Cancel
+        {isCreating ? "Close" : "Cancel"}
       </button>
       <button
         type="submit"
@@ -182,7 +222,8 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
   return (
     <Panel
       isOpen={true}
-      onClose={createdListId ? handleGoToList : onClose}
+      onCloseStart={handleCloseStart}
+      onClose={handleClose}
       header={header}
       footer={footer}
       ariaLabelledBy="create-list-dialog-title"
@@ -226,6 +267,12 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
           disabled={isCreating}
         />
 
+        {isCreating && (
+          <p role="status" className="text-sm text-gray-500 dark:text-gray-400">
+            You can close this dialog. A list already being saved may still be created.
+          </p>
+        )}
+
         {error && (
           <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-400 text-sm flex items-center gap-2">
             <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,7 +302,7 @@ export function CreateListModal({ onClose, onListCreated }: CreateListModalProps
 
             <Link
               to="/pricing"
-              onClick={onClose}
+              onClick={handleClose}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-white rounded-lg font-semibold text-sm transition-colors"
             >
               View pricing →
