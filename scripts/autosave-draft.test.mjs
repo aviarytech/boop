@@ -382,3 +382,97 @@ test('passive viewer mounts do not accumulate denial markers or monitored resour
   }
   assert.deepEqual(draftResources([did]), []);
 });
+
+test('over-limit edits retain complete Unicode text locally and cannot autosave, retry, or flush on unmount', async () => {
+  const key = 'owner:note:over-limit-unicode';
+  const text = 'x'.repeat(49999) + '😀' + ' pasted tail';
+  const writes = [];
+  const persist = async (text, base) => { writes.push([text, base]); };
+  const create = () => renderHook(() => useAutosaveDraft({ saved: 'server', canEdit: true, persist, draftKey: key }));
+  const editor = create();
+  try {
+    await act(async () => editor.result.current.onChange(text));
+    assert.equal(editor.result.current.value, text);
+    assert.equal(durableDrafts(key)[0].text, text);
+    assert.equal(editor.result.current.dirty, true);
+    await act(async () => await new Promise(resolve => setTimeout(resolve, 650)));
+    await act(async () => editor.result.current.retry());
+    const closing = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(closing);
+    assert.equal(closing.defaultPrevented, true);
+    assert.deepEqual(writes, []);
+  } finally { await act(async () => editor.unmount()); }
+  assert.deepEqual(writes, []);
+  const reopened = create();
+  try {
+    assert.equal(reopened.result.current.value, text);
+    await act(async () => reopened.result.current.retry());
+    assert.deepEqual(writes, []);
+  } finally { await act(async () => reopened.unmount()); }
+  assert.equal(durableDrafts(key)[0].text, text);
+});
+
+test('shortening an over-limit draft to the exact UTF-16 boundary resumes autosave without losing emoji', async () => {
+  const key = 'owner:note:limit-resume';
+  const text = 'x'.repeat(49998) + '😀';
+  const writes = [];
+  let editor;
+  const persist = async (text, base) => {
+    writes.push([text, base]);
+    editor.rerender({ saved: text });
+  };
+  editor = renderHook(({ saved }) => useAutosaveDraft({ saved, canEdit: true, persist, draftKey: key }), { initialProps: { saved: 'server' } });
+  try {
+    await act(async () => editor.result.current.onChange(text + ' over limit'));
+    await act(async () => editor.result.current.retry());
+    assert.deepEqual(writes, []);
+    await act(async () => editor.result.current.onChange(text));
+    await act(async () => await new Promise(resolve => setTimeout(resolve, 650)));
+    assert.deepEqual(writes, [[text, 'server']]);
+    assert.equal(editor.result.current.value, text);
+    assert.equal(editor.result.current.status, 'saved');
+    assert.equal(editor.result.current.dirty, false);
+    assert.deepEqual(durableDrafts(key), []);
+  } finally { await act(async () => editor.unmount()); }
+});
+
+test('an acknowledged in-flight save preserves a newer over-limit draft and rebases its later repair', async () => {
+  const key = 'owner:note:limit-in-flight';
+  const text = 'x'.repeat(50000) + '😀';
+  const requests = [];
+  const persist = (text, base) => new Promise(resolve => requests.push({ text, base, resolve }));
+  const editor = renderHook(({ saved }) => useAutosaveDraft({ saved, canEdit: true, persist, draftKey: key }), { initialProps: { saved: 'server' } });
+  try {
+    await act(async () => editor.result.current.onChange('first edit'));
+    await act(async () => { void editor.result.current.retry(); });
+    await act(async () => editor.result.current.onChange(text));
+    await act(async () => { editor.rerender({ saved: 'first edit' }); requests[0].resolve(); });
+    assert.equal(requests.length, 1);
+    assert.equal(editor.result.current.value, text);
+    assert.equal(editor.result.current.dirty, true);
+    assert.equal(durableDrafts(key)[0].text, text);
+    assert.equal(durableDrafts(key)[0].base, 'first edit');
+    await act(async () => editor.result.current.onChange('shortened 😀'));
+    await act(async () => { void editor.result.current.retry(); });
+    assert.deepEqual(requests.map(({ text, base }) => [text, base]), [['first edit', 'server'], ['shortened 😀', 'first edit']]);
+    await act(async () => { editor.rerender({ saved: 'shortened 😀' }); requests[1].resolve(); });
+    assert.equal(editor.result.current.dirty, false);
+  } finally { await act(async () => editor.unmount()); }
+});
+
+test('explicit conflict resolution cannot save an over-limit recovered draft', async () => {
+  const key = 'owner:note:limit-conflict';
+  const text = '😀'.repeat(25001);
+  localStorage.setItem(`boop-note-draft:${key}`, JSON.stringify({ text, base: 'old', revision: 'over-limit' }));
+  const writes = [];
+  const editor = renderHook(() => useAutosaveDraft({ saved: 'new remote', canEdit: true, draftKey: key, persist: async (...args) => { writes.push(args); } }));
+  try {
+    assert.equal(editor.result.current.status, 'conflict');
+    await act(async () => editor.result.current.saveDraft());
+    assert.deepEqual(writes, []);
+    assert.equal(editor.result.current.value, text);
+    assert.equal(editor.result.current.dirty, true);
+    assert.ok(durableDrafts(key).some(draft => draft.text === text));
+  } finally { await act(async () => editor.unmount()); }
+  assert.deepEqual(writes, []);
+});

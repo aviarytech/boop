@@ -78,6 +78,7 @@ function ItemNoteEditor() {
   const editingUnavailable = !data.canEdit;
   const displayBody = editingUnavailable ? data.description : value;
   const nearLimit = displayBody.length > MAX_NOTE_LENGTH - 500;
+  const overLimit = !editingUnavailable && displayBody.length > MAX_NOTE_LENGTH;
   const statusLabel = status === "saving" ? "Saving…" : status === "saved" ? "Saved" : "";
 
   // --- Editor
@@ -118,12 +119,16 @@ function ItemNoteEditor() {
         ? <UnsentNoteDrafts documentKey={draftKey} onDiscard={discardStoredDraft} />
         : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
       {!editingUnavailable && status === "conflict" && <NoteConflict serverBody={data.description} onUseServer={useServer} onSaveDraft={saveDraft} />}
+      {overLimit && <p id="note-length-error" role="alert" className="px-4 pt-3 text-sm text-red-600 dark:text-red-400">
+        Not saved to server. Your full draft is kept locally. Shorten it to {MAX_NOTE_LENGTH.toLocaleString("en-US")} characters to save.
+      </p>}
 
       <main className="flex-1 flex flex-col px-4 py-3 safe-area-inset-bottom">
         {mode === "edit" && !editingUnavailable ? (
           <textarea
             value={value}
             aria-label="Note body"
+            aria-describedby={overLimit ? "note-length-error" : undefined}
             onChange={(e) => onChange(e.target.value)}
             autoFocus
             placeholder="Start writing…  (markdown supported)"

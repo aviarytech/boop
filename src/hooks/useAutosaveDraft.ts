@@ -2,7 +2,7 @@ import { authErrorData } from "../../convex/lib/authError";
 import { isNoteConflict } from "../../convex/lib/noteConflict";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { reconcileDraftAccess, draftIsDetached, sameDraftRevision, subscribeDrafts, draftRevision, clearDraft, clearRecoveredDraft, releaseDraft, listDrafts, readDraft, writeDraft, type StoredDraft } from "../lib/noteDrafts";
-import { clampNote } from "../lib/noteEditor";
+import { MAX_NOTE_LENGTH } from "../lib/noteEditor";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "conflict" | "denied";
 
@@ -63,6 +63,9 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
       return;
     }
     if (!dirtyRef.current || !editRef.current || conflictRef.current || deniedRef.current) return;
+    // Keep the full local draft, including pasted text and complete Unicode
+    // characters. The server's size limit must never silently delete edits.
+    if (valueRef.current.length > MAX_NOTE_LENGTH) return;
     if (inFlightRef.current) { queuedRef.current = true; return; }
     const base = baseRef.current;
     if (base === undefined) return;
@@ -137,8 +140,7 @@ export function useAutosaveDraft({ saved, draftKey: documentKey, draftAliases = 
     }
   }), [draftKey]);
 
-  const onChange = (next: string) => {
-    const text = clampNote(next);
+  const onChange = (text: string) => {
     if (!dirtyRef.current) baseRef.current = savedRef.current;
     revisionRef.current++;
     if (draftKey) recordRef.current = writeDraft(draftKey, text, baseRef.current);

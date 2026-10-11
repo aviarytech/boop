@@ -109,6 +109,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
   const categoryName = categories.find((c) => c._id === list.categoryId)?.name;
   const words = wordCount(displayBody);
   const nearLimit = displayBody.length > MAX_NOTE_LENGTH - 500;
+  const overLimit = !editingUnavailable && displayBody.length > MAX_NOTE_LENGTH;
   const statusLabel = status === "saving" ? "Saving…" : status === "saved" ? "Saved" : "";
   const meta = [
     "note",
@@ -215,12 +216,16 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
         ? <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} onDiscard={discardStoredDraft} />
         : <RecoveredNoteDrafts drafts={otherDrafts} disabled={dirty} onRecover={recoverDraft} />}
       {!editingUnavailable && status === "conflict" && <NoteConflict serverBody={note.body} onUseServer={useServer} onSaveDraft={saveDraft} />}
+      {overLimit && <p id="note-length-error" role="alert" className="pb-3 text-sm text-red-600 dark:text-red-400">
+        Not saved to server. Your full draft is kept locally. Shorten it to {MAX_NOTE_LENGTH.toLocaleString("en-US")} characters to save.
+      </p>}
       {mode === "edit" ? (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
           autoFocus
           aria-label="Note body"
+          aria-describedby={overLimit ? "note-length-error" : undefined}
           placeholder="Start writing…  (markdown supported)"
           className="w-full min-h-[60vh] resize-none bg-transparent text-base leading-relaxed text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-none font-mono"
         />

@@ -28,15 +28,6 @@ test("MAX_NOTE_LENGTH is 50000", () => {
   assert.equal(m.MAX_NOTE_LENGTH, 50000);
 });
 
-test("clampNote leaves short text unchanged", () => {
-  assert.equal(m.clampNote("hello"), "hello");
-});
-
-test("clampNote truncates text over the limit", () => {
-  const long = "x".repeat(50001);
-  assert.equal(m.clampNote(long).length, 50000);
-});
-
 test("shouldPersist true when editable and changed", () => {
   assert.equal(m.shouldPersist({ draft: "b", saved: "a", canEdit: true }), true);
 });
