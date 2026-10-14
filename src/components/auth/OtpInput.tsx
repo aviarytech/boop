@@ -160,6 +160,8 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
             value={digit}
             onChange={(e) => handleChange(index, e)}
             onKeyDown={(e) => handleKeyDown(index, e)}
+            // Select existing digit so typing or AutoFill replaces it regardless of caret position
+            onFocus={(e) => e.target.select()}
             onPaste={handlePaste}
             disabled={isLoading}
             className="w-12 h-14 text-center text-2xl font-semibold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
