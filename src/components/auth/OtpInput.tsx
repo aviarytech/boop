@@ -72,20 +72,25 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
   }, [digits]);
 
   const handleChange = (index: number, e: ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+    const value = e.target.value.replace(/\D/g, "");
 
-    // Only allow single digit
-    if (value.length > 1) return;
+    // iOS/Android one-time-code AutoFill inserts the whole code into one field
+    if (value.length >= OTP_LENGTH) {
+      setDigits(value.slice(-OTP_LENGTH).split(""));
+      inputRefs.current[OTP_LENGTH - 1]?.focus();
+      return;
+    }
 
-    // Only allow numbers
-    if (value && !/^\d$/.test(value)) return;
+    // Typing into a filled field: keep the newest digit
+    if (e.target.value && !value) return;
+    const digit = value.slice(-1);
 
     const newDigits = [...digits];
-    newDigits[index] = value;
+    newDigits[index] = digit;
     setDigits(newDigits);
 
     // Auto-advance to next input
-    if (value && index < OTP_LENGTH - 1) {
+    if (digit && index < OTP_LENGTH - 1) {
       inputRefs.current[index + 1]?.focus();
     }
   };
@@ -151,10 +156,12 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
             }}
             type="text"
             inputMode="numeric"
-            maxLength={1}
+            autoComplete="one-time-code"
             value={digit}
             onChange={(e) => handleChange(index, e)}
             onKeyDown={(e) => handleKeyDown(index, e)}
+            // Select existing digit so typing or AutoFill replaces it regardless of caret position
+            onFocus={(e) => e.target.select()}
             onPaste={handlePaste}
             disabled={isLoading}
             className="w-12 h-14 text-center text-2xl font-semibold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
