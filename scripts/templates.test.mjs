@@ -123,7 +123,7 @@ test('retry returns the complete original list without extra items, even at quot
   assert.ok(ctx.rows.items.every(i => i.checked === false && i.createdByDid === OWNER));
   assert.equal((await ctx.db.get(id)).vcProof, undefined, 'no new unsigned ownership placeholder');
   assert.equal(records(ctx, 'list.created').length, 1);
-  assert.deepEqual(ctx.scheduled, [], 'recording schedules no background work');
+  assert.equal(ctx.scheduled.length, 1, 'the retry queues no second signer run');
 });
 test('quick-start and saved template items get one creation record each, like ordinary creation, across retries', async () => {
   for (const saved of [false, true]) {
@@ -153,8 +153,9 @@ test('quick-start and saved template items get one creation record each, like or
       assert.deepEqual(record.owner, { did: OWNER, userId: ownerSession.user._id });
       assert.deepEqual(record.credential, { kind: 'session', id: ownerSession.accessSession._id });
     }
-    assert.equal(ctx.rows.actionRecords.length, items.length + 1);
-    assert.ok(ctx.rows.actionRecords.every(r => r.status === 'unsigned' && r.signature === undefined));
+    // One signer run covers the whole mutation's records.
+    assert.deepEqual(ctx.scheduled.map(job => job.args.recordIds.length), [items.length + 1]);
+    assert.ok(ctx.rows.actionRecords.every(r => r.status === 'pending' && r.signature === undefined));
     const before = structuredClone([ctx.rows.items, ctx.rows.actionRecords]);
     assert.equal(await create(ctx, request), listId);
     assert.deepEqual([ctx.rows.items, ctx.rows.actionRecords], before);

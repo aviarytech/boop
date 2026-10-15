@@ -15,4 +15,10 @@ crons.interval(
   internal.siteActions.pollPendingCustomHostnames
 );
 
+crons.interval(
+  "re-queue stale pending action record signatures",
+  { hours: 1 },
+  internal.actionRecords.sweepStalePending
+);
+
 export default crons;
