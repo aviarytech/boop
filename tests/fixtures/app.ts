@@ -14,7 +14,7 @@ export interface ScenarioOptions {
   authenticated?: boolean;
   onboarding?: boolean;
   inviteNudgeDone?: boolean;
-  /** Status every recorded action settles to (default signed). */
+  /** Status every recorded action settles to (default unsigned, as in production). */
   actionRecordStatus?: 'pending' | 'signed' | 'failed' | 'unsigned';
 }
 

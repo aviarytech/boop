@@ -2,6 +2,7 @@
  * recordActions so individual, batch, template and recurring flows agree. */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import type { ActorCtx } from "./authenticated";
 import { buildActionRecord, type ActionChange } from "../../shared/actionRecord";
 
@@ -57,12 +58,19 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, changes: Recorde
   }
 }
 
-/** Records name their subject, so they are removed with it like vcProofs were. */
+// Records grow with every toggle, so deletion is bounded per mutation.
+export const DELETE_RECORDS_BATCH = 500;
+
+/** Records name their subject, so they are removed with it like vcProofs were.
+ * Deletes one batch now and schedules the remainder. */
 export async function deleteActionRecords(
   ctx: MutationCtx, target: { listId: Id<"lists"> } | { itemId: Id<"items"> },
 ): Promise<void> {
   const records = "itemId" in target
-    ? await ctx.db.query("actionRecords").withIndex("by_item", q => q.eq("itemId", target.itemId)).collect()
-    : await ctx.db.query("actionRecords").withIndex("by_list", q => q.eq("listId", target.listId)).collect();
+    ? await ctx.db.query("actionRecords").withIndex("by_item", q => q.eq("itemId", target.itemId)).take(DELETE_RECORDS_BATCH)
+    : await ctx.db.query("actionRecords").withIndex("by_list", q => q.eq("listId", target.listId)).take(DELETE_RECORDS_BATCH);
   for (const record of records) await ctx.db.delete(record._id);
+  if (records.length === DELETE_RECORDS_BATCH) {
+    await ctx.scheduler.runAfter(0, internal.actionRecords.deleteRemaining, target);
+  }
 }

@@ -95,8 +95,8 @@ replay, or the HTTP API:
 | Action | Written by |
 | --- | --- |
 | `item.created` | `addItem`; each item of `createListFromTemplate`; the next occurrence generated when a recurring item is completed |
-| `item.completed` | `checkItem`, `batchCheckItems` |
-| `item.reopened` | `uncheckItem`, `batchUncheckItems` |
+| `item.completed` | `checkItem`, `batchCheckItems`, `checkSharedItem` (DID resource toggle) |
+| `item.reopened` | `uncheckItem`, `batchUncheckItems`, `uncheckSharedItem` (DID resource toggle) |
 | `list.created` | `createList` (lists and notes), `copyList`, `createListFromTemplate` |
 | `list.renamed` | `renameList` |
 
@@ -274,6 +274,10 @@ Action records are deleted with their subject: an item's records when the item
 is removed, a list's records when the list or its owner's account is deleted.
 Records an account wrote on someone else's list stay with that list, as
 `createdByDid` does.
+
+Every toggle adds a record, so a long-lived list can hold many. Deletion removes
+up to 500 in the deleting mutation and schedules `actionRecords.deleteRemaining`
+for the rest, so deleting a list or item never hits Convex's per-mutation limits.
 
 ## Verification status and remaining gaps
 

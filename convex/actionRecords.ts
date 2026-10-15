@@ -4,8 +4,10 @@
  * up yet; see docs/action-records.md.
  */
 import { v } from "convex/values";
+import { internalMutation } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { actorQuery } from "./lib/authenticated";
+import { deleteActionRecords } from "./lib/actionRecords";
 
 const MAX_RECORDS_PER_READ = 50;
 
@@ -45,4 +47,10 @@ export const { public: getListActionRecords, internal: getListActionRecordsInter
   handler: async (ctx, args) => (await ctx.db.query("actionRecords")
     .withIndex("by_list", q => q.eq("listId", args.listId).eq("itemId", undefined))
     .order("desc").take(MAX_RECORDS_PER_READ)).map(evidence),
+});
+
+/** Continues deleteActionRecords for subjects with more records than one batch. */
+export const deleteRemaining = internalMutation({
+  args: v.union(v.object({ listId: v.id("lists") }), v.object({ itemId: v.id("items") })),
+  handler: async (ctx, target) => deleteActionRecords(ctx, target),
 });

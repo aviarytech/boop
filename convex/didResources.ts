@@ -1,5 +1,6 @@
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation } from "./lib/authenticated";
+import { itemCompleted, itemReopened, recordActions } from "./lib/actionRecords";
 /**
  * Queries for serving list resources publicly.
  *
@@ -127,12 +128,15 @@ export const { public: checkSharedItem, internal: checkSharedItemInternal } = ac
       throw resourceUnavailable();
     }
 
+    const now = Date.now();
     await ctx.db.patch(args.itemId, {
       checked: true,
       checkedByDid: ctx.actor.did,
-      checkedAt: Date.now(),
-      updatedAt: Date.now(),
+      checkedAt: now,
+      updatedAt: now,
     });
+    const list = await ctx.db.get(item.listId);
+    await recordActions(ctx, [itemCompleted(list ?? { _id: item.listId }, item, now)]);
 
     return { ok: true };
   },
@@ -160,6 +164,8 @@ export const { public: uncheckSharedItem, internal: uncheckSharedItemInternal } 
       checkedAt: undefined,
       updatedAt: Date.now(),
     });
+    const list = await ctx.db.get(item.listId);
+    await recordActions(ctx, [itemReopened(list ?? { _id: item.listId }, item)]);
 
     return { ok: true };
   },

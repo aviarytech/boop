@@ -17,7 +17,7 @@ import {
 } from '../shared/actionRecord.ts';
 
 const modules = await loadReplayModules('signed-action-records');
-const extra = ['templates', 'actionRecords', 'agentReadHttp', 'users', 'migrations/remintUserDidDb'];
+const extra = ['templates', 'actionRecords', 'agentReadHttp', 'users', 'didResources', 'migrations/remintUserDidDb'];
 await build({
   entryPoints: extra.map(n => `convex/${n}.ts`), outdir: 'tmp/signed-action-records-extra', bundle: true,
   platform: 'node', format: 'esm', external: ['convex/*', '@turnkey/*'], outExtension: { '.js': '.mjs' },
@@ -159,6 +159,19 @@ test('batch and individual actions produce equivalent records, including recurri
     // Historical evidence on the source item is neither replaced nor extended.
     assert.deepEqual(f.rows.items[0].vcProofs, [{ type: 'ExistingSignedProof', proof: 'do-not-replace', issuer: f.owner.user.did }]);
   }
+});
+
+test('DID resource toggles record the same completion and reopen as checkItem and uncheckItem', async () => {
+  const direct = await fixture(), shared = await fixture();
+  await direct.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  await direct.call('items', 'uncheckItem', { itemId: 'I1' });
+  await shared.call('didResources', 'checkSharedItem', { listId: 'L1', itemId: 'I1' });
+  await shared.call('didResources', 'uncheckSharedItem', { listId: 'L1', itemId: 'I1' });
+  const normalize = f => f.payloads().map(p => ({ ...shape(p), owner: 'OWNER', credential: 'CREDENTIAL' }));
+  assert.deepEqual(normalize(shared), normalize(direct));
+  const [completed] = shared.payloads('item.completed');
+  assert.ok(Math.abs(completed.after.checkedAt - Date.now()) < 5000, 'the shared toggle stamps server time');
+  assert.deepEqual(completed.subject, { listId: 'L1', listAssetDid: 'did:list', itemId: 'I1' });
 });
 
 test('a session and two API keys of one account are distinguishable from each other and from the owner', async () => {
@@ -378,6 +391,22 @@ test('records are readable with the access of their subject and are removed with
   assert.deepEqual(f.payloads().map(p => p.action), ['list.renamed']);
   await f.call('lists', 'deleteList', { listId: 'L1' });
   assert.deepEqual(f.records(), []);
+
+  // Subjects with more records than one mutation should touch are drained in batches.
+  const DELETE_RECORDS_BATCH = 500; // convex/lib/actionRecords.ts
+  const h = await fixture();
+  for (let i = 0; i <= DELETE_RECORDS_BATCH; i++) await h.ctx.db.insert('actionRecords', { listId: 'L1', itemId: 'I1', status: 'unsigned' });
+  await h.call('items', 'removeItem', { itemId: 'I1' });
+  assert.equal(h.records().length, 1);
+  const continuations = h.effects.filter(([, ref]) => getFunctionName(ref) === 'actionRecords:deleteRemaining');
+  assert.deepEqual(continuations.map(([delay, , args]) => [delay, args]), [[0, { itemId: 'I1' }]]);
+  await modules.actionRecords.deleteRemaining._handler(h.ctx, continuations[0][2]);
+  assert.deepEqual(h.records(), []);
+  for (let i = 0; i <= DELETE_RECORDS_BATCH; i++) await h.ctx.db.insert('actionRecords', { listId: 'L1', status: 'unsigned' });
+  await h.call('lists', 'deleteList', { listId: 'L1' });
+  assert.equal(h.records().length, 1);
+  await modules.actionRecords.deleteRemaining._handler(h.ctx, { listId: 'L1' });
+  assert.deepEqual(h.records(), []);
 
   // Account erasure removes the records of that account's lists and items as well.
   const g = await fixture();
