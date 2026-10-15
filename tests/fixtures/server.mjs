@@ -17,7 +17,7 @@ const user = {
   email: 'e2e@example.test', did: 'did:webvh:e2e:boop.ad:user-e2e', displayName: 'E2E User',
 };
 
-// Test-only Ed25519 key for seeding signed records; no real signer exists yet.
+// Test-only stand-in for the account's Turnkey-held Ed25519 key.
 const SIGNING_SEED = new Uint8Array(32).fill(7);
 const signingKey = ed25519Multikey(await getPublicKeyAsync(SIGNING_SEED));
 
@@ -27,10 +27,10 @@ const itemSubject = (account, item) => {
   return { ...(list ? listSubject(list) : { listId: item.listId }), itemId: item._id };
 };
 
-// Mirrors convex/lib/actionRecords.ts recordActions, except the status can be
-// seeded via options.actionRecordStatus. Shape matches convex/actionRecords.ts evidence().
+// Mirrors convex/lib/actionRecords.ts recordActions, except the signer settles
+// at once to options.actionRecordStatus. Shape matches convex/actionRecords.ts evidence().
 async function recordAction(account, change) {
-  const status = account.options.actionRecordStatus ?? 'unsigned';
+  const status = account.options.actionRecordStatus ?? 'signed';
   const { payload, digest } = buildActionRecord(change, {
     occurredAt: Date.now(), owner: { did: user.did, userId: user._id },
     credential: { kind: 'session', id: `actorSessions:${account.key}` },

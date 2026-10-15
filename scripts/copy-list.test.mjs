@@ -56,6 +56,8 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
   let seq = 0;
   return {
     rows,
+    // copyList queues signing of its list.created action record.
+    scheduler: { runAfter: async () => {} },
     db: {
       get: async (id) => byId.get(id) ?? null,
       patch: async (id, fields) => Object.assign(byId.get(id), fields),

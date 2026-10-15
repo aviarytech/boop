@@ -6,7 +6,12 @@
  * Provides wallet-account resolution logic for DID creation flows.
  */
 
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { createTurnkeyClient } from "./lib/turnkeyClient";
+import type { SigningKey } from "./lib/actionRecordSigner";
+import { parseEd25519PublicKey } from "../shared/actionRecord";
+
+type TurnkeyClient = ReturnType<typeof createTurnkeyClient>;
 
 /**
  * Look up the first Ed25519 wallet account for a Turnkey sub-org.
@@ -14,8 +19,10 @@ import { createTurnkeyClient } from "./lib/turnkeyClient";
  * Returns the Turnkey client, the Ed25519 account, and a convenience
  * `verificationMethodId` string (`did:key:<address>`).
  */
-export async function getEd25519Account(subOrgId: string) {
-  const turnkeyClient = createTurnkeyClient();
+export async function getEd25519Account(
+  subOrgId: string,
+  turnkeyClient: TurnkeyClient = createTurnkeyClient()
+) {
 
   // Get wallets for the sub-org
   const walletsResponse = await turnkeyClient.apiClient().getWallets({
@@ -56,5 +63,41 @@ export async function getEd25519Account(subOrgId: string) {
     address,
     verificationMethodId,
     signingOrganizationId,
+  };
+}
+
+/**
+ * The sub-org's Ed25519 key as a raw signer, for action records. Same
+ * server-initiated signRawPayload call the did:webvh signer makes.
+ */
+export async function turnkeySigningKey(
+  subOrgId: string,
+  turnkeyClient: TurnkeyClient = createTurnkeyClient()
+): Promise<SigningKey> {
+  const { address, signingOrganizationId } = await getEd25519Account(subOrgId, turnkeyClient);
+  // A Turnkey Ed25519 (Solana-format) address is the base58 public key itself.
+  const publicKey = parseEd25519PublicKey(address);
+  if (!publicKey) throw new Error("Turnkey Ed25519 address is not a public key");
+
+  return {
+    publicKey,
+    sign: async (message) => {
+      const result = await turnkeyClient.apiClient().signRawPayload({
+        organizationId: signingOrganizationId,
+        signWith: address,
+        payload: `0x${bytesToHex(message)}`,
+        encoding: "PAYLOAD_ENCODING_HEXADECIMAL",
+        hashFunction: "HASH_FUNCTION_NO_OP",
+      });
+      const signRawResult = result.activity?.result?.signRawPayloadResult;
+      if (!signRawResult?.r || !signRawResult?.s) {
+        throw new Error("No signature returned from Turnkey");
+      }
+      const signature = hexToBytes((signRawResult.r + signRawResult.s).replace(/^0x/, ""));
+      if (signature.length !== 64) {
+        throw new Error(`Invalid Ed25519 signature length: ${signature.length} (expected 64 bytes)`);
+      }
+      return signature;
+    },
   };
 }

@@ -566,19 +566,19 @@ function actionRecordPresentation(
 ): { status: string; detail: string; tone: string } {
   const neutral = "text-gray-500 dark:text-gray-400";
   if (record.status === "pending") {
-    return { status: "Pending signature", detail: "Waiting for this record to be signed.", tone: neutral };
+    return { status: "Pending signature", detail: "Waiting for the account's Turnkey-held key to sign this record.", tone: neutral };
   }
   if (record.status === "failed") {
     return { status: "Signing failed", detail: "Signing did not complete, so this record carries no signature.", tone: "text-red-600 dark:text-red-400" };
   }
   if (record.status === "unsigned") {
-    return { status: "Unsigned", detail: "No signature exists for this record.", tone: neutral };
+    return { status: "Unsigned", detail: "This account has no Turnkey signing key, so no signature exists.", tone: neutral };
   }
   if (check === "invalid") {
     return { status: "Signature check failed", detail: "The stored signature does not match this record. Treat it as unverified.", tone: "text-red-600 dark:text-red-400" };
   }
   return {
-    status: "Signed",
+    status: "Signed (Turnkey-held owner key)",
     detail: check === "verified"
       ? "Signature verified against the key in the authorizing account's DID."
       : check === "unbound"
@@ -664,9 +664,9 @@ function ActionRecordList({
         ))}
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mt-2">
-        A signature shows that the key recorded with it signed this record, after an
-        operation authenticated by the named session or API key. It does not show
-        personal intent or who was using that credential.
+        A signature shows that the account's Turnkey-held key signed this record at boop's
+        request, after an operation authenticated by the named session or API key. It does
+        not show personal intent or who was using that credential.
       </p>
     </div>
   );

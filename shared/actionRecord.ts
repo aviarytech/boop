@@ -7,7 +7,7 @@ import { verifyAsync } from "@noble/ed25519";
 
 export const ACTION_RECORD_SCHEMA = "boop.action-record";
 export const ACTION_RECORD_VERSION = 1;
-// Domain-separates action signatures from anything else the same key signs.
+// Domain-separates action signatures from the DID-log proofs the same key signs.
 const SIGNING_DOMAIN = `${ACTION_RECORD_SCHEMA}/v${ACTION_RECORD_VERSION}`;
 
 /** Row identity of the authenticated session or API key; never a token or hash. */
@@ -65,6 +65,8 @@ export type ActionRecordPayload = ActionChange & {
   /** Account that owns the credential and authorized the action; not necessarily the list owner. */
   owner: { did: string; userId: string };
   credential: ActionCredential;
+  /** Binding the signature is expected under: the owner's own Turnkey-held key. */
+  signer: { did: string; custody: "turnkey"; keyType: "Ed25519" };
 };
 
 export type ActionRecordStatus = "pending" | "signed" | "failed" | "unsigned";
@@ -122,6 +124,7 @@ export function buildActionRecord(change: ActionChange, context: {
     occurredAt: context.occurredAt,
     owner: { did: context.owner.did, userId: context.owner.userId },
     credential: { kind: context.credential.kind, id: context.credential.id },
+    signer: { did: context.owner.did, custody: "turnkey", keyType: "Ed25519" },
   };
   const payload = canonicalize(body);
   return { payload, digest: actionRecordDigest(payload) };
@@ -135,13 +138,14 @@ export function parseActionRecordPayload(payload: string): ActionRecordPayload |
   let parsed: unknown;
   try { parsed = JSON.parse(payload); } catch { return null; }
   if (!isRecord(parsed) || parsed.schema !== ACTION_RECORD_SCHEMA || parsed.version !== ACTION_RECORD_VERSION) return null;
-  const { action, subject, owner, credential, occurredAt } = parsed;
+  const { action, subject, owner, credential, signer, occurredAt } = parsed;
   if (typeof action !== "string" || !ACTION_TYPES.includes(action)) return null;
   if (!isRecord(subject) || typeof subject.listId !== "string") return null;
   if (action.startsWith("item.") !== (typeof subject.itemId === "string")) return null;
   if (!isRecord(owner) || typeof owner.did !== "string" || typeof owner.userId !== "string") return null;
   if (!isRecord(credential) || typeof credential.id !== "string"
     || (credential.kind !== "session" && credential.kind !== "apiKey")) return null;
+  if (!isRecord(signer) || typeof signer.did !== "string" || signer.custody !== "turnkey" || signer.keyType !== "Ed25519") return null;
   if (typeof occurredAt !== "number" || !isRecord(parsed.after)) return null;
   return parsed as ActionRecordPayload;
 }
@@ -269,7 +273,8 @@ export async function verifyActionRecord(
   if (actionRecordDigest(record.payload) !== record.digest) return fail("digest_mismatch");
 
   const itemId = "itemId" in payload.subject ? payload.subject.itemId : undefined;
-  if ((record.listId !== undefined && record.listId !== payload.subject.listId)
+  if (payload.signer.did !== payload.owner.did
+    || (record.listId !== undefined && record.listId !== payload.subject.listId)
     || (record.itemId !== undefined && record.itemId !== itemId)
     || (record.ownerUserId !== undefined && record.ownerUserId !== payload.owner.userId)) return fail("binding_mismatch");
   const { expected } = options;
