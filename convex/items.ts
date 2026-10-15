@@ -12,112 +12,7 @@ import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
-
-/**
- * Creates a Verifiable Credential for item authorship (creation).
- * 
- * This follows the W3C VC Data Model structure with a placeholder proof.
- * The proof can be replaced with a cryptographic signature when server-side
- * signing is implemented.
- * 
- * @see https://www.w3.org/TR/vc-data-model/
- */
-export function createItemAuthorshipVC(
-  itemId: Id<"items">,
-  listId: Id<"lists">,
-  creatorDid: string,
-  itemName: string,
-  createdAt: number
-): {
-  type: string;
-  issuer: string;
-  issuanceDate: number;
-  action: string;
-  actorDid: string;
-  proof?: string;
-} {
-  // Build the full W3C VC for signing/verification
-  const fullVc = {
-    "@context": [
-      "https://www.w3.org/2018/credentials/v1",
-      "https://originals.tech/credentials/v1"
-    ],
-    type: ["VerifiableCredential", "ItemAuthorshipCredential"],
-    id: `urn:uuid:${crypto.randomUUID()}`,
-    issuer: creatorDid,
-    issuanceDate: new Date(createdAt).toISOString(),
-    credentialSubject: {
-      id: creatorDid,
-      itemId: itemId.toString(),
-      listId: listId.toString(),
-      itemName,
-      action: "created",
-    },
-  };
-
-  // Return the structured VC object for storage
-  return {
-    type: "ItemAuthorshipCredential",
-    issuer: creatorDid,
-    issuanceDate: createdAt,
-    action: "created",
-    actorDid: creatorDid,
-    proof: JSON.stringify(fullVc),
-  };
-}
-
-/**
- * Creates a Verifiable Credential for item completion.
- * 
- * This follows the W3C VC Data Model structure with a placeholder proof.
- * The proof can be replaced with a cryptographic signature when server-side
- * signing is implemented.
- * 
- * @see https://www.w3.org/TR/vc-data-model/
- */
-function createItemCompletionVC(
-  itemId: Id<"items">,
-  listId: Id<"lists">,
-  completerDid: string,
-  itemName: string,
-  checkedAt: number
-): {
-  type: string;
-  issuer: string;
-  issuanceDate: number;
-  action: string;
-  actorDid: string;
-  proof?: string;
-} {
-  // Build the full W3C VC for signing/verification
-  const fullVc = {
-    "@context": [
-      "https://www.w3.org/2018/credentials/v1",
-      "https://originals.tech/credentials/v1"
-    ],
-    type: ["VerifiableCredential", "ItemCompletionCredential"],
-    id: `urn:uuid:${crypto.randomUUID()}`,
-    issuer: completerDid,
-    issuanceDate: new Date(checkedAt).toISOString(),
-    credentialSubject: {
-      id: completerDid,
-      itemId: itemId.toString(),
-      listId: listId.toString(),
-      itemName,
-      action: "completed",
-    },
-  };
-
-  // Return the structured VC object for storage
-  return {
-    type: "ItemCompletionCredential",
-    issuer: completerDid,
-    issuanceDate: checkedAt,
-    action: "completed",
-    actorDid: completerDid,
-    proof: JSON.stringify(fullVc),
-  };
-}
+import { deleteActionRecords, itemCompleted, itemCreated, itemReopened, recordActions, type ListRef } from "./lib/actionRecords";
 
 /**
  * Add an item to a list.
@@ -216,17 +111,7 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
 
     await changeAssignments(ctx, (await ctx.db.get(itemId))!, ctx.actor.did, { replace: args.assigneeDids ?? (args.assigneeDid ? [args.assigneeDid] : []) });
 
-    // Issue Verifiable Credential proving item authorship
-    const authorshipVC = createItemAuthorshipVC(
-      itemId,
-      args.listId,
-      ctx.actor.did,
-      args.name,
-      args.createdAt
-    );
-
-    // Store the VC proof on the item
-    await ctx.db.patch(itemId, { vcProofs: [authorshipVC] });
+    await recordActions(ctx, [itemCreated(list, itemId, args.name)]);
 
     // Notify other list members (fire-and-forget via scheduler)
     await ctx.scheduler.runAfter(0, internal.notificationActions.sendListNotificationInternal, {
@@ -379,32 +264,18 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
 
     const now = Date.now();
 
-    // Issue Verifiable Credential proving item completion
-    const completionVC = createItemCompletionVC(
-      args.itemId,
-      item.listId,
-      ctx.actor.did,
-      item.name,
-      args.checkedAt
-    );
-
-    // Append completion VC to existing proofs (filter out any legacy string-format proofs)
-    const existingProofs = (item.vcProofs ?? []).filter(
-      (p): p is NonNullable<typeof item.vcProofs>[number] => typeof p === "object" && p !== null
-    );
-    const updatedProofs = [...existingProofs, completionVC];
-
-    // Mark the current item as checked and add completion VC
+    // Historical vcProofs stay as they are; new actions go to actionRecords.
     await ctx.db.patch(args.itemId, {
       checked: true,
       checkedByDid: ctx.actor.did,
       checkedAt: args.checkedAt,
       updatedAt: now,
-      vcProofs: updatedProofs,
     });
 
     // Notify other list members about the completion
     const list = await ctx.db.get(item.listId);
+    const listRef = list ?? { _id: item.listId };
+    const actions = [itemCompleted(listRef, item, args.checkedAt)];
     await ctx.scheduler.runAfter(0, internal.notificationActions.sendListNotificationInternal, {
       listId: item.listId,
       excludeDid: ctx.actor.did,
@@ -456,8 +327,10 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
         });
         await insertInheritedAssignments(ctx, { sourceId: item._id, targetId: nextId, listId: item.listId,
           assigneeDids, actorDid: ctx.actor.did, assignedAt: now, reason: "recurrence" });
+        actions.push(itemCreated(listRef, nextId, item.name, { kind: "recurrence", sourceItemId: item._id }));
       }
     }
+    await recordActions(ctx, actions);
   }),
 });
 
@@ -495,6 +368,8 @@ export const { public: uncheckItem, internal: uncheckItemInternal, replay: unche
       checkedAt: undefined,
       updatedAt: Date.now(),
     });
+    const list = await ctx.db.get(item.listId);
+    await recordActions(ctx, [itemReopened(list ?? { _id: item.listId }, item)]);
   },
 });
 
@@ -527,6 +402,7 @@ export const { public: removeItem, internal: removeItemInternal, replay: removeI
     }
 
     await deleteAssignments(ctx, args.itemId);
+    await deleteActionRecords(ctx, { itemId: args.itemId });
     await ctx.db.delete(args.itemId);
   },
 });
@@ -687,6 +563,8 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
       minOrders: Map<Id<"items"> | undefined, number>;
     }>();
     let listId: Id<"lists"> | null = null;
+    const lists = new Map<Id<"lists">, ListRef>();
+    const actions = [];
 
     for (const itemId of args.itemIds) {
       const item = await ctx.db.get(itemId);
@@ -700,6 +578,8 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
           throw resourceUnavailable();
         }
       }
+      const listRef = lists.get(item.listId) ?? await ctx.db.get(item.listId) ?? { _id: item.listId };
+      lists.set(item.listId, listRef);
 
       await ctx.db.patch(itemId, {
         checked: true,
@@ -707,6 +587,7 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
         checkedAt,
         updatedAt: checkedAt,
       });
+      actions.push(itemCompleted(listRef, item, checkedAt));
 
       // If item has recurrence, create a new unchecked copy with next due date
       if (item.recurrence) {
@@ -754,9 +635,11 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
           });
           await insertInheritedAssignments(ctx, { sourceId: item._id, targetId: nextId, listId: item.listId,
             assigneeDids, actorDid: ctx.actor.did, assignedAt: checkedAt, reason: "recurrence" });
+          actions.push(itemCreated(listRef, nextId, item.name, { kind: "recurrence", sourceItemId: item._id }));
         }
       }
     }
+    await recordActions(ctx, actions);
   },
 });
 
@@ -773,6 +656,8 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal, r
   handler: async (ctx, args) => {
     const now = Date.now();
     let listId: Id<"lists"> | null = null;
+    const lists = new Map<Id<"lists">, ListRef>();
+    const actions = [];
 
     for (const itemId of args.itemIds) {
       const item = await ctx.db.get(itemId);
@@ -785,6 +670,8 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal, r
           throw resourceUnavailable();
         }
       }
+      const listRef = lists.get(item.listId) ?? await ctx.db.get(item.listId) ?? { _id: item.listId };
+      lists.set(item.listId, listRef);
 
       await ctx.db.patch(itemId, {
         checked: false,
@@ -792,7 +679,9 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal, r
         checkedAt: undefined,
         updatedAt: now,
       });
+      actions.push(itemReopened(listRef, item));
     }
+    await recordActions(ctx, actions);
   },
 });
 
@@ -829,10 +718,12 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, rep
       
       for (const subItem of subItems) {
         await deleteAssignments(ctx, subItem._id);
+        await deleteActionRecords(ctx, { itemId: subItem._id });
         await ctx.db.delete(subItem._id);
       }
 
       await deleteAssignments(ctx, itemId);
+      await deleteActionRecords(ctx, { itemId });
       await ctx.db.delete(itemId);
     }
   },

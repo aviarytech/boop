@@ -293,6 +293,33 @@ export default defineSchema({
     .index("by_parent", ["parentId"])
     .index("by_due_date", ["listId", "dueDate"]),
 
+  // Action records (#237), replacing the unsigned vcProof(s) placeholders.
+  // `payload` is the exact canonical JSON that gets signed; never rewrite it, and
+  // keep this table out of DID-rewrite migrations. See docs/action-records.md.
+  actionRecords: defineTable({
+    payload: v.string(), // Canonical JSON (shared/actionRecord.ts), immutable once written
+    digest: v.string(), // Lowercase hex SHA-256 of payload
+    // Index columns copied from the payload; verification requires them to agree.
+    listId: v.id("lists"),
+    itemId: v.optional(v.id("items")),
+    ownerUserId: v.id("users"), // Account that authorized the action
+    // Only "unsigned" is written until a signer exists; the other states are
+    // what the provenance UI and verifier already understand.
+    status: v.union(
+      v.literal("pending"), // Awaiting a signature
+      v.literal("signed"),
+      v.literal("failed"), // Signing did not complete; see error
+      v.literal("unsigned"), // No signature exists; nothing is fabricated
+    ),
+    signature: v.optional(v.string()), // Multibase base58btc Ed25519 signature
+    verificationMethod: v.optional(v.string()), // did:key of the key bound at signing time
+    publicKeyMultibase: v.optional(v.string()),
+    signedAt: v.optional(v.number()),
+    error: v.optional(v.string()), // Non-secret reason code, set when failed
+  })
+    .index("by_list", ["listId", "itemId"])
+    .index("by_item", ["itemId"]),
+
   // Item assignees table - tracks who is assigned to each item (Phase 1 foundation)
   itemAssignees: defineTable({
     itemId: v.id("items"),
