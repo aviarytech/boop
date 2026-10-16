@@ -24,6 +24,7 @@ import type { MutationCtx } from "../_generated/server";
  *  - lists.assetDid / listEnvelopes.assetDid — did:cel asset ids, not user DIDs
  *  - sites.did — the site's own did:webvh
  *  - users.did / users.legacyDid — handled separately, they ARE the identity
+ *  - actionRecords — signed bytes naming the DID at action time; never rewritten
  */
 const EXACT_MATCH_FIELDS: Record<string, string[]> = {
   didLogs: ["userDid"],

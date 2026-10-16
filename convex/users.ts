@@ -81,10 +81,11 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     if (item) {
       if (await drain(ctx.db.query("comments").withIndex("by_item", q => q.eq("itemId", item._id)).take(DELETE_BATCH_SIZE))) return false;
       if (await drain(ctx.db.query("itemAssignees").withIndex("by_item", q => q.eq("itemId", item._id)).take(DELETE_BATCH_SIZE))) return false;
+      if (await drain(ctx.db.query("actionRecords").withIndex("by_item", q => q.eq("itemId", item._id)).take(DELETE_BATCH_SIZE))) return false;
       await ctx.db.delete(item._id);
       return false;
     }
-    for (const table of ["itemAssignees", "tags", "activities", "presence", "publications", "bookmarks", "bitcoinAnchors", "noteBodies", "listEnvelopes"] as const) {
+    for (const table of ["itemAssignees", "tags", "activities", "presence", "publications", "bookmarks", "bitcoinAnchors", "noteBodies", "listEnvelopes", "actionRecords"] as const) {
       if (await drain(ctx.db.query(table).withIndex("by_list", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
     }
     if (await drain(ctx.db.query("listGrants").withIndex("by_list_recipient", q => q.eq("listId", listId)).take(DELETE_BATCH_SIZE))) return false;
