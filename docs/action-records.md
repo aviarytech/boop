@@ -1,18 +1,16 @@
 # Action records and signature boundaries
 
 Recorded actions are written as **action records**: an exact, canonical payload
-naming the account and credential that authorized the action (#237). Records are
-stored **unsigned** for now. Who holds the signing key, and whether the account
-holder must be present to sign, is still being decided (#244), so no signer is
-wired up and nothing claims a signature. They replace the unsigned `vcProof` / `vcProofs` placeholders, which remain
+that the authorizing account's Turnkey-held key signs asynchronously (#237).
+They replace the unsigned `vcProof` / `vcProofs` placeholders, which remain
 readable as historical data and are no longer written.
 
 | Piece | Where |
 | --- | --- |
 | Payload contract, canonical bytes, verifier | `shared/actionRecord.ts` (pure: no Convex, no network) |
 | The one writer | `convex/lib/actionRecords.ts` `recordActions` |
-| Storage and reads | `convex/actionRecords.ts`, table `actionRecords` |
-| Signing | Not implemented yet; see [Custody](#custody) |
+| Storage, reads, signer bookkeeping | `convex/actionRecords.ts`, table `actionRecords` |
+| Signing | `convex/actionRecordSigning.ts` → `convex/lib/actionRecordSigner.ts` |
 | Standalone check | `scripts/verify-action-records.mjs` |
 
 ## Authenticated identity
@@ -48,8 +46,8 @@ Do not fabricate historical signatures or alter genuine evidence's signed bytes
 or historical identity bindings. The legacy DID migrations still rewrite the
 placeholder wrapper fields, and `celAssetDids` still rebuilds a legacy list's
 unsigned ownership placeholder for its new asset DID (the constructor now lives
-in that migration, its only remaining user). Action records are kept out of
-every rewrite path, because their payload is meant to be signed as written.
+in that migration, its only remaining user). Signed action records are kept out
+of every rewrite path.
 
 ## Identifier badges and evidence boundaries
 
@@ -73,18 +71,15 @@ personal-ownership verification.
 
 ## Custody
 
-Undecided. #244 rules out boop's parent-org Turnkey API key signing as a user
-without the user present, which is what a server-initiated `signRawPayload` in
-the account's sub-org would be. Until the replacement model lands:
+Signing custody is **author-held at Turnkey**. Each record is signed by the
+Ed25519 key in the authorizing account's own Turnkey sub-organization
+(`users.turnkeySubOrgId`, resolved with `getEd25519Account`), through the same
+server-initiated `signRawPayload` call `didCreation` uses. There is no boop
+service key and no service attestation.
 
-- every record is written with `status: "unsigned"`;
-- the payload carries no `signer` or custody field, so stored bytes make no
-  claim about a key that does not exist yet;
-- the schema, verifier and provenance UI already understand `pending`, `signed`
-  and `failed`, so a signer can be added without changing them.
-
-Records written now will not be signed retroactively under an author-present
-model, because the author is no longer present for them.
+"Author-held" describes where the key lives, not who pressed the button. boop's
+server asks Turnkey to sign on the account's behalf; the account holder does not
+approve each signature. See [what a signature proves](#what-a-signature-proves).
 
 ## What is recorded
 
@@ -101,8 +96,7 @@ replay, or the HTTP API:
 | `list.renamed` | `renameList` |
 
 A batch writes one record per item, identical in shape to the record the
-individual call writes. Recording happens inside the mutation and schedules
-nothing, so it cannot fail or delay the write.
+individual call writes. A mutation's records are signed by one signer run.
 
 Not recorded: item edits other than the above, deletion, reordering,
 assignment, and the items carried by `copyList` (they keep their original
@@ -110,7 +104,7 @@ attribution fields, so a creation record would claim someone else's work).
 
 ## Payload (version 1)
 
-`payload` is stored as a string and is the exact UTF-8 text a signature covers.
+`payload` is stored as a string and is the exact UTF-8 text that gets signed.
 It is canonical JSON per RFC 8785: object keys sorted by UTF-16 code unit, no
 whitespace, strings and finite numbers as `JSON.stringify` writes them. Values
 JSON cannot carry are never put in a payload.
@@ -130,7 +124,8 @@ JSON cannot carry are never put in a payload.
   "origin": { "kind": "recurrence", "sourceItemId": "…" },  // optional, *.created only
   "occurredAt": 1700000000000,           // server clock, ms
   "owner": { "did": "did:webvh:…", "userId": "<users row id>" },
-  "credential": { "kind": "session", "id": "<accessSessions or agentApiKeys row id>" }
+  "credential": { "kind": "session", "id": "<accessSessions or agentApiKeys row id>" },
+  "signer": { "did": "did:webvh:…", "custody": "turnkey", "keyType": "Ed25519" }
 }
 ```
 
@@ -147,6 +142,8 @@ JSON cannot carry are never put in a payload.
 - `credential` is the authenticated session row or API-key row from
   `ctx.actor.credential`. A human session and each API key of one account are
   distinct here while sharing one `owner`.
+- `signer.did` always equals `owner.did`: the signature is expected under that
+  account's own Turnkey-held Ed25519 key.
 - `checkedAt` is the value stored on the item. The individual call takes it from
   the client (`null` here if it was not a finite number); the batch call uses the
   server clock. `occurredAt` is always the server clock.
@@ -164,22 +161,51 @@ The signed message is 64 bytes:
 SHA-256("boop.action-record/v1") || SHA-256(payload)
 ```
 
-The prefix separates these signatures from anything else the same key signs. `signature` is the Ed25519 signature, multibase base58btc (`z…`).
+The prefix separates these signatures from the did:webvh proofs the same key can
+sign. `signature` is the Ed25519 signature, multibase base58btc (`z…`).
 `publicKeyMultibase` (Multikey, `z6Mk…`) and `verificationMethod`
 (`did:key:<multikey>#<multikey>`) record the key that signed.
 
 ## Status lifecycle
 
-| Status | Meaning | Written today |
-| --- | --- | --- |
-| `unsigned` | No signature exists | Yes, for every record |
-| `pending` | Awaiting a signature | No |
-| `signed` | Carries `signature`, `publicKeyMultibase`, `verificationMethod`, `signedAt` | No |
-| `failed` | Signing did not complete; `error` holds a non-secret reason code | No |
+```
+recordActions ──► pending ──► signed
+                    │  ▲
+                    │  └── retry (attempts < 4)
+                    ├────► failed    retries exhausted, or the record is no longer signable
+                    └────► unsigned  the account has no Turnkey sub-org
+recordActions ──► unsigned           same, known at write time
+```
 
-Whatever signer is added must sign only the stored bytes, never a payload
-rebuilt from live list or item state, and must check that they still hash to
-`digest`.
+1. The mutation writes the record as `pending` and schedules
+   `actionRecordSigning.sign`. It does not contact Turnkey. If the account has no
+   sub-org it writes `unsigned` and schedules nothing.
+2. The signer re-reads each record. It signs only if the stored payload is still
+   canonical, still hashes to the stored digest, and still names the record's
+   owner under that owner's current DID. It never rebuilds a payload from live
+   list or item state.
+3. It checks the returned signature against the looked-up key before storing it.
+4. `settle` changes only `pending` records, so repeated, duplicate or late runs
+   cannot re-sign or replace a stored signature.
+
+### Availability and failure policy
+
+- A write never fails or waits because of signing. A Turnkey outage delays
+  signatures; it does not block or roll back actions.
+- Transient failures (key lookup, signing request, a signature that does not
+  verify) are retried after 1, 5 and 25 minutes. The fourth failure marks the
+  record `failed`.
+- Integrity or binding failures (`payload_integrity`, `owner_binding_changed`)
+  mark the record `failed` immediately and are not retried.
+- Scheduled actions run at most once. An hourly cron (`sweepStalePending`)
+  re-queues records whose signer run never reported back, counting against the
+  same attempt bound (`signer_unresponsive`).
+- `error` holds a fixed reason code. Provider error text is never stored or
+  logged.
+- After an outage longer than the retry window, an operator can run the internal
+  mutation `actionRecords.requeueFailed` with the affected record ids. Nothing
+  re-queues failed records automatically, and `unsigned` records are not signed
+  later if the account gains a sub-org.
 
 ## Independent verification
 
@@ -188,8 +214,8 @@ needs only the record and keys the caller already trusts. It:
 
 1. requires `status: "signed"` and a well-formed signature;
 2. re-canonicalizes `payload` and requires byte equality, then recomputes the digest;
-3. requires the row's index columns to match the payload, and any `expected`
-   owner DID or credential to match;
+3. requires `signer.did === owner.did`, the row's index columns to match the
+   payload, and any `expected` owner DID or credential to match;
 4. takes the caller's trusted keys **for `payload.owner.did`** and requires the
    record's declared key to be one of them;
 5. verifies the Ed25519 signature under that trusted key.
@@ -208,21 +234,23 @@ bun scripts/verify-action-records.mjs records.json 'did:webvh:…=z6Mk…'
 
 ### Where the trusted key comes from
 
-Unsolved, and tied to the custody decision. An account's did:webvh is minted in
-the browser with a browser-held key (`src/lib/webvh.ts`), so a verifier can only
-take a signing key from that DID document if the signing key is listed there.
-Otherwise it has to pin "this owner DID → this key" by a route it trusts. If the
-only source of the key is boop, verification shows the record is intact and was
-signed by the key boop names, not that the key is the owner's.
+This is the part boop does not yet solve for outside verifiers. An account's
+did:webvh is minted in the browser with a browser-held key (`src/lib/webvh.ts`),
+so its DID document does **not** list the Turnkey key that signs action records.
+A verifier therefore has to pin "this owner DID → this Turnkey key" by a route
+it trusts: the account holder publishing the key, a lookup of the Turnkey
+sub-org by someone entitled to make it, or pinning on first use and watching for
+change. If the only source of the key is boop, verification shows the record is
+intact and was signed by the key boop names, not that the key is the owner's.
 
-An account whose DID is a `did:key` of the signing key is the exception: the DID
-is the key, so no pin is needed.
+An account whose DID is a `did:key` of that same Turnkey key is the exception:
+the DID is the key, so no pin is needed.
 
 ### Key rotation
 
 A record keeps the `verificationMethod` and `publicKeyMultibase` it was signed
 with, and its payload keeps the owner DID that authorized it. Neither is
-rewritten when the account's key or DID later changes, and the
+rewritten when the account's Turnkey key or DID later changes, and the
 `remintUserDid` migration deliberately leaves `actionRecords` alone. A verifier
 must accept the key bound at signing time, so `trustedKeys` takes a list per
 owner DID: keep rotated-out keys there for as long as older records should
@@ -233,14 +261,14 @@ of a compromise must stop trusting that key itself.
 
 ## What a signature proves
 
-No record is signed today, so action records currently prove nothing
-cryptographically. They are boop's own account of what happened, and are shown
-as **Unsigned**.
+A verified record proves that the Ed25519 key in the named account's Turnkey
+sub-organization signed exactly this payload, and so that the payload has not
+changed since. boop requested that signature after an operation authenticated by
+the named session or API key.
 
-Once a signer exists, a verified record will prove that the named key signed
-exactly this payload, and so that it has not changed since. What else it proves
-depends on the custody model. Even then it does **not** prove:
+It does **not** prove:
 
+- personal intent, or that the account holder saw or approved the action;
 - who or what was holding the session or API key;
 - that the action was permitted (authorization is enforced at write time and is
   not part of the evidence);
@@ -249,6 +277,9 @@ depends on the custody model. Even then it does **not** prove:
 - that the record set is complete. Records are deleted with their item or list,
   and nothing chains them together, so an absent record proves nothing.
 
+`pending`, `failed` and `unsigned` records carry no signature and prove nothing
+cryptographically. They are shown as such.
+
 ## Presentation
 
 `ProvenanceInfo` lists action records for an item, and list-level records for a
@@ -256,12 +287,12 @@ list, under **Action records**, separate from **Historical action records**:
 
 | Status | Label |
 | --- | --- |
-| `signed` | **Signed** |
+| `signed` | **Signed (Turnkey-held owner key)** |
 | `pending` | **Pending signature** |
 | `failed` | **Signing failed** |
 | `unsigned` | **Unsigned** |
 
-Only **Unsigned** occurs today. Each row names the authorizing account and whether a signed-in session or an
+Each row names the authorizing account and whether a signed-in session or an
 API key was used. The browser re-checks every signed record. It says "signature
 verified" only when the owner DID is itself a `did:key` for the signing key.
 Otherwise it says the signature matches the key boop recorded and that the key
@@ -281,24 +312,28 @@ for the rest, so deleting a list or item never hits Convex's per-mutation limits
 
 ## Verification status and remaining gaps
 
-Covered by `scripts/signed-action-records.test.mjs`,
-`scripts/provenance-presentation.test.mjs` and the share-modal E2E tests:
-canonical determinism; create, complete, reopen, batch, recurring, template,
-copy and rename flows; individual versus batch equivalence; session versus
-distinct API keys; every record written unsigned with nothing scheduled;
-verification of records signed with a test key, and rejection of altered
-payloads, signatures, keys and bindings and of every non-signed status; reads,
+Covered by `scripts/signed-action-records.test.mjs` and
+`scripts/provenance-presentation.test.mjs`: canonical determinism; create,
+complete, reopen, batch, recurring, template, copy and rename flows; individual
+versus batch equivalence; session versus distinct API keys; signing through a
+stubbed Turnkey client holding a real Ed25519 key; rejection of altered payloads,
+signatures, keys and bindings and of every non-signed status; retry to failed;
+no-sub-org to unsigned; idempotent re-signing; the stale-pending sweep; reads,
 the HTTP export and the standalone verifier; deletion; the re-mint migration
-leaving records untouched; all four rendered statuses.
+leaving records untouched; rendered statuses.
 
 Not done or not verified:
 
-- **No signer.** Signing waits on the custody follow-up from #244.
-- Where an outside verifier gets the signing key from is unsolved (above).
+- **Live Turnkey has not been exercised.** The signer mirrors the request the
+  did:webvh signer makes (64-byte hex payload, `HASH_FUNCTION_NO_OP`), but no
+  real signature has been produced or checked against a real sub-org key.
+- The Turnkey key is not published in the owner's DID document, so outside
+  verifiers must pin it themselves (above).
 - No revocation or validity window for signing keys.
 - Records are not chained or anchored; completeness and ordering are not
   provable.
 - Existing historical placeholders are not converted, and never will be signed
   retroactively.
 - Item edits, deletions, reordering and assignment are not recorded.
+- Failed records need an operator to re-queue; there is no user-facing retry.
 - Native builds and live flows have not been exercised.

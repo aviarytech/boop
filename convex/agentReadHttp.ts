@@ -66,7 +66,7 @@ export const getListWithItems = httpAction(async (ctx, request) => {
  * GET /api/v1/action-records?itemId=<id>  (requires "items:read")
  * GET /api/v1/action-records?listId=<id>  (requires "lists:read"; list-level records)
  *
- * Action records in the shape shared/actionRecord.ts verifyActionRecord
+ * Signed action records in the shape shared/actionRecord.ts verifyActionRecord
  * takes, so a caller can verify them without trusting this server.
  * Response: { "records": [...] }
  */

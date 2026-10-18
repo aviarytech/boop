@@ -82,7 +82,7 @@ test('new action records show their truthful signing status without claiming ver
   fireEvent.click(container.querySelector('button'));
   const text = () => container.textContent;
   assert.match(text(), /Action records \(4\)/);
-  assert.match(text(), /Creation recordSigned/);
+  assert.match(text(), /Creation recordSigned \(Turnkey-held owner key\)/);
   assert.match(text(), /Completion recordPending signature/);
   assert.match(text(), /Reopen recordSigning failed/);
   assert.match(text(), /Completion recordUnsigned/);
@@ -90,10 +90,10 @@ test('new action records show their truthful signing status without claiming ver
   assert.match(text(), /Via signed-in session …abc123/);
   assert.match(text(), /Via API key …111aaa/);
   assert.match(text(), /Via API key …222bbb/);
-  // A did:webvh owner's key cannot be checked from the DID alone, so nothing says "verified".
+  // A did:webvh owner's Turnkey key cannot be checked from the DID alone, so nothing says "verified".
   await waitFor(() => assert.match(text(), /matches the key boop recorded.*not independently verified here/));
   assert.doesNotMatch(text(), /Signature verified/);
-  assert.match(text(), /after an operation authenticated by the named session or API key.*does not show personal intent or who was using that credential/);
+  assert.match(text(), /at boop's request.*does not show personal intent or who was using that credential/);
   assert.doesNotMatch(text(), /Verifiable Credential|cryptographic proof|Historical action records/);
 });
 
@@ -104,7 +104,7 @@ test('a signature is called verified only against a key the owner DID itself enc
   serve({ 'actionRecords:getItemActionRecords': [genuine] });
   const first = render(React.createElement(ItemProvenanceInfo, { item: bareItem }));
   fireEvent.click(first.container.querySelector('button'));
-  await waitFor(() => assert.match(first.container.textContent, /Completion recordSignedSignature verified against the key in the authorizing account's DID/));
+  await waitFor(() => assert.match(first.container.textContent, /Completion recordSigned \(Turnkey-held owner key\)Signature verified against the key in the authorizing account's DID/));
   cleanup();
 
   // Same record, signed by a key the did:key owner does not name: integrity holds, binding does not.
@@ -121,7 +121,7 @@ test('a signature is called verified only against a key the owner DID itself enc
   const third = render(React.createElement(ItemProvenanceInfo, { item: bareItem }));
   fireEvent.click(third.container.querySelector('button'));
   await waitFor(() => assert.match(third.container.textContent, /Completion recordSignature check failed/));
-  assert.doesNotMatch(third.container.textContent, /recordSigned|Signature verified/);
+  assert.doesNotMatch(third.container.textContent, /Signed \(Turnkey-held owner key\)|Signature verified/);
 });
 
 test('list-level records and historical placeholders are presented side by side with separate labels', async () => {
@@ -138,7 +138,7 @@ test('list-level records and historical placeholders are presented side by side 
   const { container } = render(React.createElement(MemoryRouter, null, React.createElement(ListProvenanceInfo, { list })));
   fireEvent.click(container.querySelector('button'));
   assert.match(container.textContent, /Rename recordPending signature/);
-  assert.match(container.textContent, /List creation recordSigned/);
+  assert.match(container.textContent, /List creation recordSigned \(Turnkey-held owner key\)/);
   assert.match(container.textContent, /Historical ownership record \(unsigned\)/);
   await waitFor(() => assert.match(container.textContent, /not independently verified here/));
 });

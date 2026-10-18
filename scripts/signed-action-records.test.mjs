@@ -17,37 +17,46 @@ import {
 } from '../shared/actionRecord.ts';
 
 const modules = await loadReplayModules('signed-action-records');
-const extra = ['templates', 'actionRecords', 'agentReadHttp', 'users', 'didResources', 'migrations/remintUserDidDb'];
+const extra = ['templates', 'actionRecords', 'agentReadHttp', 'users', 'didResources', 'lib/actionRecordSigner', 'turnkeyHelpers', 'migrations/remintUserDidDb'];
 await build({
   entryPoints: extra.map(n => `convex/${n}.ts`), outdir: 'tmp/signed-action-records-extra', bundle: true,
   platform: 'node', format: 'esm', external: ['convex/*', '@turnkey/*'], outExtension: { '.js': '.mjs' },
 });
 for (const name of extra) modules[name] = await import(pathToFileURL(`${process.cwd()}/tmp/signed-action-records-extra/${name}.mjs`));
+const { signActionRecords } = modules['lib/actionRecordSigner'];
+const { turnkeySigningKey } = modules.turnkeyHelpers;
 const digest = value => createHash('sha256').update(value).digest('hex');
+const hex = bytes => Buffer.from(bytes).toString('hex');
 
-/** Test-only Ed25519 keys, one per account DID. No signer is wired up yet, so
- * tests sign stored records themselves to exercise the verifier and read paths. */
-async function testKeys() {
+/** A stand-in for the Turnkey API holding real Ed25519 keys, one per sub-org. */
+async function fakeTurnkey() {
   const keys = new Map();
-  const keyFor = async did => {
-    if (!keys.has(did)) {
+  const calls = [];
+  let failing = false;
+  const keyFor = async subOrgId => {
+    if (!keys.has(subOrgId)) {
       const secret = ed25519.utils.randomSecretKey();
-      keys.set(did, { secret, publicKey: await ed25519.getPublicKeyAsync(secret) });
+      keys.set(subOrgId, { secret, publicKey: await ed25519.getPublicKeyAsync(secret) });
     }
-    return keys.get(did);
+    return keys.get(subOrgId);
   };
-  return {
-    keyFor,
-    trusted: async user => ({ [user.did]: [ed25519Multikey((await keyFor(user.did)).publicKey)] }),
-    /** Settles a stored record as signed, in the evidence shape the verifier takes. */
-    async sign(record, user) {
-      const { secret, publicKey } = await keyFor(user.did);
-      const publicKeyMultibase = ed25519Multikey(publicKey);
-      return Object.assign(record, {
-        status: 'signed', signature: encodeSignature(await ed25519.signAsync(actionRecordSigningInput(record.payload), secret)),
-        publicKeyMultibase, verificationMethod: `did:key:${publicKeyMultibase}#${publicKeyMultibase}`, signedAt: Date.now(),
-      });
+  const client = { apiClient: () => ({
+    getWallets: async ({ organizationId }) => ({ wallets: [{ walletId: `wallet-${organizationId}` }] }),
+    getWalletAccounts: async ({ organizationId }) => ({ accounts: [
+      { curve: 'CURVE_SECP256K1', address: '0xnot-this-one', organizationId },
+      { curve: 'CURVE_ED25519', address: base58Encode((await keyFor(organizationId)).publicKey), organizationId },
+    ] }),
+    signRawPayload: async request => {
+      calls.push(request);
+      if (failing) throw new Error('turnkey unavailable: api-secret-must-not-be-stored');
+      const signature = hex(await ed25519.signAsync(Buffer.from(request.payload.slice(2), 'hex'), (await keyFor(request.organizationId)).secret));
+      return { activity: { result: { signRawPayloadResult: { r: signature.slice(0, 64), s: signature.slice(64) } } } };
     },
+  }) };
+  return {
+    calls, keyFor, client,
+    fail(value) { failing = value; },
+    trusted: async user => ({ [user.did]: [ed25519Multikey((await keyFor(user.turnkeySubOrgId)).publicKey)] }),
   };
 }
 
@@ -56,16 +65,18 @@ async function fixture() {
   const query = f.ctx.db.query;
   f.ctx.db.query = table => { const q = query(table); q.order = () => q; return q; };
   f.ctx.runQuery = f.ctx.runMutation = (ref, args) => { const [ns, name] = getFunctionName(ref).split(':'); return modules[ns][name]._handler(f.ctx, args); };
-  const keys = await testKeys();
+  const turnkey = await fakeTurnkey();
+  const signerJobs = () => f.effects.filter(([, ref]) => getFunctionName(ref) === 'actionRecordSigning:sign');
   return Object.assign(f, {
-    keys,
+    turnkey, signerJobs,
     records: () => f.rows.actionRecords ?? [],
     payloads: (action) => (f.rows.actionRecords ?? []).map(r => JSON.parse(r.payload)).filter(p => !action || p.action === action),
-    /** Signs every unsigned record with its authorizing account's test key. */
-    async signAll() {
-      for (const record of f.rows.actionRecords ?? []) {
-        if (record.status === 'unsigned') await keys.sign(record, f.rows.users.find(u => u._id === record.ownerUserId));
-      }
+    /** Runs queued signer jobs the way the scheduled action would; returns how many ran. */
+    async runSigner() {
+      const jobs = signerJobs().splice(0);
+      for (const job of jobs) f.effects.splice(f.effects.indexOf(job), 1);
+      for (const [, , args] of jobs) await signActionRecords(f.ctx, args.recordIds, subOrg => turnkeySigningKey(subOrg, turnkey.client));
+      return jobs.length;
     },
     async addApiKey(raw, owner = f.owner.user) {
       return f.ctx.db.insert('agentApiKeys', { ownerDid: owner.did, keyHash: digest(raw), scopes: ['items:write', 'items:read', 'lists:read'], agentDid: 'did:agent:caller-claimed' });
@@ -82,7 +93,7 @@ test('canonical payload bytes are deterministic and reject values that have no s
   const reordered = { after: { checkedAt: 5, checked: true }, before: { checked: false }, subject: { itemId: 'I', listId: 'L' }, action: 'item.completed' };
   const a = buildActionRecord(change, context), b = buildActionRecord(reordered, { credential: { id: 'S', kind: 'session' }, owner: { userId: 'U', did: 'did:owner' }, occurredAt: 1700000000000 });
   assert.deepEqual(a, b);
-  assert.equal(a.payload, '{"action":"item.completed","after":{"checked":true,"checkedAt":5},"before":{"checked":false},"credential":{"id":"S","kind":"session"},"occurredAt":1700000000000,"owner":{"did":"did:owner","userId":"U"},"schema":"boop.action-record","subject":{"itemId":"I","listId":"L"},"version":1}');
+  assert.equal(a.payload, '{"action":"item.completed","after":{"checked":true,"checkedAt":5},"before":{"checked":false},"credential":{"id":"S","kind":"session"},"occurredAt":1700000000000,"owner":{"did":"did:owner","userId":"U"},"schema":"boop.action-record","signer":{"custody":"turnkey","did":"did:owner","keyType":"Ed25519"},"subject":{"itemId":"I","listId":"L"},"version":1}');
   assert.equal(a.digest, digest(a.payload));
   assert.equal(canonicalize({ b: [1, 'é"\n', null, true], a: {} }), '{"a":{},"b":[1,"é\\"\\n",null,true]}');
   assert.equal(canonicalize({ n: [1.5, -0, 1e21, 2 ** 60] }), '{"n":[1.5,0,1e+21,1152921504606847000]}');
@@ -100,7 +111,7 @@ test('canonical payload bytes are deterministic and reject values that have no s
   assert.equal(parseEd25519PublicKey('not base58 0OIl'), null);
 });
 
-test('create, complete, reopen, list create and rename each write one unsigned record bound to the authenticated session', async () => {
+test('create, complete, reopen, list create and rename each write one pending record bound to the authenticated session', async () => {
   const f = await fixture();
   const listId = await f.call('lists', 'createList', { assetDid: 'did:cel:new', name: 'Errands', createdAt: 1 });
   await f.call('lists', 'renameList', { listId, name: 'Chores' });
@@ -118,19 +129,19 @@ test('create, complete, reopen, list create and rename each write one unsigned r
   for (const [record, payload] of f.records().map((r, i) => [r, f.payloads()[i]])) {
     assert.deepEqual(payload.owner, { did: f.owner.user.did, userId: f.owner.user._id });
     assert.deepEqual(payload.credential, { kind: 'session', id: f.owner.accessSession._id });
-    assert.equal(payload.signer, undefined, 'custody is not decided, so the payload makes no claim about it');
+    assert.deepEqual(payload.signer, { did: f.owner.user.did, custody: 'turnkey', keyType: 'Ed25519' });
     assert.deepEqual([payload.schema, payload.version], ['boop.action-record', 1]);
     assert.ok(Math.abs(payload.occurredAt - Date.now()) < 5000);
     assert.equal(record.payload, canonicalize(payload));
     assert.equal(record.digest, actionRecordDigest(record.payload));
-    assert.deepEqual([record.status, record.signature, record.ownerUserId, record.listId, record.itemId],
-      ['unsigned', undefined, f.owner.user._id, listId, payload.subject.itemId]);
+    assert.deepEqual([record.status, record.attempts, record.signature, record.ownerUserId, record.listId, record.itemId],
+      ['pending', 0, undefined, f.owner.user._id, listId, payload.subject.itemId]);
   }
   // No new unsigned placeholder JSON is written anywhere.
   assert.equal(f.rows.lists.find(l => l._id === listId).vcProof, undefined);
   assert.equal(f.rows.items.find(i => i._id === itemId).vcProofs, undefined);
-  // Recording happens entirely inside the mutation; nothing is scheduled for it.
-  assert.deepEqual(f.effects.filter(([, ref]) => getFunctionName(ref).startsWith('actionRecord')), []);
+  assert.equal(f.signerJobs().length, 5);
+  assert.deepEqual(f.signerJobs().flatMap(([delay, , args]) => [delay, args.recordIds.length]), [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]);
 });
 
 test('batch and individual actions produce equivalent records, including recurring generation', async () => {
@@ -144,7 +155,7 @@ test('batch and individual actions produce equivalent records, including recurri
   await batch.call('items', 'batchCheckItems', { itemIds: ['I1', 'I2'] });
   await batch.call('items', 'batchUncheckItems', { itemIds: ['I1', 'I2'] });
 
-  const normalize = f => f.payloads().map(p => ({ ...shape(p), owner: 'OWNER', credential: 'CREDENTIAL', item: p.action === 'item.created' ? 'NEXT' : p.subject.itemId }))
+  const normalize = f => f.payloads().map(p => ({ ...shape(p), owner: 'OWNER', credential: 'CREDENTIAL', signer: 'SIGNER', item: p.action === 'item.created' ? 'NEXT' : p.subject.itemId }))
     .sort((a, b) => `${a.action}${a.item}`.localeCompare(`${b.action}${b.item}`));
   assert.deepEqual(normalize(batch), normalize(single));
   assert.deepEqual(batch.payloads().map(p => p.action).sort(), ['item.completed', 'item.completed', 'item.created', 'item.reopened', 'item.reopened']);
@@ -159,6 +170,9 @@ test('batch and individual actions produce equivalent records, including recurri
     // Historical evidence on the source item is neither replaced nor extended.
     assert.deepEqual(f.rows.items[0].vcProofs, [{ type: 'ExistingSignedProof', proof: 'do-not-replace', issuer: f.owner.user.did }]);
   }
+  // One mutation queues one signer run for all of its records.
+  assert.deepEqual(batch.signerJobs().map(([, , args]) => args.recordIds.length), [3, 2]);
+  assert.deepEqual(single.signerJobs().map(([, , args]) => args.recordIds.length), [2, 1, 1, 1]);
 });
 
 test('DID resource toggles record the same completion and reopen as checkItem and uncheckItem', async () => {
@@ -167,7 +181,7 @@ test('DID resource toggles record the same completion and reopen as checkItem an
   await direct.call('items', 'uncheckItem', { itemId: 'I1' });
   await shared.call('didResources', 'checkSharedItem', { listId: 'L1', itemId: 'I1' });
   await shared.call('didResources', 'uncheckSharedItem', { listId: 'L1', itemId: 'I1' });
-  const normalize = f => f.payloads().map(p => ({ ...shape(p), owner: 'OWNER', credential: 'CREDENTIAL' }));
+  const normalize = f => f.payloads().map(p => ({ ...shape(p), owner: 'OWNER', credential: 'CREDENTIAL', signer: 'SIGNER' }));
   assert.deepEqual(normalize(shared), normalize(direct));
   const [completed] = shared.payloads('item.completed');
   assert.ok(Math.abs(completed.after.checkedAt - Date.now()) < 5000, 'the shared toggle stamps server time');
@@ -186,8 +200,9 @@ test('a session and two API keys of one account are distinguishable from each ot
     { kind: 'session', id: f.owner.accessSession._id }, { kind: 'apiKey', id: first }, { kind: 'apiKey', id: second },
   ]);
   for (const payload of [session, keyOne, keyTwo]) assert.deepEqual(payload.owner, { did: f.owner.user.did, userId: f.owner.user._id });
-  // An editor's action is authorized by the editor's account, not the list owner's.
+  // An editor's action is authorized and signed by the editor's account, not the list owner's.
   assert.deepEqual(editor.owner, { did: f.collaborator.user.did, userId: f.collaborator.user._id });
+  assert.equal(editor.signer.did, f.collaborator.user.did);
   assert.deepEqual(editor.credential, { kind: 'session', id: f.collaborator.accessSession._id });
   // Identity is never taken from caller input or key metadata, and no secret material is recorded.
   await assert.rejects(f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 3, userDid: 'did:somebody-else' }), /Identity assertion/);
@@ -198,32 +213,42 @@ test('a session and two API keys of one account are distinguishable from each ot
   assert.equal(f.payloads().length, 4);
 });
 
-test('a record signed with the authorizing account key verifies independently, and only under that account', async () => {
+test('the signer signs the exact persisted bytes with the owner sub-org key and the result verifies independently', async () => {
   const f = await fixture();
   await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
   await f.call('items', 'uncheckItem', { itemId: 'I1' }, f.collaborator);
-  await f.signAll();
+  assert.equal(await f.runSigner(), 2);
   const [byOwner, byEditor] = f.records();
   for (const [record, user] of [[byOwner, f.owner.user], [byEditor, f.collaborator.user]]) {
-    const publicKey = (await f.keys.keyFor(user.did)).publicKey;
-    const result = await verifyActionRecord(record, { trustedKeys: await f.keys.trusted(user) });
+    const publicKey = (await f.turnkey.keyFor(user.turnkeySubOrgId)).publicKey;
+    assert.deepEqual([record.status, record.attempts, record.error], ['signed', 1, undefined]);
+    assert.equal(record.publicKeyMultibase, ed25519Multikey(publicKey));
+    assert.equal(record.verificationMethod, `did:key:${record.publicKeyMultibase}#${record.publicKeyMultibase}`);
+    assert.ok(Math.abs(record.signedAt - Date.now()) < 5000);
+    const result = await verifyActionRecord(record, { trustedKeys: await f.turnkey.trusted(user) });
     assert.equal(result.verified, true);
     assert.equal(result.publicKeyMultibase, record.publicKeyMultibase);
     assert.deepEqual(result.payload, JSON.parse(record.payload));
-    // Equivalent trust sources: a resolver, raw bytes, and a bare base58 key.
+    // Equivalent trust sources: a resolver, raw bytes, and the Turnkey address form.
     assert.equal((await verifyActionRecord(record, { resolvePublicKey: (did, method) => did === user.did && method === record.verificationMethod ? publicKey : null })).verified, true);
     assert.equal((await verifyActionRecord(record, { trustedKeys: { [user.did]: [base58Encode(publicKey)] } })).verified, true);
   }
+  assert.deepEqual(f.turnkey.calls.map(c => [c.organizationId, c.encoding, c.hashFunction, c.payload.length]), [
+    [f.owner.user.turnkeySubOrgId, 'PAYLOAD_ENCODING_HEXADECIMAL', 'HASH_FUNCTION_NO_OP', 130],
+    [f.collaborator.user.turnkeySubOrgId, 'PAYLOAD_ENCODING_HEXADECIMAL', 'HASH_FUNCTION_NO_OP', 130],
+  ]);
+  assert.equal(f.turnkey.calls[0].payload, `0x${hex(actionRecordSigningInput(byOwner.payload))}`);
+  assert.equal(f.turnkey.calls[0].signWith, base58Encode((await f.turnkey.keyFor(f.owner.user.turnkeySubOrgId)).publicKey));
   // The owner's key does not vouch for the editor's record, and vice versa.
-  assert.deepEqual(await verifyActionRecord(byEditor, { trustedKeys: await f.keys.trusted(f.owner.user) }), { verified: false, reason: 'no_trusted_key' });
+  assert.deepEqual(await verifyActionRecord(byEditor, { trustedKeys: await f.turnkey.trusted(f.owner.user) }), { verified: false, reason: 'no_trusted_key' });
 });
 
 test('the verifier rejects altered payloads, signatures, keys, bindings and every non-signed status', async () => {
   const f = await fixture();
   await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
-  await f.signAll();
+  await f.runSigner();
   const [record] = structuredClone(f.records());
-  const trustedKeys = await f.keys.trusted(f.owner.user);
+  const trustedKeys = await f.turnkey.trusted(f.owner.user);
   const verify = (changes, options = { trustedKeys }) => verifyActionRecord({ ...record, ...changes }, options).then(r => r.verified ? 'verified' : r.reason);
   const rewrite = edit => { const payload = JSON.parse(record.payload); edit(payload); const text = canonicalize(payload); return { payload: text, digest: actionRecordDigest(text) }; };
   assert.equal(await verify({}), 'verified');
@@ -244,7 +269,7 @@ test('the verifier rejects altered payloads, signatures, keys, bindings and ever
   assert.equal(await verify({ signature: encodeSignature(signature) }), 'bad_signature');
   assert.equal(await verify({ signature: encodeSignature(signature.slice(1)) }), 'not_signed');
   await f.call('items', 'uncheckItem', { itemId: 'I1' });
-  await f.signAll();
+  await f.runSigner();
   assert.equal(await verify({ signature: f.records()[1].signature }), 'bad_signature');
 
   // Key: an attacker re-signs with their own key and supplies it in the record.
@@ -268,13 +293,50 @@ test('the verifier rejects altered payloads, signatures, keys, bindings and ever
   assert.equal(await verify({}, { trustedKeys, expected: { ownerDid: f.collaborator.user.did } }), 'binding_mismatch');
   assert.equal(await verify({}, { trustedKeys, expected: { credential: { kind: 'apiKey', id: f.owner.accessSession._id } } }), 'binding_mismatch');
   assert.equal(await verify({}, { trustedKeys, expected: { ownerDid: f.owner.user.did, credential: { kind: 'session', id: f.owner.accessSession._id } } }), 'verified');
-  // Naming another account as owner needs that account's key, even with the original key attached.
-  const reattributed = { ...rewrite(p => { p.owner = { did: f.collaborator.user.did, userId: f.collaborator.user._id }; }), ownerUserId: f.collaborator.user._id };
-  assert.equal(await verify(reattributed), 'no_trusted_key');
-  assert.equal(await verify(reattributed, { trustedKeys: { ...trustedKeys, ...await f.keys.trusted(f.collaborator.user) } }), 'untrusted_key');
+  // Naming another account as owner needs that account's key, even with the signer's key attached.
+  const reattributed = rewrite(p => { p.owner = { did: f.collaborator.user.did, userId: f.collaborator.user._id }; });
+  assert.equal(await verify({ ...reattributed, ownerUserId: f.collaborator.user._id }), 'binding_mismatch');
+  const fully = rewrite(p => { p.owner = { did: f.collaborator.user.did, userId: f.collaborator.user._id }; p.signer.did = f.collaborator.user.did; });
+  assert.equal(await verify({ ...fully, ownerUserId: f.collaborator.user._id }, { trustedKeys: { ...trustedKeys, ...await f.turnkey.trusted(f.collaborator.user) } }), 'untrusted_key');
 
   for (const status of ['pending', 'failed', 'unsigned']) assert.equal(await verify({ status }), 'not_signed');
   assert.equal(await verify({ signature: undefined }), 'not_signed');
+});
+
+test('signing failures never touch the write, retry with backoff, then settle as failed with a non-secret reason', async () => {
+  const f = await fixture();
+  f.turnkey.fail(true);
+  await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  assert.equal(f.rows.items[0].checked, true, 'the mutation committed without any signing');
+  const delays = [];
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const [[delay]] = f.signerJobs();
+    delays.push(delay);
+    assert.equal(await f.runSigner(), 1);
+    assert.deepEqual([f.records()[0].status, f.records()[0].attempts], [attempt < 4 ? 'pending' : 'failed', attempt]);
+  }
+  assert.deepEqual(delays, [0, 60_000, 300_000, 1_500_000]);
+  assert.equal(f.signerJobs().length, 0, 'retries are bounded');
+  const [failed] = f.records();
+  assert.equal(failed.error, 'signing_request_failed');
+  assert.deepEqual([failed.signature, failed.signedAt, failed.publicKeyMultibase], [undefined, undefined, undefined]);
+  assert.ok(!JSON.stringify(f.records()).includes('api-secret'), 'provider error text is never persisted');
+  assert.equal(f.rows.items[0].checked, true);
+  assert.deepEqual(await verifyActionRecord(failed, { trustedKeys: await f.turnkey.trusted(f.owner.user) }), { verified: false, reason: 'not_signed' });
+
+  // A failed lookup of the key itself is retried the same way.
+  const lookup = await fixture();
+  await lookup.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  const [[, , job]] = lookup.signerJobs().splice(0);
+  await signActionRecords(lookup.ctx, job.recordIds, async () => { throw new Error('No wallets found for sub-org'); });
+  assert.deepEqual([lookup.records()[0].status, lookup.records()[0].attempts], ['pending', 1]);
+
+  // Operator recovery once the outage is over.
+  f.turnkey.fail(false);
+  assert.equal(await modules.actionRecords.requeueFailed._handler(f.ctx, { recordIds: [failed._id] }), 1);
+  await f.runSigner();
+  assert.deepEqual([f.records()[0].status, f.records()[0].error], ['signed', undefined]);
+  assert.equal((await verifyActionRecord(f.records()[0], { trustedKeys: await f.turnkey.trusted(f.owner.user) })).verified, true);
 });
 
 test('no caller-supplied value can make recording fail the write', async () => {
@@ -284,27 +346,109 @@ test('no caller-supplied value can make recording fail the write', async () => {
   }
   await f.call('items', 'addItem', { listId: 'L1', name: 'lone surrogate \ud800 "quoted" \n\u2028 ünïcode', createdAt: 1 });
   assert.deepEqual(f.payloads('item.completed').map(p => p.after.checkedAt), [1700000000000.5, -100000, null, null]);
-  assert.ok(f.records().every(r => r.status === 'unsigned'));
-  await f.signAll();
-  const trustedKeys = await f.keys.trusted(f.owner.user);
+  await f.runSigner();
+  const trustedKeys = await f.turnkey.trusted(f.owner.user);
   for (const record of f.records()) {
+    assert.equal(record.status, 'signed');
     assert.equal((await verifyActionRecord(JSON.parse(JSON.stringify(record)), { trustedKeys })).verified, true);
   }
 });
 
-test('recording never depends on signing infrastructure, so an account without a Turnkey sub-org records the same way', async () => {
+test('an account without a Turnkey sub-org gets an explicit unsigned record and no signer run', async () => {
   const f = await fixture();
   // API-key authentication does not depend on a sub-org; the account simply has none.
   await f.addApiKey('key-one');
   delete f.rows.users[0].turnkeySubOrgId;
   await f.viaKey('items', 'checkItem', { itemId: 'I1', checkedAt: 7 }, 'key-one');
   const [record] = f.records();
-  assert.deepEqual([record.status, record.signature], ['unsigned', undefined]);
+  assert.deepEqual([record.status, record.signature, record.attempts], ['unsigned', undefined, 0]);
+  assert.equal(f.signerJobs().length, 0);
   assert.equal(f.rows.items[0].checked, true);
   assert.deepEqual(await verifyActionRecord(record, { trustedKeys: { [f.owner.user.did]: ['z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK'] } }), { verified: false, reason: 'not_signed' });
+
+  // A sub-org removed between the write and the signer run is also recorded as unsigned.
+  const g = await fixture();
+  await g.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  delete g.rows.users[0].turnkeySubOrgId;
+  await g.runSigner();
+  assert.deepEqual([g.records()[0].status, g.turnkey.calls.length], ['unsigned', 0]);
 });
 
-test('template creation records the list and every item through the same path', async () => {
+test('signing is idempotent: repeated and late runs never re-sign or replace a stored signature', async () => {
+  const f = await fixture();
+  await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  const [[, , job]] = f.signerJobs();
+  await f.runSigner();
+  const signed = structuredClone(f.records()[0]);
+  const resolve = subOrg => turnkeySigningKey(subOrg, f.turnkey.client);
+  await signActionRecords(f.ctx, job.recordIds, resolve);
+  await signActionRecords(f.ctx, [...job.recordIds, ...job.recordIds], resolve);
+  assert.equal(f.turnkey.calls.length, 1);
+  assert.deepEqual(f.records()[0], signed);
+  // A duplicate delivery of a different result cannot overwrite the first.
+  await modules.actionRecords.settle._handler(f.ctx, { outcomes: [
+    { kind: 'signed', recordId: signed._id, digest: signed.digest, signature: 'zOther', publicKeyMultibase: 'zOther', verificationMethod: 'did:key:zOther' },
+    { kind: 'failed', recordId: signed._id, reason: 'late', retry: true },
+    { kind: 'unsigned', recordId: signed._id },
+  ] });
+  assert.deepEqual(f.records()[0], signed);
+  assert.equal(f.signerJobs().length, 0);
+  // A record deleted before its signer runs is skipped.
+  await f.call('items', 'uncheckItem', { itemId: 'I1' });
+  await f.call('items', 'removeItem', { itemId: 'I1' });
+  assert.equal(await f.runSigner(), 1);
+  assert.equal(f.turnkey.calls.length, 1);
+});
+
+test('the signer refuses bytes or bindings that changed after the write, without calling Turnkey', async () => {
+  const f = await fixture();
+  await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  await f.call('items', 'uncheckItem', { itemId: 'I1' });
+  await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 9 });
+  await f.call('items', 'uncheckItem', { itemId: 'I1' }, f.collaborator);
+  const [edited, reserialized, misfiled, renamed] = f.rows.actionRecords;
+  edited.payload = edited.payload.replace('"checkedAt":7', '"checkedAt":8');
+  reserialized.payload = JSON.stringify(JSON.parse(reserialized.payload), null, 2);
+  reserialized.digest = digest(reserialized.payload);
+  misfiled.ownerUserId = f.collaborator.user._id;
+  f.rows.users[1].did = 'did:collaborator-reminted';
+  await f.runSigner();
+  assert.deepEqual(f.records().map(r => [r.status, r.error, r.attempts]), [
+    ['failed', 'payload_integrity', 1], ['failed', 'payload_integrity', 1],
+    ['failed', 'owner_binding_changed', 1], ['failed', 'owner_binding_changed', 1],
+  ]);
+  assert.equal(f.turnkey.calls.length, 0);
+  assert.equal(f.signerJobs().length, 0, 'integrity failures are not retried');
+  // A signature that does not verify under the looked-up key is never stored.
+  const g = await fixture();
+  await g.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  const [[, , job]] = g.signerJobs().splice(0);
+  await signActionRecords(g.ctx, job.recordIds, async () => ({ publicKey: (await g.turnkey.keyFor('org')).publicKey, sign: async () => new Uint8Array(64) }));
+  assert.deepEqual([g.records()[0].status, g.records()[0].signature, g.records()[0].attempts], ['pending', undefined, 1]);
+});
+
+test('the sweep re-queues signer runs that never reported back, within the same attempt bound', async () => {
+  const f = await fixture();
+  await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
+  await f.call('items', 'uncheckItem', { itemId: 'I1' });
+  f.signerJobs().splice(0).forEach(job => f.effects.splice(f.effects.indexOf(job), 1)); // both signer runs are lost
+  const sweep = () => modules.actionRecords.sweepStalePending._handler(f.ctx, {});
+  for (const row of f.rows.actionRecords) row._creationTime = Date.now(); // the fixture numbers rows instead of timing them
+  await sweep();
+  assert.equal(f.signerJobs().length, 0, 'fresh pending records are left to their scheduled run');
+  const hourAgo = Date.now() - 61 * 60_000;
+  f.rows.actionRecords[0]._creationTime = hourAgo;
+  f.rows.actionRecords[1]._creationTime = hourAgo;
+  f.rows.actionRecords[1].lastAttemptAt = Date.now(); // waiting on a backoff retry
+  await sweep();
+  assert.deepEqual(f.signerJobs().map(([delay, , args]) => [delay, args.recordIds]), [[0, [f.rows.actionRecords[0]._id]]]);
+  assert.deepEqual(f.records().map(r => r.attempts), [1, 0]);
+  for (let i = 0; i < 3; i++) { f.rows.actionRecords[0].lastAttemptAt = hourAgo; await sweep(); }
+  assert.deepEqual([f.records()[0].status, f.records()[0].error, f.records()[0].attempts], ['failed', 'signer_unresponsive', 4]);
+  assert.equal(f.records()[1].status, 'pending');
+});
+
+test('template creation records the list and every item through the same path and signs them in one run', async () => {
   const f = await fixture();
   f.rows.listTemplates = [{ _id: 'T1', name: 'Saved', ownerDid: f.owner.user.did, isPublic: false, items: [{ name: 'Step one', order: 0 }, { name: 'Step two', order: 1 }] }];
   const listId = await f.call('templates', 'createListFromTemplate', { templateId: 'T1', listName: 'From template', assetDid: 'did:cel:template' });
@@ -319,9 +463,11 @@ test('template creation records the list and every item through the same path', 
   const [fromTemplate, , added] = f.payloads('item.created');
   assert.equal(added.subject.itemId, direct);
   assert.deepEqual(shape({ ...fromTemplate, origin: undefined }), shape({ ...added, origin: undefined }));
-  await f.signAll();
-  const trustedKeys = await f.keys.trusted(f.owner.user);
+  assert.deepEqual(f.signerJobs().map(([, , args]) => args.recordIds.length), [3, 1]);
+  await f.runSigner();
+  const trustedKeys = await f.turnkey.trusted(f.owner.user);
   for (const record of f.records()) assert.equal((await verifyActionRecord(record, { trustedKeys })).verified, true);
+  assert.equal(f.turnkey.calls.length, 4);
 });
 
 test('copying a list records the new list only, and notes are recorded as notes', async () => {
@@ -343,13 +489,13 @@ test('records are readable with the access of their subject and are removed with
   await f.call('lists', 'renameList', { listId: 'L1', name: 'Food' });
   await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
   await f.call('items', 'addItem', { listId: 'L1', name: 'Bread', createdAt: 8 });
-  await f.signAll();
+  await f.runSigner();
   const itemRecords = await f.call('actionRecords', 'getItemActionRecords', { itemId: 'I1' }, f.collaborator);
   assert.deepEqual(itemRecords.map(r => JSON.parse(r.payload).action), ['item.completed']);
   const listRecords = await f.call('actionRecords', 'getListActionRecords', { listId: 'L1' }, f.collaborator);
   assert.deepEqual(listRecords.map(r => JSON.parse(r.payload).action), ['list.renamed']);
   // What a reader receives is sufficient for independent verification, and nothing internal.
-  assert.equal((await verifyActionRecord(itemRecords[0], { trustedKeys: await f.keys.trusted(f.owner.user) })).verified, true);
+  assert.equal((await verifyActionRecord(itemRecords[0], { trustedKeys: await f.turnkey.trusted(f.owner.user) })).verified, true);
   assert.deepEqual(Object.keys(itemRecords[0]).sort(), ['_id', 'digest', 'error', 'itemId', 'listId', 'ownerUserId', 'payload', 'publicKeyMultibase', 'signature', 'signedAt', 'status', 'verificationMethod']);
   await assert.rejects(f.call('actionRecords', 'getItemActionRecords', { itemId: 'I1' }, stranger));
   await assert.rejects(f.call('actionRecords', 'getListActionRecords', { listId: 'L1' }, stranger));
@@ -362,13 +508,13 @@ test('records are readable with the access of their subject and are removed with
   assert.equal(fetched.status, 200);
   const { records } = await fetched.json();
   assert.deepEqual(records.map(r => r._id), itemRecords.map(r => r._id));
-  assert.equal((await verifyActionRecord(records[0], { trustedKeys: await f.keys.trusted(f.owner.user) })).verified, true);
+  assert.equal((await verifyActionRecord(records[0], { trustedKeys: await f.turnkey.trusted(f.owner.user) })).verified, true);
   assert.deepEqual((await (await http('listId=L1', 'reader-key')).json()).records.map(r => JSON.parse(r.payload).action), ['list.renamed']);
   assert.equal((await http('itemId=I1&listId=L1', 'reader-key')).status, 400);
 
   // The standalone verifier accepts that export against a pinned key, and nothing else.
   const exported = 'tmp/signed-action-records-extra/export.json';
-  const pin = Object.entries(await f.keys.trusted(f.owner.user)).map(([did, [key]]) => `${did}=${key}`);
+  const pin = Object.entries(await f.turnkey.trusted(f.owner.user)).map(([did, [key]]) => `${did}=${key}`);
   const cli = (...args) => spawnSync(process.execPath, ['scripts/verify-action-records.mjs', ...args], { encoding: 'utf8' });
   writeFileSync(exported, JSON.stringify({ records }));
   const accepted = cli(exported, ...pin);
@@ -426,14 +572,14 @@ test('historical placeholders stay untouched and unsigned; a DID re-mint never r
     proof: JSON.stringify({ '@context': ['https://www.w3.org/2018/credentials/v1'], type: ['VerifiableCredential', 'ItemAuthorshipCredential'], issuer: f.owner.user.did, credentialSubject: { id: f.owner.user.did } }) };
   f.rows.items[0].vcProofs = [placeholder];
   await f.call('items', 'checkItem', { itemId: 'I1', checkedAt: 7 });
-  await f.signAll();
+  await f.runSigner();
   assert.deepEqual(f.rows.items[0].vcProofs, [placeholder]);
   assert.equal(legacyActionEvidence(f.rows.items[0].vcProofs[0].proof), 'unsigned');
   assert.equal(legacyActionEvidence(f.records()[0].payload), 'unverified', 'a new record is never mistaken for a legacy placeholder');
 
   const before = structuredClone(f.records());
   const oldDid = f.owner.user.did;
-  const [signingKey] = Object.values(await f.keys.trusted(f.owner.user))[0];
+  const [signingKey] = Object.values(await f.turnkey.trusted(f.owner.user))[0];
   const result = await modules['migrations/remintUserDidDb'].applyRemint._handler(f.ctx, { userId: f.owner.user._id, oldDid, newDid: 'did:webvh:reminted' });
   assert.ok(result.rewritten > 0);
   assert.equal(f.rows.items[0].createdByDid, 'did:webvh:reminted', 'sanity: the re-mint did rewrite mutable attribution');

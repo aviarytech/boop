@@ -38,23 +38,29 @@ export const listRenamed = (list: ListRef & { name: string }, name: string): Rec
 });
 
 /**
- * Persists the exact canonical payloads for this mutation's actions. Records
- * are stored unsigned until a signer exists (see docs/action-records.md), so
- * recording can never fail the write. Identity comes only from ctx.actor.
+ * Persists the exact canonical payloads for this mutation's actions and queues
+ * one signer run for them. Never signs inline: Turnkey is Node/network-only, so
+ * a signing outage cannot fail the write. Identity comes only from ctx.actor.
  */
 export async function recordActions(ctx: ActorCtx<MutationCtx>, changes: RecordedChange[]): Promise<void> {
   if (changes.length === 0) return;
+  const owner = await ctx.db.get(ctx.actor.userId);
+  const status = owner?.turnkeySubOrgId ? "pending" as const : "unsigned" as const;
   const occurredAt = Date.now();
+  const recordIds: Id<"actionRecords">[] = [];
   for (const change of changes) {
     const { payload, digest } = buildActionRecord(change, {
       occurredAt,
       owner: { did: ctx.actor.did, userId: ctx.actor.userId },
       credential: ctx.actor.credential,
     });
-    await ctx.db.insert("actionRecords", {
+    recordIds.push(await ctx.db.insert("actionRecords", {
       payload, digest, listId: change.subject.listId, itemId: change.subject.itemId,
-      ownerUserId: ctx.actor.userId, status: "unsigned",
-    });
+      ownerUserId: ctx.actor.userId, status, attempts: 0,
+    }));
+  }
+  if (status === "pending") {
+    await ctx.scheduler.runAfter(0, internal.actionRecordSigning.sign, { recordIds });
   }
 }
 
