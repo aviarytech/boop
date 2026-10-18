@@ -77,7 +77,7 @@ export function SiteDetail() {
         throw new Error("The file upload did not land. Try again.");
       }
       await replaceSiteFile({ ownerDid: did, siteId: site._id, bucketKey });
-      addToast("Site updated.");
+      addToast("Page updated.");
       haptic("success");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not update the site.";
@@ -97,7 +97,7 @@ export function SiteDetail() {
     return (
       <div className="rounded-2xl bg-white dark:bg-gray-900 border border-stone-200 dark:border-gray-800 p-6">
         <h1 className="text-xl font-bold text-stone-900 dark:text-stone-100">
-          Could not find that site
+          Could not find that page
         </h1>
       </div>
     );
@@ -163,7 +163,7 @@ export function SiteDetail() {
           Preview
         </div>
         <iframe
-          title="Site preview"
+          title="Page preview"
           src={previewSrc}
           className="block h-[460px] w-full bg-white"
           sandbox=""
@@ -186,7 +186,7 @@ export function SiteDetail() {
         {showIdentity && (
           <div className="border-t border-stone-100 dark:border-gray-800 p-4 text-sm text-stone-600 dark:text-stone-300 space-y-3">
             <p>
-              This site has a portable identity. If you ever leave boop, your site keeps its identity and history.
+              This page has a portable identity. If you ever leave boop, your page keeps its identity and history.
             </p>
             <div className="rounded-xl bg-stone-50 dark:bg-gray-950 border border-stone-200 dark:border-gray-800 p-3 space-y-2">
               <div className="break-all"><strong>DID:</strong> {site.did}</div>

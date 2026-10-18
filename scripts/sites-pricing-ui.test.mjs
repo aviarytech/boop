@@ -41,7 +41,7 @@ test('Free cap offers a working upgrade link and preserves access to existing si
   const view = mount(Sites);
   try {
     assert.equal(view.getByRole('link', { name: 'Upgrade to Pro' }).getAttribute('href'), '/pricing');
-    assert.match(view.getByRole('status').textContent, /5 sites and custom domains/);
+    assert.match(view.getByRole('status').textContent, /5 pages and custom domains/);
     fireEvent.change(view.getByPlaceholderText('Paste HTML here...'), { target: { value: '<h1>test</h1>' } });
     assert.equal(view.getByRole('button', { name: 'Make my link' }).disabled, true);
     assert.equal(view.getByRole('link', { name: /existing.boop.ad/ }).getAttribute('href'), '/s/S1');
@@ -91,7 +91,7 @@ test('paid caps explain the limit without selling a Team upgrade that adds no ca
     globalThis.siteUI = { plan: { plan, maxSites: 5, canCreate: false }, sites: [] };
     const view = mount(Sites);
     try {
-      assert.match(view.getByRole('status').textContent, /5 sites per account.*update your existing sites/);
+      assert.match(view.getByRole('status').textContent, /5 pages per account.*update your existing pages/);
       assert.equal(view.queryByRole('link', { name: /Upgrade/ }), null);
     } finally { view.unmount(); }
   }
@@ -109,7 +109,7 @@ test('creation waits for entitlements, then enables below the limit', () => {
 });
 
 test('losing the last site slot displays the structured message without a diagnostic prefix', async () => {
-  const message = 'Your Free plan includes 1 site. Upgrade to Pro at /pricing for 5 sites and custom domains.';
+  const message = 'Your Free plan includes 1 page. Upgrade to Pro at /pricing for 5 pages and custom domains.';
   globalThis.siteUI = { plan: { plan: 'free', maxSites: 1, canCreate: true }, sites: [], action: async key => {
     if (key === 'upload') return { uploadUrl: 'https://fixture.test/upload', bucketKey: 'fixture' };
     assert.equal(key, 'create');
@@ -138,8 +138,8 @@ test('Pro defaults to $48 yearly checkout and monthly remains selectable', async
   try {
     assert.equal(view.getByRole('button', { name: /Yearly/ }).getAttribute('aria-pressed'), 'true');
     assert.ok(view.getByText('$48/yr'));
-    assert.ok(view.getByText('1 site on *.boop.ad'));
-    assert.ok(view.getByText('5 sites + custom domains'));
+    assert.ok(view.getByText('1 page on *.boop.ad'));
+    assert.ok(view.getByText('5 pages + custom domains'));
     fireEvent.click(view.getByRole('button', { name: 'Upgrade to Pro' }));
     await waitFor(() => assert.equal(requests.length, 1));
     assert.equal(requests[0].body.priceId, 'price_yearly');

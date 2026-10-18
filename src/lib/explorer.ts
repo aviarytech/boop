@@ -154,7 +154,7 @@ function deriveSiteRow(site: RawSite, input: DeriveInput): ExplorerRow {
       ? allHostnames.find((h) => h._id === site.primaryHostnameId)
       : undefined;
 
-  const title = primary?.hostname ?? "Untitled site";
+  const title = primary?.hostname ?? "Untitled page";
   const identifier = primary?.hostname ?? null;
 
   const primaryIsActiveCustom =

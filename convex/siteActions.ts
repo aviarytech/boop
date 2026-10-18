@@ -314,7 +314,7 @@ export const { public: createSite, internal: createSiteInternal } = actorAction(
     html: v.string(),
   },
   handler: async (): Promise<never> => {
-    throw new Error("Use direct upload for sites. Refresh and drop the file again.");
+    throw new Error("Use direct upload for pages. Refresh and drop the file again.");
   },
 });
 

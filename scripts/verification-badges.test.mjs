@@ -31,17 +31,18 @@ function assertNoVerificationClaim(container) {
 for (const did of [undefined, '', 'did:cel:recorded', 'not-a-valid-did']) {
   test(`header identifier ${JSON.stringify(did)} is never verification`, () => {
     const { container, getByLabelText } = render(React.createElement(ListVerificationBadge, { did }));
-    const badge = getByLabelText(did ? 'DID (unverified)' : 'No DID');
+    // One chip states both claims: the identifier and, separately, the anchor.
+    const badge = getByLabelText(`${did ? 'Unverified ID' : 'No ID'} · not anchored`);
     fireEvent.mouseEnter(badge.parentElement);
     assert.match(container.textContent, did ? /does not verify authenticity, ownership, or authorship/ : /No decentralized identifier is recorded/);
-    assert.ok(getByLabelText('Not anchored'));
+    assert.match(container.textContent, /has not been anchored/);
     assertNoVerificationClaim(container);
   });
 
   test(`compact item identifier ${JSON.stringify(did)} is neutral or absent`, () => {
     const { container, getByLabelText } = render(React.createElement(ItemVerificationBadge, { did }));
     if (did) {
-      fireEvent.mouseEnter(getByLabelText('DID (unverified)').parentElement);
+      fireEvent.mouseEnter(getByLabelText('Unverified ID · not anchored').parentElement);
       assert.match(container.textContent, /does not verify authenticity, ownership, or authorship/);
     } else {
       assert.equal(container.childElementCount, 0);
@@ -55,9 +56,9 @@ for (const anchorStatus of ['verified', 'pending', 'none']) {
     const { container, getByLabelText } = render(React.createElement(ListVerificationBadge, {
       did: 'did:cel:recorded', anchorStatus, anchorBlockHeight: 123456, anchorTxId: 'anchor-transaction',
     }));
-    const label = { verified: 'Anchored', pending: 'Pending', none: 'Not anchored' }[anchorStatus];
-    fireEvent.mouseEnter(getByLabelText(label).parentElement);
-    assert.ok(getByLabelText('DID (unverified)'));
+    const anchor = { verified: 'anchored', pending: 'anchoring', none: 'not anchored' }[anchorStatus];
+    fireEvent.mouseEnter(getByLabelText(`Unverified ID · ${anchor}`).parentElement);
+    assert.match(container.textContent, /does not verify authenticity, ownership, or authorship/);
     if (anchorStatus === 'verified') {
       assert.match(container.textContent, /Anchored to Bitcoin/);
       assert.match(container.textContent, /Block: 123,456/);
@@ -73,9 +74,8 @@ for (const anchorStatus of ['verified', 'pending', 'none']) {
 }
 
 test('compact item keeps a confirmed anchor without a DID', () => {
-  const { getByLabelText, queryByLabelText, container } = render(React.createElement(ItemVerificationBadge, { anchorStatus: 'verified' }));
-  assert.equal(queryByLabelText('No DID'), null);
-  fireEvent.mouseEnter(getByLabelText('Anchored').parentElement);
+  const { getByLabelText, container } = render(React.createElement(ItemVerificationBadge, { anchorStatus: 'verified' }));
+  fireEvent.mouseEnter(getByLabelText('No ID · anchored').parentElement);
   assert.match(container.textContent, /Anchored to Bitcoin/);
 });
 

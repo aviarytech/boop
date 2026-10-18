@@ -174,7 +174,7 @@ export const applyDomainMigration = internalMutation({
       .withIndex("by_hostname", (q) => q.eq("hostname", args.hostname))
       .first();
     if (existing && existing.siteId !== args.siteId) {
-      throw new Error("That domain is already connected to another boop site.");
+      throw new Error("That domain is already connected to another boop page.");
     }
 
     const hostnames = await ctx.db
@@ -264,7 +264,7 @@ export const recordCustomHostnameRequest = internalMutation({
       .withIndex("by_hostname", (q) => q.eq("hostname", args.hostname))
       .first();
     if (existing) {
-      throw new Error("That domain is already connected to another boop site.");
+      throw new Error("That domain is already connected to another boop page.");
     }
     const id = await ctx.db.insert("siteHostnames", {
       siteId: args.siteId,

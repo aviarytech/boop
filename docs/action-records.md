@@ -53,21 +53,25 @@ every rewrite path, because their payload is meant to be signed as written.
 
 ## Identifier badges and evidence boundaries
 
-List/note headers and compact item badges derive identifier presence from `did`,
-not a credential/verification boolean. A recorded DID (including an unvalidated
-string) is labeled **DID (unverified)** with a neutral information icon; absence
-is **No DID** in headers and hidden in compact items. A DID alone does not prove
-ownership, authorship, or authenticity.
+List/note headers and compact item badges show one chip that states identifier
+presence and anchor status together, e.g. **Unverified ID · not anchored**.
+Identifier presence derives from `did`, not a credential/verification boolean. A
+recorded DID (including an unvalidated string) is **Unverified ID** with a
+neutral information icon; absence is **No ID** in headers, and the chip is hidden
+in compact items when there is neither a DID nor an anchor. A DID alone does not
+prove ownership, authorship, or authenticity. The chip's tooltip explains the
+identifier and the anchor separately.
 
-The public list badge also says **DID (unverified)**. Displaying a supplied DID
+The public list badge (`src/components/publish/VerificationBadge.tsx`) still says
+**DID (unverified)**. Displaying a supplied DID
 or parsing its document and declared verification methods does not validate
 signatures, resolve a WebVH history, establish trust, or verify the list. Missing,
 malformed, and parseable documents have the same unverified evidence boundary.
 Historical attribution records may still be unsigned.
 
-Bitcoin anchor status remains separate: confirmed anchors retain their timestamp
-and transaction details, pending anchors await confirmation, and missing anchors
-say **Not anchored**. The provenance panel's CEL replay and WebVH verification
+Bitcoin anchor status remains a separate claim within the chip: confirmed anchors
+say **anchored** and retain their timestamp and transaction details, pending
+anchors say **anchoring**, and missing anchors say **not anchored**. The provenance panel's CEL replay and WebVH verification
 paths are unchanged; successful event-log verification is not action-record or
 personal-ownership verification.
 

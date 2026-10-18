@@ -25,9 +25,9 @@ test("KindBadge renders 'list' label", () => {
   cleanup();
 });
 
-test("KindBadge renders 'site' label", () => {
+test("KindBadge renders 'page' label for sites", () => {
   const { container, cleanup } = renderInto(<KindBadge kind="site" />);
-  expect(container.textContent).toContain("site");
+  expect(container.textContent).toContain("page");
   cleanup();
 });
 

@@ -62,7 +62,7 @@ export function Explorer() {
             margin: 0,
           }}
         >
-          Originals
+          Directory
         </h1>
         <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">
           Everything you've signed into existence.
@@ -71,7 +71,7 @@ export function Explorer() {
 
       {!isOnline && (
         <div className="rounded-xl border border-stone-200 dark:border-gray-800 bg-stone-50 dark:bg-gray-900 px-3 py-2 text-xs text-stone-500">
-          You're offline. The Explorer needs a connection.
+          You're offline. The directory needs a connection.
         </div>
       )}
 
