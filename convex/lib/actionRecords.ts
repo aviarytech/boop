@@ -71,6 +71,6 @@ export async function deleteActionRecords(
     : await ctx.db.query("actionRecords").withIndex("by_list", q => q.eq("listId", target.listId)).take(DELETE_RECORDS_BATCH);
   for (const record of records) await ctx.db.delete(record._id);
   if (records.length === DELETE_RECORDS_BATCH) {
-    await ctx.scheduler.runAfter(0, internal.actionRecords.deleteRemaining, target);
+    await ctx.scheduler.runAfter(0, internal.actionRecords.deleteRemaining, { target });
   }
 }

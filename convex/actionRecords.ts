@@ -51,6 +51,7 @@ export const { public: getListActionRecords, internal: getListActionRecordsInter
 
 /** Continues deleteActionRecords for subjects with more records than one batch. */
 export const deleteRemaining = internalMutation({
-  args: v.union(v.object({ listId: v.id("lists") }), v.object({ itemId: v.id("items") })),
-  handler: async (ctx, target) => deleteActionRecords(ctx, target),
+  // Convex requires an object at the top level, so the subject is nested.
+  args: { target: v.union(v.object({ listId: v.id("lists") }), v.object({ itemId: v.id("items") })) },
+  handler: async (ctx, { target }) => deleteActionRecords(ctx, target),
 });
