@@ -399,13 +399,13 @@ test('records are readable with the access of their subject and are removed with
   await h.call('items', 'removeItem', { itemId: 'I1' });
   assert.equal(h.records().length, 1);
   const continuations = h.effects.filter(([, ref]) => getFunctionName(ref) === 'actionRecords:deleteRemaining');
-  assert.deepEqual(continuations.map(([delay, , args]) => [delay, args]), [[0, { itemId: 'I1' }]]);
+  assert.deepEqual(continuations.map(([delay, , args]) => [delay, args]), [[0, { target: { itemId: 'I1' } }]]);
   await modules.actionRecords.deleteRemaining._handler(h.ctx, continuations[0][2]);
   assert.deepEqual(h.records(), []);
   for (let i = 0; i <= DELETE_RECORDS_BATCH; i++) await h.ctx.db.insert('actionRecords', { listId: 'L1', status: 'unsigned' });
   await h.call('lists', 'deleteList', { listId: 'L1' });
   assert.equal(h.records().length, 1);
-  await modules.actionRecords.deleteRemaining._handler(h.ctx, { listId: 'L1' });
+  await modules.actionRecords.deleteRemaining._handler(h.ctx, { target: { listId: 'L1' } });
   assert.deepEqual(h.records(), []);
 
   // Account erasure removes the records of that account's lists and items as well.
