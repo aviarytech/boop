@@ -24,7 +24,7 @@ interface Props {
 
 const KIND_OPTIONS: { value: ExplorerSource; label: string }[] = [
   { value: "list", label: "List" },
-  { value: "site", label: "Site" },
+  { value: "site", label: "Page" },
 ];
 const LAYER_OPTIONS: { value: ExplorerLayer; label: string }[] = [
   { value: "did:cel", label: "cel" },

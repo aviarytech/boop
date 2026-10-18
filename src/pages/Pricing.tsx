@@ -154,11 +154,12 @@ export function Pricing() {
           current={plan === "free"}
           features={[
             "Up to 5 lists",
-            "1 site on *.boop.ad",
+            "1 page on *.boop.ad",
             "Up to 3 collaborators per list",
             "Real-time sync",
             "Offline support",
             "Basic DID identity",
+            "API access for your agents",
           ]}
           cta={
             plan === "free" ? (
@@ -183,7 +184,7 @@ export function Pricing() {
           current={plan === "pro"}
           features={[
             "Unlimited lists",
-            "5 sites + custom domains",
+            "5 pages + custom domains",
             "Unlimited collaborators",
             "Verifiable credentials (VC)",
             "List templates",
@@ -230,7 +231,6 @@ export function Pricing() {
             "Everything in Pro",
             "Team workspace",
             "Admin controls",
-            "API access",
             "Shared templates library",
             "Priority support",
           ]}

@@ -1,9 +1,10 @@
 /**
- * VerificationBadge - Shows identifier presence and separate anchor status
- * 
- * Displays visual indicators for:
- * - DID present (unverified identifier, not ownership/authorship proof)
- * - ⚓ Anchored to Bitcoin (if anchor proof exists)
+ * VerificationBadge - one chip for identifier presence and anchor status
+ *
+ * The label keeps both evidence boundaries (docs/action-records.md):
+ * - an identifier is "unverified ID" (presence is not ownership/authorship proof)
+ * - the Bitcoin anchor is stated separately: anchored, anchoring, or not anchored
+ * The tooltip explains each part.
  * 
  * Used on both list headers and individual items.
  */
@@ -96,7 +97,7 @@ function BadgeTooltip({
       {children}
       {isVisible && (
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 animate-fade-in">
-          <div className="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg whitespace-nowrap max-w-xs">
+          <div className="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg px-3 py-2 shadow-lg w-64 whitespace-normal">
             {content}
             <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-gray-700" />
           </div>
@@ -166,9 +167,9 @@ export function VerificationBadge({
   
   const identifierTooltip = hasDid ? (
     <div>
-      <div className="font-semibold mb-1">DID (unverified)</div>
+      <div className="font-semibold mb-1">Unverified ID</div>
       <div className="text-gray-300">
-        An identifier is recorded for this data. Its presence does not verify authenticity, ownership, or authorship.
+        A decentralized identifier (DID) is recorded for this data. Its presence does not verify authenticity, ownership, or authorship.
       </div>
       {status.did && (
         <div className="mt-1 text-gray-400 text-[10px] font-mono truncate max-w-[200px]">
@@ -178,7 +179,7 @@ export function VerificationBadge({
     </div>
   ) : (
     <div>
-      <div className="font-semibold mb-1">No DID</div>
+      <div className="font-semibold mb-1">No ID</div>
       <div className="text-gray-300">
         No decentralized identifier is recorded for this data.
       </div>
@@ -188,7 +189,7 @@ export function VerificationBadge({
   const anchorTooltip = {
     verified: (
       <div>
-        <div className="font-semibold mb-1">⚓ Anchored to Bitcoin</div>
+        <div className="font-semibold mb-1">Anchored to Bitcoin</div>
         <div className="text-gray-300">
           This data is timestamped and anchored to the Bitcoin blockchain, providing immutable proof of existence.
         </div>
@@ -206,7 +207,7 @@ export function VerificationBadge({
     ),
     pending: (
       <div>
-        <div className="font-semibold mb-1">⏳ Anchor Pending</div>
+        <div className="font-semibold mb-1">Anchoring to Bitcoin</div>
         <div className="text-gray-300">
           This data has been submitted for anchoring to Bitcoin and is awaiting confirmation.
         </div>
@@ -214,7 +215,7 @@ export function VerificationBadge({
     ),
     none: (
       <div>
-        <div className="font-semibold mb-1">Not Anchored</div>
+        <div className="font-semibold mb-1">Not anchored</div>
         <div className="text-gray-300">
           This data has not been anchored to Bitcoin.
         </div>
@@ -227,25 +228,18 @@ export function VerificationBadge({
     return null;
   }
 
+  const identifierLabel = hasDid ? "Unverified ID" : "No ID";
+  const anchorLabel = { verified: "anchored", pending: "anchoring", none: "not anchored" }[status.anchorStatus];
+
   return (
-    <div className="inline-flex items-center gap-1">
-      <BadgeIndicator
-        icon={<IdentifierIcon className="w-full h-full" />}
-        label={hasDid ? "DID (unverified)" : "No DID"}
-        state={hasDid ? "unverified" : "none"}
-        compact={compact}
-        size={size}
-        tooltip={identifierTooltip}
-      />
-      <BadgeIndicator
-        icon={<AnchorIcon className="w-full h-full" />}
-        label={status.anchorStatus === "verified" ? "Anchored" : status.anchorStatus === "pending" ? "Pending" : "Not anchored"}
-        state={status.anchorStatus}
-        compact={compact}
-        size={size}
-        tooltip={anchorTooltip[status.anchorStatus]}
-      />
-    </div>
+    <BadgeIndicator
+      icon={status.anchorStatus === "verified" ? <AnchorIcon className="w-full h-full" /> : <IdentifierIcon className="w-full h-full" />}
+      label={`${identifierLabel} · ${anchorLabel}`}
+      state={status.anchorStatus === "none" ? (hasDid ? "unverified" : "none") : status.anchorStatus}
+      compact={compact}
+      size={size}
+      tooltip={<div className="space-y-2">{identifierTooltip}{anchorTooltip[status.anchorStatus]}</div>}
+    />
   );
 }
 

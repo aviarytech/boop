@@ -80,8 +80,8 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
           <nav className="order-last sm:order-none w-full sm:w-auto flex items-center gap-1 rounded-xl bg-[var(--boop-panel)] p-1" aria-label="Primary">
             {[
               { to: "/d", label: "Todos" },
-              { to: "/e", label: "Explorer" },
-              { to: "/s", label: "Sites" },
+              { to: "/e", label: "Directory" },
+              { to: "/s", label: "Pages" },
             ].map((item) => (
               <NavLink
                 key={item.to}

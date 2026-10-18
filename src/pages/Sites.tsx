@@ -93,7 +93,7 @@ export function Sites() {
               margin: 0,
             }}
           >
-            Sites
+            Pages
           </h1>
           <p className="mt-2 max-w-xl text-sm text-stone-500 dark:text-stone-400">
             Drop one HTML file, get your link, leave whenever you want.
@@ -105,11 +105,11 @@ export function Sites() {
         <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 px-4 py-3 text-sm text-stone-800 dark:text-stone-200">
           {sitePlan.plan === "free" ? (
             <>
-              Your Free plan includes 1 site. Upgrade to Pro for 5 sites and custom domains — $48/year.
+              Your Free plan includes 1 page. Upgrade to Pro for 5 pages and custom domains — $48/year.
               {" "}<Link to="/pricing" className="font-bold underline">Upgrade to Pro</Link>
             </>
           ) : (
-            <>Your {sitePlan.plan === "team" ? "Team" : "Pro"} plan includes 5 sites per account. You can still update your existing sites.</>
+            <>Your {sitePlan.plan === "team" ? "Team" : "Pro"} plan includes 5 pages per account. You can still update your existing pages.</>
           )}
         </div>
       )}
@@ -155,13 +155,13 @@ export function Sites() {
 
       <section>
         <h2 className="mb-3 text-lg font-bold text-stone-900 dark:text-stone-100">
-          Your sites
+          Your pages
         </h2>
         {sites === undefined ? (
           <div className="h-20 animate-pulse rounded-2xl bg-stone-100 dark:bg-gray-900" />
         ) : sites.length === 0 ? (
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            No sites yet. A blank slate, but with better lighting.
+            No pages yet. A blank slate, but with better lighting.
           </p>
         ) : (
           <div className="space-y-3">
@@ -172,7 +172,7 @@ export function Sites() {
                 className="block rounded-2xl border border-stone-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 hover:border-amber-300 dark:hover:border-amber-700 transition-colors"
               >
                 <div className="font-semibold text-stone-900 dark:text-stone-100">
-                  {site.primaryHostname?.hostname ?? "Untitled site"}
+                  {site.primaryHostname?.hostname ?? "Untitled page"}
                 </div>
                 <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">
                   Portable identity: {site.scid.slice(0, 18)}...

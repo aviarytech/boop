@@ -123,7 +123,7 @@ test("updatedAt: list with newer activity wins", () => {
   assert.equal(rows[0].updatedAt, 9999);
 });
 
-test("site missing primary hostname → title falls back to 'Untitled site'", () => {
+test("site missing primary hostname → title falls back to 'Untitled page'", () => {
   const rows = explorer.deriveExplorerRows({
     lists: [],
     sites: [makeSite({ _id: "S", primaryHostnameId: undefined })],
@@ -133,7 +133,7 @@ test("site missing primary hostname → title falls back to 'Untitled site'", ()
     activitiesByList: new Map(),
     assigneesByList: new Map(),
   });
-  assert.equal(rows[0].title, "Untitled site");
+  assert.equal(rows[0].title, "Untitled page");
   assert.equal(rows[0].identifier, null);
 });
 

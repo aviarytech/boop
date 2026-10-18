@@ -4,13 +4,13 @@ Free accounts see a Pro upgrade link for custom domains on the site detail page.
 Plan errors carry structured, user-readable data, including when an entitlement
 changes during an in-flight create or domain request.
 
-Sites adds a second product surface to boop: a signed-in user can publish a single HTML file to a memorable `*.boop.ad` URL, then optionally connect their own domain without losing the site's portable identity.
+Sites (shown to users as **Pages**) adds a second product surface to boop: a signed-in user can publish a single HTML file to a memorable `*.boop.ad` URL, then optionally connect their own domain without losing the site's portable identity.
 
 The feature is deliberately separate from collaborative todo lists. Lists remain private or shared app data; Sites are public, host-routed HTML documents with their own `did:webvh` log and hostname lifecycle.
 
 ## What users can do
 
-- Open the **Sites** tab from the authenticated boop header.
+- Open the **Pages** tab from the authenticated boop header. Code, routes (`/s`) and tables keep the `site` name.
 - Paste HTML or upload a `.html` file to create a hosted page.
 - Receive a generated hostname such as `brisk-paper-07.boop.ad`.
 - Preview and copy the public site URL from the site detail page.
@@ -19,7 +19,7 @@ The feature is deliberately separate from collaborative todo lists. Lists remain
 
 ## Plans and limits
 
-- Free includes 1 site on `*.boop.ad`.
+- Free includes 1 page (site) on `*.boop.ad`.
 - Pro includes 5 sites and custom domains; checkout defaults to $48/year (20% off the $5 monthly price).
 - Team inherits Pro's 5 sites and custom domains **per account**, following the business plan's “Pro + team” convention. Sites are owned by accounts, so seats do not multiply or pool this quota.
 - Active/trialing subscriptions and unexpired referral Pro credits determine entitlements. Incomplete, past-due, and canceled subscriptions fall back to Free unless a referral credit applies.

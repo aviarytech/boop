@@ -7,7 +7,7 @@ export function KindBadge({ kind }: { kind: ExplorerSource }) {
       : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200";
   return (
     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${styles}`}>
-      {kind}
+      {kind === "site" ? "page" : kind}
     </span>
   );
 }

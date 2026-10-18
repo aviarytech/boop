@@ -152,7 +152,7 @@ const PRICING_ROWS: [string, string, string, string][] = [
   ['Realtime sync, works offline', 'yes', 'yes', 'yes'],
   ['Templates, export, verified sharing', '', 'yes', 'yes'],
   ['Team workspace and admin controls', '', '', 'yes'],
-  ['API access for your agents', '', '', 'yes'],
+  ['API access for your agents', 'yes', 'yes', 'yes'],
 ];
 
 function Cell({ value }: { value: string }) {
@@ -377,7 +377,7 @@ export function Landing() {
             Your next teammate might be an{' '}
             <span className="end-word">agent.<span className="end-stamp" aria-hidden="true" data-wd-float><Stamp name="You" time="now" size={340} /></span></span>
           </h2>
-          <p>Free for solo use. Nothing to cancel.</p>
+          <p>Free for solo use. Five curl commands for your first agent. Nothing to cancel.</p>
           <div className="end-cta">
             <Link to={appHref} className="btn btn-lg" onClick={cta('signup', 'cta_band')}>Start a list, free <Arrow /></Link>
             <Link to="/docs/quickstart" className="text-link" onClick={cta('quickstart', 'cta_band')}>API quickstart <Arrow /></Link>

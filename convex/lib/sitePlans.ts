@@ -28,9 +28,9 @@ export async function requireSiteCapacity(ctx: DbCtx, ownerDid: string) {
   const allowance = await getSiteAllowance(ctx, ownerDid);
   if (!allowance.canCreate) {
     const advice = allowance.plan === "free"
-      ? "Upgrade to Pro at /pricing for 5 sites and custom domains."
-      : "Pro and Team include 5 sites per account. You can still update your existing sites.";
-    throw new PlanError("SITE_LIMIT", `Your ${PLANS[allowance.plan].name} plan includes ${allowance.maxSites} site${allowance.maxSites === 1 ? "" : "s"}. ${advice}`);
+      ? "Upgrade to Pro at /pricing for 5 pages and custom domains."
+      : "Pro and Team include 5 pages per account. You can still update your existing pages.";
+    throw new PlanError("SITE_LIMIT", `Your ${PLANS[allowance.plan].name} plan includes ${allowance.maxSites} page${allowance.maxSites === 1 ? "" : "s"}. ${advice}`);
   }
 }
 
