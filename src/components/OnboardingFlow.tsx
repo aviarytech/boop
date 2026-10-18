@@ -268,7 +268,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <h1
         className="text-stone-900 dark:text-stone-50 mb-3"
         style={{
-          fontFamily: 'Nunito, system-ui, sans-serif',
+          fontFamily: 'var(--font-sans)',
           fontWeight: 800,
           fontSize: 32,
           letterSpacing: -1,

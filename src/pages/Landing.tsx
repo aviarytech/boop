@@ -1,145 +1,165 @@
 /**
  * Boop marketing landing page.
  *
- * Rewritten around three audience paths (issue #191):
- *   For you — collaborative lists (realtime, offline, mobile)
- *   For your team — shared workspaces, roles, activity
- *   For your agents — Mission Control API, run visibility, provenance
+ * Direction "Seals" (docs/design/DIRECTION.md): every checkmark is a stamp left
+ * by whoever made it, round for people and square for agents. The hero list is
+ * real and pressable: pressing a box stamps it with the visitor's mark.
  *
- * Messaging follows the ladder in docs/business-plan.md §4: outcomes first,
- * no DID/VC/Bitcoin vocabulary above the fold.
+ * Sections answer the visitor's questions in order: what is it, who does the
+ * work, how do agents connect, can I trust it, what does it cost, what else.
  */
 
 import { useEffect, useRef, useState } from 'react';
+import type React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { trackLandingViewed, trackLandingCtaClicked } from '../lib/analytics';
+import { Stamp } from '../components/Stamp';
 
-// ---------------------------------------------------------------------------
-// Agent demo — scripted loop of an agent checking items off in realtime.
-// Self-contained animation (no backend); structured so the step feed could be
-// swapped for a live list subscription later.
-// ---------------------------------------------------------------------------
-
-interface DemoItem {
+interface HeroItem {
   name: string;
-  chip?: string;
+  by: string;
+  kind: 'person' | 'agent';
+  /** Present when the item starts checked. */
+  stamp?: { name: string; time: string; meta: string };
 }
 
-const DEMO_ITEMS: DemoItem[] = [
-  { name: 'Draft release notes', chip: 'docs' },
-  { name: 'Run test suite', chip: 'ci' },
-  { name: 'Bump version to 0.5.0' },
-  { name: 'Update changelog', chip: 'docs' },
-  { name: 'Tag and publish release', chip: '!! high' },
+const HERO_ITEMS: HeroItem[] = [
+  { name: 'Run the test suite on staging', by: 'ci-runner', kind: 'agent', stamp: { name: 'ci-runner', time: '11:20', meta: 'ci-runner · 412 passed · 11:20' } },
+  { name: 'Update the App Store screenshots', by: 'Theo', kind: 'person', stamp: { name: 'Theo', time: '13:05', meta: 'Theo · 13:05' } },
+  { name: 'Write the release notes', by: 'release-bot', kind: 'agent', stamp: { name: 'release-bot', time: '14:02', meta: 'release-bot, for Ines · 14:02' } },
+  { name: 'Email the beta testers', by: 'Ines', kind: 'person' },
+  { name: 'Bump the version to 0.5.0', by: 'release-bot', kind: 'agent' },
 ];
 
-interface DemoStep {
-  /** Index into DEMO_ITEMS to check off, or null for log-only steps. */
-  check: number | null;
-  /** Who did it — rendered as the actor chip on the item. */
-  actor: 'agent' | 'human' | null;
-  log: string;
-  delay: number;
-}
-
-const DEMO_SCRIPT: DemoStep[] = [
-  { check: null, actor: null, log: '$ release-bot · connecting to boop…', delay: 1200 },
-  { check: null, actor: null, log: '✓ authenticated · list "Ship v0.5" · 5 open items', delay: 1400 },
-  { check: 0, actor: 'agent', log: 'POST /api/items/check · "Draft release notes"', delay: 1600 },
-  { check: 1, actor: 'agent', log: 'POST /api/items/check · "Run test suite"', delay: 1800 },
-  { check: 2, actor: 'agent', log: 'POST /api/items/check · "Bump version to 0.5.0"', delay: 1600 },
-  { check: 3, actor: 'human', log: '● jamie checked "Update changelog" from her phone', delay: 2000 },
-  { check: 4, actor: 'agent', log: 'POST /api/items/check · "Tag and publish release"', delay: 1800 },
-  { check: null, actor: null, log: '✓ run complete · 5/5 done · every action signed', delay: 3600 },
-];
-
-function AgentDemo() {
-  const [step, setStep] = useState(-1);
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
-  useEffect(() => {
-    if (reduced) return;
-    const current = step >= 0 ? DEMO_SCRIPT[step] : null;
-    const delay = current ? current.delay : 600;
-    timer.current = setTimeout(() => {
-      setStep((s) => (s + 1 >= DEMO_SCRIPT.length ? -1 : s + 1));
-    }, delay);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [step, reduced]);
-
-  // With reduced motion, show the completed state as a still.
-  const visibleSteps = reduced ? DEMO_SCRIPT : DEMO_SCRIPT.slice(0, step + 1);
-  const checkedBy = new Map<number, 'agent' | 'human'>();
-  for (const s of visibleSteps) {
-    if (s.check !== null && s.actor) checkedBy.set(s.check, s.actor);
-  }
-  const doneCount = checkedBy.size;
-  const progress = (doneCount / DEMO_ITEMS.length) * 100;
-  const logLines = visibleSteps.slice(-4);
-
+function Check() {
   return (
-    <div className="shot demo" aria-label="Demo of an AI agent checking items off a shared list in realtime">
-      <div className="demo-grid">
-        <div className="mock demo-list">
-          <div className="mock-head">
-            <div>
-              <div className="mock-tag">shared · live</div>
-              <h3>Ship v0.5</h3>
-            </div>
-            <div className="avatars">
-              <div className="avy avy-violet">R</div>
-              <div className="avy avy-coral">J</div>
-              <div className="avy avy-bot" title="release-bot (agent)">⚡</div>
-            </div>
-          </div>
-          <div className="progress progress-lg"><div style={{ width: `${progress}%` }} /></div>
-          {DEMO_ITEMS.map((item, i) => {
-            const actor = checkedBy.get(i);
-            return (
-              <div key={item.name} className={`item demo-item${actor ? ' done' : ''}`}>
-                <span className={`box${actor ? ' on' : ''}`} />
-                <span className="t">{item.name}</span>
-                {actor === 'agent' && <span className="chip chip-agent">⚡ agent · signed</span>}
-                {actor === 'human' && <span className="chip chip-accent">jamie · signed</span>}
-                {!actor && item.chip && <span className="chip">{item.chip}</span>}
-              </div>
-            );
-          })}
-        </div>
-        <div className="demo-log" aria-hidden="true">
-          <div className="demo-log-head">
-            <span className="demo-log-dot" />
-            <span>release-bot — live run</span>
-          </div>
-          <div className="demo-log-body">
-            {logLines.map((s, i) => (
-              <div key={`${s.log}-${i}`} className="demo-log-line">{s.log}</div>
-            ))}
-            {!reduced && <div className="demo-log-line demo-cursor">▌</div>}
-          </div>
-          <div className="demo-log-foot">an actual agent run — this is what your dashboard shows</div>
-        </div>
-      </div>
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3.5 8.5l3 3 6-7" />
+    </svg>
+  );
+}
+
+function Arrow() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M3 8h10M9 4l4 4-4 4" />
+    </svg>
+  );
+}
+
+interface SealMove { x: number; y: number; phase: 'travel' | 'press' | 'lift' }
+
+/** The seal object: the visitor's jade stone. On a press it travels to the row and stamps it. */
+function Seal({ move, sealRef }: { move: SealMove | null; sealRef: React.RefObject<HTMLDivElement | null> }) {
+  const style = move && move.phase !== 'lift'
+    ? { transform: `translate(${move.x}px, ${move.y}px) scale(${move.phase === 'press' ? 0.42 : 0.46})` }
+    : undefined;
+  return (
+    <div ref={sealRef} className={`seal${move ? ` is-${move.phase}` : ''}`} style={style} aria-hidden="true">
+      <div className="seal-body" />
+      <svg className="seal-face" viewBox="0 0 142 142">
+        <defs><path id="seal-arc" d="M71 71 m-54 0 a54 54 0 1 1 108 0 a54 54 0 1 1 -108 0" /></defs>
+        <circle cx="71" cy="71" r="67" />
+        <text><textPath href="#seal-arc" textLength="336" lengthAdjust="spacing">your stamp · press a box · your stamp · press a box ·</textPath></text>
+      </svg>
+      <span className="seal-glyph">you</span>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Landing page
-// ---------------------------------------------------------------------------
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function HeroList() {
+  // Indices of the open items the visitor has stamped, with the time they did it.
+  const [mine, setMine] = useState<Map<number, string>>(new Map());
+  const [move, setMove] = useState<SealMove | null>(null);
+  const sealRef = useRef<HTMLDivElement>(null);
+  const slotRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  const stamp = (i: number) => setMine(prev => new Map(prev).set(i,
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })));
+
+  const toggle = (i: number) => {
+    if (mine.has(i)) {
+      setMine(prev => { const next = new Map(prev); next.delete(i); return next; });
+      return;
+    }
+    const seal = sealRef.current?.getBoundingClientRect();
+    const slot = slotRefs.current[i]?.getBoundingClientRect();
+    if (!seal || !slot || prefersReducedMotion()) { stamp(i); return; }
+    // The stone travels from its corner to the row, presses, leaves the mark, and floats back.
+    const x = slot.left + slot.width / 2 - (seal.left + seal.width / 2);
+    const y = slot.top + slot.height / 2 - (seal.top + seal.height / 2);
+    timers.current.forEach(clearTimeout);
+    setMove({ x, y, phase: 'travel' });
+    timers.current = [
+      setTimeout(() => { setMove({ x, y, phase: 'press' }); stamp(i); }, 340),
+      setTimeout(() => setMove({ x, y, phase: 'lift' }), 520),
+      setTimeout(() => setMove(null), 1000),
+    ];
+  };
+
+  const done = HERO_ITEMS.filter((item, i) => item.stamp || mine.has(i)).length;
+
+  return (
+    <div className="sheet-wrap">
+      <div className="sheet" data-wd-float>
+        <header className="sheet-head">
+          <h2>Ship boop 0.5</h2>
+          <p><span className="who">Ines, Theo and release-bot</span><span className="sep" aria-hidden="true"> · </span><span className="count tnum">{done} of {HERO_ITEMS.length} done</span></p>
+        </header>
+        <ul className="rows">
+          {HERO_ITEMS.map((item, i) => {
+            const myTime = mine.get(i);
+            const checked = !!item.stamp || !!myTime;
+            return (
+              <li key={item.name} className={`row${checked ? ' is-done' : ''}`}>
+                {item.stamp ? (
+                  <span className="box is-on" role="img" aria-label="Done"><Check /></span>
+                ) : (
+                  <button type="button" className={`box${myTime ? ' is-on' : ''}`} aria-pressed={!!myTime}
+                    aria-label={`${myTime ? 'Unstamp' : 'Stamp'} "${item.name}"`} onClick={() => toggle(i)}>
+                    <Check />
+                  </button>
+                )}
+                <div className="row-text">
+                  <span className="row-name">{item.name}</span>
+                  <span className="row-meta">{item.stamp ? item.stamp.meta : myTime ? `You · ${myTime}` : item.by}</span>
+                </div>
+                {item.stamp && <Stamp kind={item.kind} name={item.stamp.name} time={item.stamp.time} className="row-stamp" />}
+                {!item.stamp && (
+                  <span className="row-stamp" ref={el => { slotRefs.current[i] = el; }}>
+                    {myTime && <Stamp kind="person" name="You" time={myTime} fresh />}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+      <Seal move={move} sealRef={sealRef} />
+      <p className="sheet-hint">Press a box. Your stamp goes on it.</p>
+    </div>
+  );
+}
+
+const PRICING_ROWS: [string, string, string, string][] = [
+  ['Lists', '5', 'Unlimited', 'Unlimited'],
+  ['Collaborators per list', '3', 'Unlimited', 'Unlimited'],
+  ['Realtime sync, works offline', 'yes', 'yes', 'yes'],
+  ['Templates, export, verified sharing', '', 'yes', 'yes'],
+  ['Team workspace and admin controls', '', '', 'yes'],
+  ['API access for your agents', '', '', 'yes'],
+];
+
+function Cell({ value }: { value: string }) {
+  if (value === 'yes') return <span className="yes" role="img" aria-label="Included"><Check /></span>;
+  if (value === '') return <span className="no" aria-label="Not included">–</span>;
+  return <>{value}</>;
+}
 
 export function Landing() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -166,321 +186,220 @@ export function Landing() {
 
   return (
     <div className="boop-landing">
-      <nav className="nav">
-        <div className="wrap nav-inner">
-          <div className="wordmark"><span className="dot" />boop</div>
-          <div className="nav-links">
-            <a href="#you">For you</a>
-            <a href="#team">For your team</a>
-            <a href="#agents">For your agents</a>
-            <a href="#pricing">Pricing</a>
-            <Link to="/docs/quickstart" onClick={cta('quickstart', 'nav')}>Docs</Link>
-          </div>
-          <div className="nav-cta">
-            <Link to={appHref} className="btn btn-ghost" onClick={cta('signin', 'nav')}>Sign in</Link>
-            <Link to={appHref} className="btn btn-primary" onClick={cta('signup', 'nav')}>Get boop</Link>
-          </div>
+      <nav className="nav" aria-label="Main">
+        <Link to="/" className="boop-wordmark nav-mark"><span className="boop-dot" aria-hidden="true" />boop</Link>
+        <div className="nav-links">
+          <a href="#work">How it works</a>
+          <a href="#agents">Agents</a>
+          <a href="#pricing">Pricing</a>
+          <Link to="/docs/quickstart" onClick={cta('quickstart', 'nav')}>Docs</Link>
+        </div>
+        <div className="nav-cta">
+          <Link to={appHref} className="nav-signin" onClick={cta('signin', 'nav')}>Sign in</Link>
+          <Link to={appHref} className="btn" onClick={cta('signup', 'nav')}>Get boop</Link>
         </div>
       </nav>
 
-      <section className="hero">
-        <div className="wrap">
-          <h1 className="hero-line">
-            The todo list your AI agents can use — <em>with receipts.</em>
-          </h1>
-          <p className="hero-sub">
-            One shared space where you, your team, and your agents get things done.
-            Realtime, offline-friendly — and every checkmark shows who did it, human or AI.
-          </p>
-          <div className="hero-cta">
-            <Link to={appHref} className="btn btn-primary" onClick={cta('signup', 'hero')}>
-              Get boop — free
-            </Link>
-            <Link to="/docs/quickstart" className="btn btn-ghost" onClick={cta('quickstart', 'hero')}>
-              Read the API quickstart →
-            </Link>
+      <main>
+        <section className="hero">
+          <div className="hero-copy">
+            <h1>Every checkmark <span className="h1-indent">says who made it.</span></h1>
+            <p className="hero-sub">
+              A shared todo list for <b>you, your team and your AI agents.</b> Each tick is stamped
+              and signed by the person or agent behind it.
+            </p>
+            <div className="hero-cta">
+              <Link to={appHref} className="btn btn-lg" onClick={cta('signup', 'hero')}>Start a list, free <Arrow /></Link>
+              <p className="hero-signin">Already using boop? <Link to={appHref} onClick={cta('signin', 'hero')}>Sign in</Link></p>
+            </div>
           </div>
-          <p className="hero-signin">
-            Already using boop? <Link to={appHref} onClick={cta('signin', 'hero')}>Sign in</Link>
-          </p>
-          <div className="hero-meta">
-            <span className="pip" />
-            <span>realtime sync · works offline · receipts included</span>
+          <HeroList />
+        </section>
+
+        <section className="work" id="work">
+          <div className="work-intro">
+            <h2>One list, whoever does the work.</h2>
+            <p>People check things off from their phone. Agents check them off over the API. Everyone's tick looks different, so you always know which was which.</p>
           </div>
-
-          <AgentDemo />
-        </div>
-      </section>
-
-      <section className="section" id="paths">
-        <div className="wrap">
-          <div className="section-label">who it's for</div>
-          <h2>One list. Three kinds<br />of <em>doers</em>.</h2>
-          <p className="section-lede">
-            Most todo apps are built for one person. Some stretch to a team.
-            boop is built for the way work actually happens now — you, the people you trust, and the agents working for you.
-          </p>
-
-          <div className="paths">
-            <div className="path" id="you">
-              <div className="path-label">for you</div>
+          <div className="rail">
+            <article className="actor" id="you">
+              <Stamp name="You" time="09:41" size={132} />
               <h3>Lists that keep up.</h3>
-              <p>
-                Open boop. Type. Hit return. Your lists sync in realtime across every device,
-                work fully offline, and share with the people who matter in two taps.
-              </p>
-              <ul>
-                <li>Realtime sync, everywhere</li>
-                <li>Works offline — syncs when you're back</li>
-                <li>Keyboard-first on desktop, thumb-first on mobile</li>
-              </ul>
-              <Link to={appHref} className="btn btn-ghost path-cta" onClick={cta('signup', 'path_you')}>
-                Start free
-              </Link>
-            </div>
-
-            <div className="path" id="team">
-              <div className="path-label">for your team</div>
+              <p>Type, hit return, done. Syncs live across your devices and keeps working offline.</p>
+              <p className="actor-did"><b>Pick up the cake</b>{'\u00a0'}· from the bus, 09:41</p>
+            </article>
+            <article className="actor" id="team">
+              <Stamp name="Theo" time="13:05" size={132} />
               <h3>One workspace, no chasing.</h3>
-              <p>
-                Shared lists and workspaces where everyone sees the same thing at the same time.
-                Activity history shows who did what and when — no status meetings required.
-              </p>
-              <ul>
-                <li>Shared workspaces and templates</li>
-                <li>Assignees, roles, and admin controls</li>
-                <li>A full activity trail on every list</li>
-              </ul>
-              <Link to={appHref} className="btn btn-ghost path-cta" onClick={cta('signup', 'path_team')}>
-                Start with your team
-              </Link>
-            </div>
-
-            <div className="path path-agents" id="agents">
-              <div className="path-label">for your agents</div>
-              <h3>Mission Control.</h3>
-              <p>
-                Give your agents a task queue instead of a prompt. They work the same lists you do
-                over a simple REST API — you watch items get checked off live, with proof of who did what.
-              </p>
-              <ul>
-                <li>Simple HTTP API — an agent completes a task in 5 minutes with curl</li>
-                <li>Watch runs live: working, stalled, or done</li>
-                <li>Every agent action signed and attributed</li>
-              </ul>
-              <Link to="/docs/quickstart" className="btn btn-primary path-cta" onClick={cta('quickstart', 'path_agents')}>
-                Read the quickstart →
-              </Link>
-            </div>
+              <p>Share a list in two taps. Everyone sees the same list at the same moment, with a history of who did what.</p>
+              <p className="actor-did"><b>Update the App Store screenshots</b>{'\u00a0'}·{'\u00a0'}13:05</p>
+            </article>
+            <article className="actor actor-agent">
+              <Stamp kind="agent" name="release-bot" time="14:02" size={132} />
+              <h3>Hand an agent the list.</h3>
+              <p>Give an agent a list instead of a prompt. You watch items close live, and each one carries the agent's stamp.</p>
+              <p className="actor-did"><b>Write the release notes</b>{'\u00a0'}· for Ines, 14:02</p>
+            </article>
           </div>
-        </div>
-      </section>
-
-      <section className="section section-tight" id="trust">
-        <div className="wrap">
-          <div className="trust">
-            <div className="trust-grid">
-              <div>
-                <div className="section-label section-label-dark">trust, not hype</div>
-                <h2>Know who did what.<br />Provably.</h2>
-                <p>
-                  Every action in boop — a human checking off groceries, an agent closing out a release —
-                  carries a signature from whoever did it. Nobody can spoof your name,
-                  and no agent can quietly rewrite history.
-                </p>
-                <p>
-                  When your agent says the compliance checklist is done, you don't have to take its word for it.
-                  The receipts are right there. The cryptography stays behind the curtain — you just see a quiet green dot.
-                </p>
-              </div>
-              <div className="badge-card">
-                <div className="who">
-                  <span className="avy avy-bot big">⚡</span>
-                  <div>
-                    <div className="name">
-                      release-bot
-                      <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
-                        <path d="M6 1l1.5 1.2 1.8-.1.2 1.8L10.8 5 10 6.5l.8 1.5-1.3 1.1-.2 1.8-1.8-.1L6 11l-1.5-1.2-1.8.1-.2-1.8L1.2 7 2 5.5 1.2 4l1.3-1.1.2-1.8 1.8.1L6 1z" fill="#6b3cff" />
-                        <path d="M4 6l1.5 1.5L8 4.5" stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                    <div className="did">agent · operated by Riley Chen</div>
-                  </div>
-                </div>
-                <div className="badge-note">
-                  Checked 4 items on "Ship v0.5" · 2 minutes ago. Riley approved the run.
-                </div>
-                <span className="signed">
-                  <span className="signed-dot" />
-                  verified · signature intact
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="pullquote">
-        <div className="wrap">
-          <blockquote>
-            "I gave my agent a list instead of a prompt. It checked off four things while I made coffee — and I could see exactly what it did."
-          </blockquote>
-          <cite>— an early Mission Control tester</cite>
-        </div>
-      </section>
-
-      <section className="section" id="pricing">
-        <div className="wrap">
-          <div className="section-label">pricing</div>
-          <h2>Fair, flat, forever.</h2>
-          <p className="section-lede">
-            Free for solo use, forever. One cheap upgrade for power users, one sane price for teams.
+          <p className="rail-key">
+            <span className="key"><span className="key-round" aria-hidden="true" />Round is a person.</span>
+            <span className="key"><span className="key-square" aria-hidden="true" />Square is an agent.</span>
           </p>
+        </section>
 
-          <div className="plans">
-            <div className="plan">
-              <div className="plan-name">Free</div>
-              <div className="plan-desc">For you and your groceries.</div>
-              <div className="price">$0<small>/forever</small></div>
-              <ul>
-                <li>Up to 5 lists</li>
-                <li>Up to 3 collaborators per list</li>
-                <li>Realtime sync</li>
-                <li>Works offline</li>
-              </ul>
-              <Link to={appHref} className="btn btn-ghost plan-cta" onClick={cta('signup', 'pricing')}>
-                Start free
-              </Link>
-            </div>
-            <div className="plan hero-plan">
-              <div className="plan-name">Pro</div>
-              <div className="plan-desc">For power users.</div>
-              <div className="price">$5<small>/month · $48/yr</small></div>
-              <ul>
-                <li>Unlimited lists and collaborators</li>
-                <li>List templates</li>
-                <li>Export / backup</li>
-                <li>Verified sharing</li>
-                <li>Priority sync</li>
-              </ul>
-              <Link to="/templates">Agent runbooks</Link>
-              <Link to="/pricing" className="btn btn-primary plan-cta plan-cta-invert" onClick={cta('pricing', 'pricing')}>
-                Go Pro
-              </Link>
-            </div>
-            <div className="plan">
-              <div className="plan-name">Team</div>
-              <div className="plan-desc">For teams — humans and agents.</div>
-              <div className="price">$12<small>/user/month</small></div>
-              <ul>
-                <li>Everything in Pro</li>
-                <li>Team workspace + admin controls</li>
-                <li>API access for your agents</li>
-                <li>Shared templates library</li>
-                <li>Priority support</li>
-              </ul>
-              <Link to="/pricing" className="btn btn-ghost plan-cta" onClick={cta('pricing', 'pricing')}>
-                See full pricing
-              </Link>
+        <section className="agents" id="agents">
+          <div className="agents-copy">
+            <h2>An agent finishes its first task in five minutes.</h2>
+            <p>Create an API key, hand it to your agent, and it works the same lists you do with any HTTP client. No SDK to install.</p>
+            <Link to="/docs/quickstart" className="text-link" onClick={cta('quickstart', 'agents')}>Read the API quickstart <Arrow /></Link>
+          </div>
+          <div className="agents-demo">
+            <pre className="code" aria-label="Example request"><code>
+<span className="c-dim">$</span> curl -X POST \{'\n'}
+{'  '}https://boop.ad/api/items/check \{'\n'}
+{'  '}-H <span className="c-str">"Authorization: Bearer $BOOP_KEY"</span> \{'\n'}
+{'  '}-d <span className="c-str">'{'{'}"itemId":"k7c2r9","checked":true{'}'}'</span>{'\n\n'}
+<span className="c-ok">200</span> <span className="c-dim">checked · signed by release-bot</span>
+            </code></pre>
+            <div className="result" data-wd-float>
+              <span className="box is-on" role="img" aria-label="Done"><Check /></span>
+              <div className="row-text"><span className="row-name">Bump the version to 0.5.0</span><span className="row-meta">release-bot · just now</span></div>
+              <Stamp kind="agent" name="release-bot" time="now" size={64} />
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="section section-tight" id="faq">
-        <div className="wrap">
-          <div className="section-label">faq</div>
-          <h2>Just the honest questions.</h2>
+        <section className="record" id="trust">
+          <div className="record-inner">
+            <div className="record-seal" aria-hidden="true" data-wd-float><Stamp kind="agent" name="release-bot" time="14:02" size={220} /></div>
+            <div className="record-copy">
+              <h2>Tap any stamp to read its record.</h2>
+              <dl>
+                <div><dt>Item</dt><dd>Write the release notes</dd></div>
+                <div><dt>Checked</dt><dd className="tnum">Tue 14 Oct, 14:02:31</dd></div>
+                <div><dt>By</dt><dd>release-bot, using the API key Ines Moreau issued it</dd></div>
+                <div><dt>Signed</dt><dd>with release-bot's key, on list Ship boop 0.5</dd></div>
+              </dl>
+              <p>No one can put your name on a tick you didn't make, and no agent can quietly rewrite what it did.</p>
+            </div>
+          </div>
+        </section>
 
+        <section className="pricing" id="pricing">
+          <h2>$0 for you. $12 for a team.</h2>
+          <p className="pricing-lede">Five lists free, forever. Pro is $5 a month when you need more.</p>
+          <div className="table-scroll">
+            <table className="plans">
+              <thead>
+                <tr>
+                  <th scope="col"><span className="sr-only">Feature</span></th>
+                  <th scope="col"><span className="plan-name">Free</span><span className="plan-price">$0</span><span className="plan-per">forever</span></th>
+                  <th scope="col" className="is-pro"><span className="plan-name">Pro</span><span className="plan-price">$5</span><span className="plan-per">a month, or $48 a year</span></th>
+                  <th scope="col"><span className="plan-name">Team</span><span className="plan-price">$12</span><span className="plan-per">per person, a month</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {PRICING_ROWS.map(([label, free, pro, team]) => (
+                  <tr key={label}>
+                    <th scope="row">{label}</th>
+                    <td><Cell value={free} /></td>
+                    <td className="is-pro"><Cell value={pro} /></td>
+                    <td><Cell value={team} /></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td />
+                  <td><Link to={appHref} className="btn btn-quiet" onClick={cta('signup', 'pricing')}>Start free</Link></td>
+                  <td className="is-pro"><Link to="/pricing" className="btn" onClick={cta('pricing', 'pricing')}>Go Pro</Link></td>
+                  <td><Link to="/pricing" className="btn btn-quiet" onClick={cta('pricing', 'pricing')}>See full pricing</Link></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div className="plans-stack">
+            {([
+              ['Free', '$0', 'forever', 1, <Link key="f" to={appHref} className="btn btn-quiet" onClick={cta('signup', 'pricing')}>Start free</Link>],
+              ['Pro', '$5', 'a month, or $48 a year', 2, <Link key="p" to="/pricing" className="btn" onClick={cta('pricing', 'pricing')}>Go Pro</Link>],
+              ['Team', '$12', 'per person, a month', 3, <Link key="t" to="/pricing" className="btn btn-quiet" onClick={cta('pricing', 'pricing')}>See full pricing</Link>],
+            ] as const).map(([name, price, per, col, action]) => (
+              <div key={name} className={`plan-block${name === 'Pro' ? ' is-pro' : ''}`}>
+                <span className="plan-name">{name}</span>
+                <span className="plan-price">{price}</span>
+                <span className="plan-per">{per}</span>
+                <ul>
+                  {PRICING_ROWS.filter(row => row[col] !== '').map(row => (
+                    <li key={row[0]}>
+                      <span className="yes" aria-hidden="true"><Check /></span>
+                      {row[col] === 'yes' ? row[0] : `${row[0]}: ${row[col]}`}
+                    </li>
+                  ))}
+                </ul>
+                {action}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="faq" id="faq">
+          <h2>Before you sign up.</h2>
           <div className="faq-grid">
             <div>
-              <h3 className="faq-q">How do agents connect?</h3>
-              <p className="faq-a">
-                Over a plain REST API — create lists, add items, check them off with curl or any HTTP client.
-                The <Link to="/docs/quickstart">quickstart</Link> gets an agent completing a task in about five minutes.
-              </p>
+              <h3>How do agents connect?</h3>
+              <p>Over a plain REST API. Create lists, add items and check them off with curl or any HTTP client. The <Link to="/docs/quickstart">quickstart</Link> gets an agent completing a task in about five minutes.</p>
             </div>
             <div>
-              <h3 className="faq-q">Can an agent mess up my lists?</h3>
-              <p className="faq-a">
-                Agents only touch lists you give them access to, and every action they take is signed and attributed.
-                If something looks wrong, the activity trail shows exactly who did what, when.
-              </p>
+              <h3>Can an agent mess up my lists?</h3>
+              <p>Agents only touch the lists you give them access to, and every action they take is signed and attributed. If something looks wrong, the history shows who did what, and when.</p>
             </div>
             <div>
-              <h3 className="faq-q">I don't use AI agents. Is boop still for me?</h3>
-              <p className="faq-a">
-                Completely. At its heart it's a fast, quiet todo app — realtime, offline, shared with people you trust.
-                The agent stuff is there when you want it and invisible when you don't.
-              </p>
+              <h3>I don't use AI agents. Is boop still for me?</h3>
+              <p>Completely. At heart it's a fast, quiet todo app: realtime, offline, shared with people you trust. The agent side is there when you want it and invisible when you don't.</p>
             </div>
             <div>
-              <h3 className="faq-q">What does "with receipts" actually mean?</h3>
-              <p className="faq-a">
-                Every checkmark carries a signature from whoever made it — a person's device or an agent's key.
-                You see a small green dot; auditors and skeptics can verify the rest.
-              </p>
+              <h3>What does a stamp actually prove?</h3>
+              <p>Every checkmark is signed by whoever made it, a person's device or an agent's key. You see the stamp; anyone sceptical can verify the signature.</p>
             </div>
             <div>
-              <h3 className="faq-q">Offline?</h3>
-              <p className="faq-a">Works fully offline. Syncs when you reconnect. Your device holds your signing key.</p>
+              <h3>Does it work offline?</h3>
+              <p>Yes. Lists keep working without a connection and sync when you're back. Your device holds your signing key.</p>
             </div>
             <div>
-              <h3 className="faq-q">Do you sell my data?</h3>
-              <p className="faq-a">
-                No. Your lists are yours; we make money from subscriptions, not from you.
-                Shared lists are end-to-end signed, and we're building toward encrypting everything we possibly can.
-              </p>
+              <h3>Do you sell my data?</h3>
+              <p>No. Your lists are yours; we make money from subscriptions, not from you. Shared lists are signed end to end, and we're working toward encrypting everything we can.</p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="cta-wrap">
-        <div className="wrap">
-          <div className="cta-band">
-            <h2>Your next teammate<br />might be an agent.</h2>
-            <p>Free for solo use. Five curl commands for your first agent. Nothing to cancel.</p>
-            <div className="cta-band-btns">
-              <Link to={appHref} className="btn cta-btn" onClick={cta('signup', 'cta_band')}>Get boop</Link>
-              <Link to="/docs/quickstart" className="btn cta-btn-ghost" onClick={cta('quickstart', 'cta_band')}>
-                API quickstart →
-              </Link>
-            </div>
+        <section className="end">
+          <h2>
+            Your next teammate might be an{' '}
+            <span className="end-word">agent.<span className="end-stamp" aria-hidden="true" data-wd-float><Stamp name="You" time="now" size={340} /></span></span>
+          </h2>
+          <p>Free for solo use. Nothing to cancel.</p>
+          <div className="end-cta">
+            <Link to={appHref} className="btn btn-lg" onClick={cta('signup', 'cta_band')}>Start a list, free <Arrow /></Link>
+            <Link to="/docs/quickstart" className="text-link" onClick={cta('quickstart', 'cta_band')}>API quickstart <Arrow /></Link>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      <footer>
-        <div className="wrap">
-          <div className="foot">
-            <div className="foot-col foot-col-brand">
-              <div className="wordmark wordmark-sm"><span className="dot" />boop</div>
-              <div className="foot-tag">Made carefully, by humans and agents.</div>
-            </div>
-            <div className="foot-col">
-              <strong>Product</strong>
-              <a href="#paths">Who it's for</a>
-              <a href="#pricing">Pricing</a>
-              <Link to="/docs/quickstart" onClick={cta('quickstart', 'footer')}>API quickstart</Link>
-            </div>
-            <div className="foot-col">
-              <strong>Trust</strong>
-              <Link to="/privacy">Privacy</Link>
-              <Link to="/terms">Terms</Link>
-              <a href="#trust">Security</a>
-            </div>
-            <div className="foot-col">
-              <strong>Company</strong>
-              <a href="mailto:hello@boop.ad">Contact</a>
-              <Link to={appHref} onClick={cta('signin', 'footer')}>Sign in</Link>
-            </div>
-          </div>
-          <div className="foot-bottom">
-            <span>© 2026 boop · made in a quiet room</span>
-            <span>signed build</span>
-          </div>
+      <footer className="foot">
+        <div className="foot-brand">
+          <span className="boop-wordmark"><span className="boop-dot" aria-hidden="true" />boop</span>
+          <p>Made carefully, by humans and agents.</p>
         </div>
+        <nav className="foot-links" aria-label="Footer">
+          <a href="#work">How it works</a>
+          <a href="#pricing">Pricing</a>
+          <Link to="/docs/quickstart" onClick={cta('quickstart', 'footer')}>API quickstart</Link>
+          <Link to="/privacy">Privacy</Link>
+          <Link to="/terms">Terms</Link>
+          <a href="mailto:hello@boop.ad">Contact</a>
+          <Link to={appHref} onClick={cta('signin', 'footer')}>Sign in</Link>
+        </nav>
+        <p className="foot-small">© 2026 boop</p>
       </footer>
     </div>
   );

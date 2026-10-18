@@ -1,28 +1,30 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Nunito:wght@500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,300..800&family=Fragment+Mono&display=swap');
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
 /* Tailwind v4 class-based dark mode variant */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Boop brand — remap amber palette to electric violet so the existing
-   amber-* utility classes across the app render in the new accent color. */
+/* boop brand: "Seals" (docs/design/DIRECTION.md). Every checkmark is a stamp.
+   The amber-* utilities used across the app are remapped to jade, the colour
+   of the seal stone, so existing classes render in the new accent. 400 is
+   deliberately dark enough to carry white text (it backs many buttons). */
 @theme {
-  --font-sans: 'Geist', 'Inter', system-ui, sans-serif;
-  --font-rounded: 'Nunito', system-ui, sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, monospace;
+  --font-sans: 'Bricolage Grotesque', system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-rounded: 'Bricolage Grotesque', system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-mono: 'Fragment Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
-  --color-amber-50: #f6f2ff;
-  --color-amber-100: #ece4ff;
-  --color-amber-200: #dcceff;
-  --color-amber-300: #c2a8ff;
-  --color-amber-400: #9b74ff;
-  --color-amber-500: #6b3cff;
-  --color-amber-600: #5a2fe8;
-  --color-amber-700: #4723b3;
-  --color-amber-800: #341881;
-  --color-amber-900: #2a1570;
-  --color-amber-950: #1a0a4d;
+  --color-amber-50: oklch(97.4% 0.022 165);
+  --color-amber-100: oklch(94.6% 0.04 165);
+  --color-amber-200: oklch(89% 0.068 164);
+  --color-amber-300: oklch(80% 0.1 164);
+  --color-amber-400: oklch(55% 0.12 163);
+  --color-amber-500: oklch(50% 0.115 163);
+  --color-amber-600: oklch(45% 0.105 164);
+  --color-amber-700: oklch(40% 0.092 165);
+  --color-amber-800: oklch(34% 0.076 166);
+  --color-amber-900: oklch(28% 0.06 167);
+  --color-amber-950: oklch(21% 0.045 168);
 }
 
 /* Safe area insets for native mobile */
@@ -34,29 +36,33 @@
   --safe-area-right: env(safe-area-inset-right, 0px);
 
   /* Boop brand tokens */
-  --boop-bg: #fafaf7;
-  --boop-card: #ffffff;
-  --boop-panel: #f4f3ee;
-  --boop-ink: #111014;
-  --boop-muted: #6b6a74;
-  --boop-dim: #a8a7b0;
-  --boop-line: #ecebe6;
-  --boop-accent: #6b3cff;
-  --boop-accent-soft: #ece4ff;
-  --boop-accent-ink: #2a1570;
+  --boop-bg: oklch(97.4% 0.007 165);      /* the seal-maker's counter */
+  --boop-card: oklch(99.6% 0.002 165);    /* the sheet stamps land on */
+  --boop-panel: oklch(95.2% 0.01 165);
+  --boop-ink: oklch(21% 0.02 200);        /* stamp-pad ink */
+  --boop-muted: oklch(42% 0.018 200);     /* 4.5:1 on bg */
+  --boop-dim: oklch(52% 0.014 200);
+  --boop-line: oklch(21% 0.02 200 / 0.1);
+  --boop-accent: oklch(50% 0.115 163);    /* jade: the seal stone */
+  --boop-accent-deep: oklch(40% 0.092 165);
+  --boop-accent-soft: oklch(94.6% 0.04 165);
+  --boop-accent-ink: oklch(30% 0.065 167);
+  --boop-agent: oklch(27% 0.03 230);      /* agent stamps: ink, square */
+  --boop-ease: cubic-bezier(.2,.8,.2,1);
+  --boop-spring: linear(0, 0.42 9%, 0.84 21%, 1.02 33%, 1.05 41%, 1.01 55%, 0.99 70%, 1);
 
   /* Legacy aliases retained so any direct var() consumers keep working. */
   --cream-50: var(--boop-bg);
   --cream-100: #f4f3ee;
-  --cream-200: #ece4ff;
-  --cream-300: #dcceff;
+  --cream-200: var(--color-amber-100);
+  --cream-300: var(--color-amber-200);
 
-  --amber-400: #9b74ff;
-  --amber-500: #6b3cff;
-  --amber-600: #5a2fe8;
-  --amber-700: #4723b3;
-  --amber-800: #341881;
-  --amber-900: #2a1570;
+  --amber-400: var(--color-amber-400);
+  --amber-500: var(--color-amber-500);
+  --amber-600: var(--color-amber-600);
+  --amber-700: var(--color-amber-700);
+  --amber-800: var(--color-amber-800);
+  --amber-900: var(--color-amber-900);
   
   /* Warm Neutrals - Replacing grays */
   --warm-50: #fafaf9;
@@ -85,21 +91,27 @@
 /* Shared surfaces also cover pages that consume brand tokens directly. */
 :root.dark {
   color-scheme: dark;
-  --boop-bg: #0c0b10;
-  --boop-card: #19171f;
-  --boop-panel: #24212d;
-  --boop-ink: #f1eef9;
-  --boop-muted: #b2adbf;
-  --boop-dim: #898293;
-  --boop-line: #383240;
-  --boop-accent-soft: #2a1570;
-  --boop-accent-ink: #dcceff;
+  --boop-bg: oklch(17% 0.012 190);
+  --boop-card: oklch(21% 0.014 190);
+  --boop-panel: oklch(25% 0.016 190);
+  --boop-ink: oklch(95% 0.01 165);
+  --boop-muted: oklch(78% 0.014 180);
+  --boop-dim: oklch(66% 0.014 180);
+  --boop-line: oklch(95% 0.01 165 / 0.12);
+  --boop-accent: oklch(72% 0.12 163);
+  --boop-accent-deep: oklch(80% 0.11 163);
+  --boop-accent-soft: oklch(30% 0.06 167);
+  --boop-accent-ink: oklch(89% 0.068 164);
+  --boop-agent: oklch(88% 0.02 220);
 }
 
 /* Apply to the main layout */
 body {
   background: var(--boop-bg);
   color: var(--boop-ink);
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
   /* Safe area top is applied by the sticky header, not here */
   padding-bottom: var(--safe-area-bottom);
   /* Prevent overscroll bounce on iOS — keeps app feeling native */
@@ -348,7 +360,7 @@ html, body {
 /* Touch-friendly tap highlights */
 @media (hover: none) and (pointer: coarse) {
   button, a, [role="button"] {
-    -webkit-tap-highlight-color: rgba(107, 60, 255, 0.2);
+    -webkit-tap-highlight-color: oklch(50% 0.115 163 / 0.18);
   }
 }
 
@@ -392,7 +404,7 @@ html {
 
 /* Focus visible styles for accessibility */
 :focus-visible {
-  outline: 2px solid #6b3cff;
+  outline: 2.5px solid var(--boop-accent);
   outline-offset: 2px;
 }
 
@@ -403,11 +415,11 @@ html {
   gap: 0.35em;
   font-family: var(--font-rounded);
   font-weight: 800;
+  font-variation-settings: "wdth" 88;
   letter-spacing: -0.04em;
   line-height: 1;
   color: var(--boop-ink);
 }
-.dark .boop-wordmark { color: #f1eef9; }
 .boop-dot {
   position: relative;
   display: inline-block;
@@ -417,7 +429,7 @@ html {
   background: var(--boop-accent);
   flex: none;
 }
-/* Soft ripple ring — the design's "01 · Original" mark. */
+/* The ring: the dot is the seal stone, the ring its impression. */
 .boop-dot::after {
   content: "";
   position: absolute;
@@ -470,3 +482,28 @@ button:active:not(:disabled),
 .dark .card-hover:hover {
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
 }
+
+/* Stamps: the ink impression on a checked item (src/components/Stamp.tsx). */
+.boop-stamp { display: inline-block; flex: none; color: var(--boop-accent); transform: rotate(var(--stamp-tilt, 0deg)); }
+.boop-stamp-agent { color: var(--boop-agent); }
+.boop-stamp svg { width: 100%; height: 100%; overflow: visible; display: block; }
+.boop-stamp-ring { fill: none; stroke: currentColor; stroke-width: 2.6; }
+.boop-stamp-inner { fill: none; stroke: currentColor; stroke-width: 1.1; }
+.boop-stamp-text { fill: currentColor; font: 650 7.6px var(--font-sans); letter-spacing: .08em; text-transform: uppercase; }
+.boop-stamp-agent .boop-stamp-text { font-size: 10px; letter-spacing: .06em; text-transform: none; }
+.boop-stamp-initial { fill: currentColor; font: 800 17px var(--font-sans); }
+@media (prefers-reduced-motion: no-preference) {
+  .boop-stamp.is-fresh { animation: boop-stamp-land 520ms var(--boop-spring) both, boop-stamp-bloom 900ms var(--boop-ease) both; }
+  .boop-stamp.is-fresh .boop-stamp-ring { stroke-dasharray: 1; animation: boop-stamp-draw 460ms var(--boop-ease) 60ms both; }
+  .boop-stamp.is-fresh text { animation: boop-stamp-ink 300ms var(--boop-ease) 200ms both; }
+}
+@keyframes boop-stamp-land { from { transform: rotate(var(--stamp-tilt, 0deg)) scale(1.35); opacity: 0; } 30% { opacity: 1; } 62% { transform: rotate(var(--stamp-tilt, 0deg)) scale(1.1); } to { transform: rotate(var(--stamp-tilt, 0deg)); opacity: 1; } }
+@keyframes boop-stamp-bloom { 0%, 30% { filter: drop-shadow(0 0 0 transparent); } 45% { filter: drop-shadow(0 0 10px color-mix(in oklch, var(--boop-accent) 55%, transparent)); } 100% { filter: drop-shadow(0 0 0 transparent); } }
+@keyframes boop-stamp-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes boop-stamp-ink { from { opacity: 0; } to { opacity: 1; } }
+@media (forced-colors: active) { .boop-stamp { color: CanvasText; } .boop-stamp g { filter: none; } .boop-stamp text { fill: CanvasText; } .boop-stamp-ring, .boop-stamp-inner { stroke: CanvasText; } }
+
+/* The sheet: one surface for a list's rows, separated by hairlines, not boxes. */
+.boop-sheet { background: var(--boop-card); border-radius: 22px; box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.7), 0 0 0 1px var(--boop-line), 0 24px 48px -32px oklch(25% 0.04 200 / 0.28); overflow: hidden; }
+:root.dark .boop-sheet { box-shadow: inset 0 1px 0 oklch(100% 0 0 / 0.06), 0 0 0 1px var(--boop-line); }
+.boop-sheet-quiet { background: color-mix(in oklch, var(--boop-card) 55%, transparent); box-shadow: 0 0 0 1px var(--boop-line); }

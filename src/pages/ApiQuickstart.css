@@ -7,11 +7,11 @@
   --ink: var(--boop-ink);
   --muted: var(--boop-muted);
   --line: var(--boop-line);
-  --accent: #6b3cff;
+  --accent: var(--boop-accent);
   --accentSoft: var(--boop-accent-soft);
-  --sans: 'Geist', 'Inter', system-ui, sans-serif;
-  --rounded: 'Nunito', system-ui, sans-serif;
-  --mono: 'Geist Mono', ui-monospace, monospace;
+  --sans: var(--font-sans);
+  --rounded: var(--font-sans);
+  --mono: var(--font-mono);
 
   background: var(--bg);
   color: var(--ink);

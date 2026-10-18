@@ -5,7 +5,7 @@ export function RowVerificationBadge({ verification }: { verification: ExplorerV
 
   const config = {
     verified: { icon: "✓", label: "Verified", color: "text-green-600 dark:text-green-400" },
-    anchored: { icon: "⛓", label: "Anchored", color: "text-purple-600 dark:text-purple-400" },
+    anchored: { icon: "⛓", label: "Anchored", color: "text-amber-700 dark:text-amber-300" },
     pending: { icon: "⏳", label: "Pending", color: "text-stone-500 dark:text-stone-400" },
   } as const;
 

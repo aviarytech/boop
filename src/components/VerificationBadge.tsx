@@ -125,16 +125,16 @@ function BadgeIndicator({
   tooltip: React.ReactNode;
 }) {
   const sizeClasses = size === "sm" 
-    ? "text-[10px] px-1.5 py-0.5" 
-    : "text-xs px-2 py-1";
+    ? "text-[12px] px-1.5 py-0.5" 
+    : "text-[13px] px-2 py-0.5";
   
   const iconSize = size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5";
 
   const stateStyles = {
-    verified: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700",
-    unverified: "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700",
-    pending: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800",
-    none: "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700",
+    verified: "bg-transparent text-[var(--boop-muted)] border-[var(--boop-line)]",
+    unverified: "bg-transparent text-[var(--boop-muted)] border-[var(--boop-line)]",
+    pending: "bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800",
+    none: "bg-transparent text-[var(--boop-muted)] border-dashed border-[var(--boop-line)]",
   };
 
   if (state === "none" && compact) {
@@ -145,7 +145,7 @@ function BadgeIndicator({
     <BadgeTooltip content={tooltip}>
       <span
         aria-label={label}
-        className={`inline-flex items-center gap-1 rounded-full border font-medium ${sizeClasses} ${stateStyles[state]}`}
+        className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border font-medium ${sizeClasses} ${stateStyles[state]}`}
       >
         <span className={iconSize}>{icon}</span>
         {!compact && <span>{label}</span>}

@@ -54,12 +54,12 @@ export function CreateChooser({ onPick, onClose }: CreateChooserProps) {
             onClick={() => { haptic('light'); onPick(option.kind); }}
             className="text-left rounded-2xl border-2 border-stone-200 dark:border-stone-700 hover:border-amber-400 dark:hover:border-amber-500 p-4 transition-colors bg-stone-50 dark:bg-gray-900"
           >
-            <div className="text-2xl mb-2" style={{ fontFamily: 'Nunito, system-ui, sans-serif' }} aria-hidden="true">{option.icon}</div>
-            <div className="font-bold text-stone-900 dark:text-stone-100" style={{ fontFamily: 'Nunito, system-ui, sans-serif' }}>{option.title}</div>
+            <div className="text-2xl mb-2" style={{ fontFamily: 'var(--font-sans)' }} aria-hidden="true">{option.icon}</div>
+            <div className="font-bold text-stone-900 dark:text-stone-100" style={{ fontFamily: 'var(--font-sans)' }}>{option.title}</div>
             <div className="text-xs text-stone-500 dark:text-stone-400 mt-1 leading-snug">{option.blurb}</div>
           </button>
         ))}
-        <p className="col-span-2 text-[11px] text-stone-400" style={{ fontFamily: 'Geist Mono, ui-monospace, monospace' }}>
+        <p className="col-span-2 text-[11px] text-stone-400" style={{ fontFamily: 'var(--font-mono)' }}>
           a note is born a note — it can't be turned into a list later
         </p>
       </div>

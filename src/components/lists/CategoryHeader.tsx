@@ -36,7 +36,7 @@ export function CategoryHeader({
             }`}
           >
             <svg
-              className="w-5 h-5 text-amber-600 dark:text-amber-500"
+              className="w-5 h-5 text-[var(--boop-muted)]"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -50,22 +50,20 @@ export function CategoryHeader({
             </svg>
           </span>
           <h3
-            className={`text-xl font-bold tracking-tight ${
-              isUncategorized
-                ? "text-gray-500 dark:text-gray-400 group-hover:text-amber-600 dark:group-hover:text-amber-400"
-                : "text-gray-800 dark:text-gray-100 group-hover:text-amber-700 dark:group-hover:text-amber-300"
-            } transition-colors`}
+            className={`text-[20px] font-bold tracking-tight ${
+              isUncategorized ? "text-[var(--boop-muted)]" : "text-[var(--boop-ink)]"
+            } group-hover:text-[var(--boop-accent)] transition-colors`}
           >
             {name}
           </h3>
-          <span className="text-sm font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-full">
+          <span className="text-[13px] font-medium text-[var(--boop-muted)] border border-[var(--boop-line)] px-2 py-0.5 rounded-full tabular-nums">
             {listCount}
           </span>
         </div>
       </button>
 
       {isExpanded && (
-        <div className="mt-5 space-y-4">
+        <div className="mt-3">
           {children}
         </div>
       )}

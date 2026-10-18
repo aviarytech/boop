@@ -100,7 +100,7 @@ export function Profile() {
             className="w-20 h-20 mx-auto rounded-full flex items-center justify-center text-white shadow-lg mb-4"
             style={{
               background: 'rgba(255,255,255,0.15)',
-              fontFamily: 'Nunito, system-ui, sans-serif',
+              fontFamily: 'var(--font-sans)',
               fontWeight: 800,
               fontSize: 34,
               letterSpacing: -1,
@@ -112,7 +112,7 @@ export function Profile() {
           <h1
             className="text-white mb-1"
             style={{
-              fontFamily: 'Nunito, system-ui, sans-serif',
+              fontFamily: 'var(--font-sans)',
               fontWeight: 800,
               fontSize: 24,
               letterSpacing: -0.5,

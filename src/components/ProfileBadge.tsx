@@ -11,7 +11,7 @@ import { useBilling } from '../hooks/useBilling';
 
 const PLAN_LABELS: Record<string, { label: string; className: string }> = {
   pro: { label: "Pro", className: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400" },
-  team: { label: "Team", className: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400" },
+  team: { label: "Team", className: "bg-[var(--boop-ink)] text-[var(--boop-bg)]" },
 };
 
 export function ProfileBadge() {
@@ -34,11 +34,11 @@ export function ProfileBadge() {
       <Link
         to="/profile"
         onClick={() => haptic('light')}
-        className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-stone-100 dark:bg-gray-800 hover:bg-stone-200 dark:hover:bg-gray-700 rounded-full transition-colors max-w-[14rem]"
+        className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-panel)_80%,var(--boop-ink))] rounded-full transition-colors max-w-[14rem]"
         title={did}
       >
-        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse flex-none" />
-        <span className={`text-xs ${isMono ? 'font-mono' : 'font-medium'} text-stone-700 dark:text-gray-300 truncate`}>
+        <div className="w-2 h-2 bg-[var(--boop-accent)] rounded-full flex-none" aria-hidden="true" />
+        <span className={`text-xs ${isMono ? 'font-mono' : 'font-medium'} text-[var(--boop-ink)] truncate`}>
           {label}
         </span>
         {planBadge && (
@@ -65,7 +65,7 @@ export function ProfileBadge() {
           haptic('medium');
           logout();
         }}
-        className="p-2.5 text-gray-500 dark:text-gray-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
+        className="p-2.5 text-[var(--boop-muted)] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
         title="Sign out"
         aria-label="Sign out"
       >

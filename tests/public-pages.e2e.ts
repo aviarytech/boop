@@ -3,15 +3,15 @@ import { expect } from 'e2e';
 
 test('landing page renders the hero and signup link', async ({ app, screen }) => {
   await app.open('/');
-  await expect(screen.getByRole('heading', /The todo list your AI agents can use/, { level: 1 }))
-    .toContainText('with receipts.');
-  await expect(screen.getByRole('link', 'Get boop — free')).toBeVisible();
-  await expect(screen.getByRole('link', 'Get boop — free')).toHaveAttribute('href', '/login');
+  await expect(screen.getByRole('heading', /Every checkmark/, { level: 1 }))
+    .toContainText('says who made it.');
+  await expect(screen.getByRole('link', 'Start a list, free').first()).toBeVisible();
+  await expect(screen.getByRole('link', 'Start a list, free').first()).toHaveAttribute('href', '/login');
 });
 
 test('landing quickstart link opens the docs', async ({ app, screen, browser }) => {
   await app.open('/');
-  await screen.getByRole('link', 'Read the API quickstart →').tap();
+  await screen.getByRole('link', 'Read the API quickstart').tap();
   await expect(browser).toHaveURL('/docs/quickstart');
   await expect(screen.getByRole('heading', 'An agent completing a task in 5 minutes, with curl.', { level: 1 }))
     .toBeVisible();
@@ -30,6 +30,6 @@ test('quickstart loads directly with the task walkthrough and endpoint reference
 
   await screen.getByRole('link', 'boop').tap();
   await expect(browser).toHaveURL('/');
-  await expect(screen.getByRole('heading', /The todo list your AI agents can use/, { level: 1 }))
-    .toContainText('with receipts.');
+  await expect(screen.getByRole('heading', /Every checkmark/, { level: 1 }))
+    .toContainText('says who made it.');
 });

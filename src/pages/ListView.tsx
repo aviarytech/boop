@@ -688,7 +688,7 @@ export function ListView() {
       {(access?.role === "viewer" || access?.role === "editor") && <Link to="/shared" className="inline-block mb-4 underline">Your access · Shared with me</Link>}
       {/* Header - Redesigned for less crowding */}
       <div className="mb-6">
-        <div className="flex items-start gap-3">
+        <div className="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-3">
           {/* Back button */}
           <Link
             to="/d"
@@ -707,11 +707,12 @@ export function ListView() {
               <h1
                 className="text-gray-900 dark:text-gray-100 break-words min-w-0"
                 style={{
-                  fontFamily: 'Nunito, system-ui, sans-serif',
-                  fontWeight: 700,
-                  fontSize: 'clamp(24px, 4.5vw, 32px)',
-                  letterSpacing: -0.9,
-                  lineHeight: 1.05,
+                  fontFamily: 'var(--font-sans)',
+                  fontWeight: 760,
+                  fontVariationSettings: '"wdth" 86',
+                  fontSize: 'clamp(28px, 4.5vw, 40px)',
+                  letterSpacing: '-0.035em',
+                  lineHeight: 1,
                   margin: 0,
                 }}
               >
@@ -730,8 +731,8 @@ export function ListView() {
 
             {/* Progress and collaborators info */}
             <div
-              className="flex items-center gap-2 text-[12px] mt-1 text-stone-500 dark:text-stone-400"
-              style={{ fontFamily: 'Geist Mono, ui-monospace, monospace' }}
+              className="flex items-center gap-2 text-[13px] mt-2 tabular-nums"
+              style={{ color: 'var(--boop-muted)' }}
             >
             {totalCount > 0 && (
               <span>
@@ -748,7 +749,7 @@ export function ListView() {
                       width: 6,
                       height: 6,
                       borderRadius: '50%',
-                      background: '#1a7a4c',
+                      background: 'var(--boop-accent)',
                       display: 'inline-block',
                     }}
                     aria-hidden="true"
@@ -762,7 +763,7 @@ export function ListView() {
             {/* Progress bar — only show if there are items */}
             {totalCount > 0 && (
               <div className="flex items-center gap-2.5 mt-3 max-w-md">
-                <div className="flex-1 h-[6px] rounded-full overflow-hidden bg-stone-200/70 dark:bg-stone-700/60">
+                <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: 'var(--boop-line)' }}>
                   <div
                     className="h-full rounded-full transition-[width] duration-300"
                     style={{
@@ -772,11 +773,8 @@ export function ListView() {
                   />
                 </div>
                 <span
-                  className="text-[11px] font-semibold tabular-nums"
-                  style={{
-                    color: 'var(--boop-accent)',
-                    fontFamily: 'Geist Mono, ui-monospace, monospace',
-                  }}
+                  className="text-[13px] font-semibold tabular-nums"
+                  style={{ color: 'var(--boop-accent)' }}
                 >
                   {Math.round((checkedCount / totalCount) * 100)}%
                 </span>
@@ -784,10 +782,10 @@ export function ListView() {
             )}
           </div>
 
-          {/* Compact action buttons */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Compact action buttons: their own row under the title on phones */}
+          <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto pl-[52px] sm:pl-0">
           {/* View toggle - compact on mobile */}
-          <div className="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-0.5">
+          <div className="inline-flex items-center bg-[var(--boop-panel)] rounded-full p-0.5">
             <button
               onClick={() => {
                 haptic('light');
@@ -799,8 +797,8 @@ export function ListView() {
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
                 viewMode === "list" && itemViewMode === "alphabetical"
-                  ? "bg-white dark:bg-gray-600 text-amber-600 dark:text-amber-400 shadow-sm"
-                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  ? "bg-[var(--boop-card)] text-[var(--boop-accent)] shadow-[0_0_0_1px_var(--boop-line)]"
+                  : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
               }`}
               aria-label="Alphabetical view"
               title="Alphabetical view (A-Z)"
@@ -820,8 +818,8 @@ export function ListView() {
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
                 viewMode === "list" && itemViewMode === "categorized"
-                  ? "bg-white dark:bg-gray-600 text-amber-600 dark:text-amber-400 shadow-sm"
-                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  ? "bg-[var(--boop-card)] text-[var(--boop-accent)] shadow-[0_0_0_1px_var(--boop-line)]"
+                  : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
               }`}
               aria-label="Categorized view"
               title="Categorized view (grouped by category)"
@@ -837,8 +835,8 @@ export function ListView() {
               }}
               className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
                 viewMode === "calendar"
-                  ? "bg-white dark:bg-gray-600 text-amber-600 dark:text-amber-400 shadow-sm"
-                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  ? "bg-[var(--boop-card)] text-[var(--boop-accent)] shadow-[0_0_0_1px_var(--boop-line)]"
+                  : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
               }`}
               aria-label="Calendar view"
               title="Calendar view"
@@ -857,7 +855,7 @@ export function ListView() {
               className={`inline-flex items-center justify-center p-2 rounded-full transition-all active:scale-95 ${
                 isBookmarked
                   ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                  : "bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
               } ${favouritePending ? "opacity-50" : ""}`}
               aria-label={isBookmarked ? "Remove from favourites" : "Add to favourites"}
               title={isBookmarked ? "Remove from favourites" : "Add to favourites"}
@@ -873,7 +871,7 @@ export function ListView() {
                 haptic('light');
                 setIsShareModalOpen(true);
               }}
-              className="inline-flex items-center justify-center p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all active:scale-95"
+              className="inline-flex items-center justify-center p-2 rounded-full bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-all active:scale-95"
               aria-label="Share"
               title="Share list"
             >
@@ -915,16 +913,6 @@ export function ListView() {
         </div>
       )}
 
-      {/* Amber progress bar */}
-      {totalCount > 0 && (
-        <div className="mb-4 bg-amber-100 dark:bg-amber-900/30 rounded-full h-2.5 overflow-hidden">
-          <div 
-            className="h-full bg-amber-500 transition-all duration-500 ease-out rounded-full"
-            style={{ width: `${(checkedCount / totalCount) * 100}%` }}
-          />
-        </div>
-      )}
-
       {/* Select mode header */}
       {isSelectMode && canUserEdit && (
         <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-center justify-between animate-slide-up">
@@ -956,7 +944,7 @@ export function ListView() {
               haptic('light');
               setIsSelectMode(true);
             }}
-            className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 text-[14px] font-medium text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-lg transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -1162,14 +1150,14 @@ export function ListView() {
               onTouchEnd={canUserEdit ? touchDrag.handleTouchEnd : undefined}
             >
               {/* Active (unchecked) items as rounded cards - only top-level items (no parentId) */}
-              <div className="space-y-2">
+              <div className="boop-sheet divide-y divide-[var(--boop-line)]">
                 {sortedItems.filter(item => !item.checked && !item.parentId).map((item: OptimisticItem) => {
                   const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                   return (
                     <div 
                       key={item._localKey ?? item._id}
                       data-item-id={item._id}
-                      className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-amber-100/60 dark:border-gray-700 overflow-hidden animate-slide-up"
+                      className="animate-slide-up"
                     >
                       <NestedListItem
                         item={item}
@@ -1204,7 +1192,7 @@ export function ListView() {
                       haptic('light');
                       setDoneCollapsed(!doneCollapsed);
                     }}
-                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-xl transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-[15px] font-semibold text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-xl transition-colors"
                   >
                     <svg
                       className={`w-4 h-4 transition-transform duration-200 ${doneCollapsed ? "" : "rotate-90"}`}
@@ -1215,13 +1203,13 @@ export function ListView() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                     <span>Done</span>
-                    <span className="ml-1 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-full text-xs tabular-nums">
+                    <span className="ml-1 px-2 py-0.5 text-[var(--boop-muted)] rounded-full text-[13px] tabular-nums border border-[var(--boop-line)]">
                       {checkedCount}
                     </span>
                   </button>
 
                   {!doneCollapsed && (
-                    <div className="mt-1 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden divide-y divide-gray-100 dark:divide-gray-700/50">
+                    <div className="mt-1 boop-sheet boop-sheet-quiet divide-y divide-[var(--boop-line)]">
                       {sortedItems.filter(item => item.checked && !item.parentId).map((item: OptimisticItem) => {
                         const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                         return (
@@ -1263,7 +1251,7 @@ export function ListView() {
 
       {/* Add Item Input - sticky at bottom of viewport */}
       {canUserEdit && viewMode === "list" && (
-        <div className="sticky bottom-0 z-10 pt-2 pb-3 mt-4 bg-gradient-to-t from-white via-white dark:from-gray-900 dark:via-gray-900 to-transparent animate-slide-up">
+        <div className="sticky bottom-0 z-10 pt-2 pb-3 mt-4 bg-gradient-to-t from-[var(--boop-bg)] via-[var(--boop-bg)] to-transparent animate-slide-up">
           <AddItemInput ref={addItemInputRef} assetDid={list.assetDid} onAddItem={addItem} />
         </div>
       )}

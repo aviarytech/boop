@@ -65,7 +65,7 @@ export function SearchInput({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
-        className="w-full pl-10 pr-10 py-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
+        className="w-full pl-10 pr-10 py-2.5 bg-[var(--boop-card)] border-[1.5px] border-[color-mix(in_oklch,var(--boop-ink)_18%,transparent)] rounded-xl text-[var(--boop-ink)] placeholder-[var(--boop-dim)] focus:outline-none focus:border-[var(--boop-accent)] focus:ring-4 focus:ring-[color-mix(in_oklch,var(--boop-accent)_15%,transparent)] transition-all"
       />
 
       {/* Clear button */}
@@ -83,8 +83,8 @@ export function SearchInput({
 
       {/* Keyboard shortcut hint */}
       {!value && !isFocused && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
-          <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 font-mono">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1 text-[12px] text-[var(--boop-muted)]">
+          <kbd className="px-1.5 py-0.5 rounded border border-[var(--boop-line)] font-sans">
             ⌘K
           </kbd>
         </div>

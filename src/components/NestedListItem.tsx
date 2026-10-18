@@ -150,7 +150,7 @@ export function NestedListItem({
             <div className="flex items-center gap-2 px-3 pb-0.5 text-xs">
               <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-purple-500 to-violet-600 rounded-full transition-all duration-300"
+                  className="h-full bg-[var(--boop-accent)] rounded-full transition-all duration-300"
                   style={{ width: `${totalSubItems > 0 ? (checkedSubItems / totalSubItems) * 100 : 0}%` }}
                 />
               </div>

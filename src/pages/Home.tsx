@@ -1,7 +1,7 @@
 /**
  * Home page showing user's lists.
  *
- * Modern minimal design with card layout, FAB, warm cream/amber palette.
+ * Direction "Seals" (docs/design/DIRECTION.md): lists first, quiet controls.
  * Displays lists grouped by category with collapsible sections.
  * Includes search, sorting, pull-to-refresh, and improved empty states.
  */
@@ -316,46 +316,47 @@ export function Home() {
       <div className="flex items-start justify-between gap-3 pt-2 pb-5">
         <div className="flex-1 min-w-0">
           <h1
-            className="text-stone-900 dark:text-stone-50"
+            className="text-[var(--boop-ink)]"
             style={{
-              fontFamily: 'Nunito, system-ui, sans-serif',
-              fontWeight: 700,
-              fontSize: 'clamp(30px, 5.5vw, 40px)',
-              letterSpacing: -1.2,
-              lineHeight: 1.05,
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 780,
+              fontVariationSettings: '"wdth" 86',
+              fontSize: 'clamp(34px, 5.5vw, 52px)',
+              letterSpacing: '-0.04em',
+              lineHeight: 0.98,
               margin: 0,
             }}
           >
-            {hasLists ? <>Your lists —<br /><span className="text-stone-500 dark:text-stone-400" style={{ fontWeight: 600 }}>what's on today?</span></> : <>Welcome in,<br /><span className="text-stone-500 dark:text-stone-400" style={{ fontWeight: 600 }}>let's make your first list.</span></>}
+            {hasLists ? 'Your lists' : <>Welcome in.<br /><span className="text-[var(--boop-muted)]" style={{ fontWeight: 650 }}>Make your first list.</span></>}
           </h1>
           {hasLists && (
             <div
-              className="flex items-center gap-3.5 flex-wrap mt-3 text-[13px] text-stone-500 dark:text-stone-400"
+              className="flex items-center gap-3.5 flex-wrap mt-3 text-[14px] text-[var(--boop-muted)] tabular-nums"
             >
               <span>
-                <b className="text-stone-900 dark:text-stone-100">{totalListCount}</b> {totalListCount === 1 ? 'list' : 'lists'}
+                <b className="text-[var(--boop-ink)]">{totalListCount}</b> {totalListCount === 1 ? 'list' : 'lists'}
               </span>
               {totalNoteCount > 0 && (
                 <>
-                  <span className="text-stone-300 dark:text-stone-600">·</span>
+                  <span aria-hidden="true">·</span>
                   <span>
-                    <b className="text-stone-900 dark:text-stone-100">{totalNoteCount}</b> {totalNoteCount === 1 ? 'note' : 'notes'}
+                    <b className="text-[var(--boop-ink)]">{totalNoteCount}</b> {totalNoteCount === 1 ? 'note' : 'notes'}
                   </span>
                 </>
               )}
               {allSharedLists.length > 0 && (
                 <>
-                  <span className="text-stone-300 dark:text-stone-600">·</span>
+                  <span aria-hidden="true">·</span>
                   <span>
-                    <b className="text-stone-900 dark:text-stone-100">{allSharedLists.length}</b> shared
+                    <b className="text-[var(--boop-ink)]">{allSharedLists.length}</b> shared
                   </span>
                 </>
               )}
               {favouriteLists.length > 0 && (
                 <>
-                  <span className="text-stone-300 dark:text-stone-600">·</span>
+                  <span aria-hidden="true">·</span>
                   <span>
-                    <b className="text-stone-900 dark:text-stone-100">{favouriteLists.length}</b> pinned
+                    <b className="text-[var(--boop-ink)]">{favouriteLists.length}</b> pinned
                   </span>
                 </>
               )}
@@ -368,12 +369,7 @@ export function Home() {
             to="/profile"
             onClick={() => haptic('light')}
             aria-label="Profile"
-            className="flex items-center justify-center w-[34px] h-[34px] rounded-full text-white font-extrabold text-sm active:scale-95 transition-transform"
-            style={{
-              background: 'var(--boop-accent)',
-              fontFamily: 'Nunito, system-ui, sans-serif',
-              letterSpacing: -0.3,
-            }}
+            className="sm:hidden flex items-center justify-center w-[40px] h-[40px] rounded-full text-[var(--boop-accent)] font-extrabold text-[16px] border-[2.5px] border-current active:scale-95 transition-transform"
           >
             {(did ?? 'r').slice(-1).toUpperCase() || 'R'}
           </Link>
@@ -393,11 +389,7 @@ export function Home() {
           </div>
           <button
             onClick={handleOpenCreate}
-            className="inline-flex items-center gap-1.5 flex-shrink-0 px-3.5 py-2 rounded-full text-[13px] font-semibold text-white active:scale-95 transition-transform whitespace-nowrap"
-            style={{
-              background: 'var(--boop-accent)',
-              boxShadow: '0 4px 14px rgba(107,60,255,0.3)',
-            }}
+            className="inline-flex items-center gap-1.5 flex-shrink-0 px-4 py-2.5 rounded-xl text-[15px] font-semibold text-white dark:text-[var(--boop-bg)] bg-[var(--boop-accent)] hover:bg-[var(--boop-accent-deep)] active:scale-95 transition-transform whitespace-nowrap"
           >
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
               <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -413,9 +405,8 @@ export function Home() {
           <Link
             to="/priority"
             onClick={() => haptic('light')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-800/60 hover:bg-stone-200 dark:hover:bg-stone-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[14px] font-medium text-[var(--boop-ink)] border border-[var(--boop-line)] hover:bg-[var(--boop-panel)] transition-colors"
           >
-            <span>🎯</span>
             <span>Focus</span>
           </Link>
           <button
@@ -423,9 +414,8 @@ export function Home() {
               haptic('light');
               setIsCategoryManagerOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium text-stone-600 dark:text-stone-300 bg-stone-100 dark:bg-stone-800/60 hover:bg-stone-200 dark:hover:bg-stone-800 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[14px] font-medium text-[var(--boop-ink)] border border-[var(--boop-line)] hover:bg-[var(--boop-panel)] transition-colors"
           >
-            <span>📁</span>
             <span>Categories</span>
           </button>
           <div className="ml-auto">
@@ -437,15 +427,7 @@ export function Home() {
       {/* Offline indicator */}
       {usingCache && (
         <div className="mb-5 px-4 py-3 bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30 rounded-2xl text-amber-700 dark:text-amber-400 text-sm flex items-center gap-2.5 animate-slide-up">
-          <span>📡</span>
-          <span>Offline — showing cached lists</span>
-        </div>
-      )}
-
-      {/* Referral CTA — shown to free users who have lists */}
-      {!isLoading && hasLists && !isPro && (
-        <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/40 rounded-2xl animate-slide-up">
-          <ReferralInviteCurrentUser compact />
+          <span>Offline. Showing the lists saved on this device.</span>
         </div>
       )}
 
@@ -473,13 +455,12 @@ export function Home() {
           {favouriteLists.length > 0 && (
             <section>
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-lg">⭐</span>
-                <h2 className="text-lg font-bold text-stone-800 dark:text-stone-200">
+                <h2 className="text-[20px] font-bold tracking-tight text-[var(--boop-ink)]">
                   Favourites
                 </h2>
                 <span className="text-sm font-normal text-stone-500 dark:text-stone-400">({favouriteLists.length})</span>
               </div>
-              <div className="space-y-3">
+              <div className="grid gap-3 lg:grid-cols-2">
                 {favouriteLists.map((list, index) => (
                   <div key={`fav-${list._id}`} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
                     <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} showOwner={list.ownerDid !== did && list.ownerDid !== legacyDid} isLegacy={legacySet.has(list._id)} />
@@ -502,7 +483,7 @@ export function Home() {
                     name={category.name}
                     listCount={categoryLists.length}
                   >
-                    <div className="space-y-3">
+                    <div className="grid gap-3 lg:grid-cols-2">
                       {categoryLists.map((list, index) => (
                         <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
                           <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
@@ -518,7 +499,7 @@ export function Home() {
                   name="Uncategorized"
                   listCount={ownedLists.uncategorized.length}
                 >
-                  <div className="space-y-3">
+                  <div className="grid gap-3 lg:grid-cols-2">
                     {ownedLists.uncategorized.map((list, index) => (
                       <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
                         <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
@@ -541,7 +522,7 @@ export function Home() {
                 <span className="text-sm font-normal text-stone-500 dark:text-stone-400">({allSharedLists.length})</span>
               </div>
 
-              <div className="space-y-3">
+              <div className="grid gap-3 lg:grid-cols-2">
                 {allSharedLists.map((list, index) => (
                   <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
                     <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} showOwner />
@@ -553,10 +534,17 @@ export function Home() {
         </div>
       )}
 
+      {/* Referral CTA — shown to free users who have lists */}
+      {!isLoading && hasLists && !isPro && (
+        <div className="mt-10 p-4 border border-[var(--boop-line)] rounded-2xl">
+          <ReferralInviteCurrentUser compact />
+        </div>
+      )}
+
       {/* FAB */}
       <button
         onClick={handleOpenCreate}
-        className="fixed bottom-6 right-6 z-30 w-14 h-14 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-white rounded-2xl shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 focus:outline-none focus:ring-4 focus:ring-amber-400/30 transition-all active:scale-90 flex items-center justify-center group"
+        className="fixed bottom-6 right-6 z-30 w-14 h-14 bg-[var(--boop-accent)] hover:bg-[var(--boop-accent-deep)] text-white dark:text-[var(--boop-bg)] rounded-2xl shadow-[0_14px_28px_-12px_oklch(20%_0.05_180/0.55)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[color-mix(in_oklch,var(--boop-accent)_30%,transparent)] transition-all active:scale-90 flex items-center justify-center group"
         aria-label="Create new list or note"
       >
         <svg 

@@ -67,7 +67,7 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
         <h1
           className="text-gray-900 dark:text-gray-100 mb-3"
           style={{
-            fontFamily: 'Nunito, system-ui, sans-serif',
+            fontFamily: 'var(--font-sans)',
             fontWeight: 800,
             fontSize: 30,
             letterSpacing: -1,

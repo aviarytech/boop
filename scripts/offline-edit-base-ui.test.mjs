@@ -14,7 +14,7 @@ await build({ entryPoints: ['src/components/BatchOperations.tsx', 'src/component
     path.endsWith('/useOffline') ? 'export const useOffline=()=>({queueMutation:async(input,snapshots)=>{globalThis.__editBase.direct.push({input,snapshots});return 1;}});' :
     path.endsWith('/useSettings') ? 'export const useSettings=()=>({haptic(){}});' :
     path.endsWith('/SubItems') ? 'export const useSubItemProgress=()=>null;' :
-    path.endsWith('/ItemAttribution') ? 'export const ItemAttribution=()=>null;' :
+    path.endsWith('/ItemAttribution') ? 'export const ItemAttribution=()=>null;export const ItemStamp=()=>null;' :
     path.endsWith('/ItemDetailsModal') ? 'export const ItemDetailsModal=()=>null;' :
     'export const shareItem=async()=>{};',
   }));
