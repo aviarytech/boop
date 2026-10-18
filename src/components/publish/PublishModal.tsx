@@ -3,7 +3,7 @@
  * Uses Panel component for slide-up drawer experience.
  *
  * Phase 4: Allows list owners to publish their lists publicly.
- * Published lists are verifiable and can be viewed by anyone.
+ * Published lists can be viewed by anyone; this panel does not verify authorship.
  */
 
 import { useState } from "react";
@@ -308,7 +308,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
           <>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Publishing makes this list publicly viewable. Anyone with the link
-              can see the list contents and verify who added each item. Editing requires an accepted editor invitation; publishing does not grant editing access.
+              can see the current list contents. This page does not verify item authorship. Editing requires an accepted editor invitation; publishing does not grant editing access.
             </p>
 
             <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
@@ -330,7 +330,6 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
                   <p className="font-medium">Before you publish</p>
                   <ul className="mt-2 text-sm space-y-1 text-amber-700 dark:text-amber-500">
                     <li>• All items will be publicly visible</li>
-                    <li>• Contributor names will be shown</li>
                     <li>• The list URL will be shareable</li>
                   </ul>
                 </div>
@@ -338,6 +337,11 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
             </div>
           </>
         )}
+
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          The public link shows the current list and can change after publication.
+          It does not show or verify a sealed snapshot.
+        </p>
 
         <p className="text-sm text-gray-600 dark:text-gray-400">
           Named access is separate from publication. Removing a grant does not stop public reading while publication is active. Unpublishing ends public access; accepted viewers and editors keep their private access.

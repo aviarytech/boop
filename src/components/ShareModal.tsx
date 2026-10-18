@@ -250,7 +250,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
         ) : (
           <>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Publish this list with a verifiable <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">did:webvh</code> identity.
+              Publish this list with a <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">did:webvh</code> identifier.
               Anyone with the link can read the list. Publishing does not grant editing access.
             </p>
 
@@ -262,7 +262,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
                 <div>
                   <p className="font-medium">What happens when you publish</p>
                   <ul className="mt-2 text-sm space-y-1 text-amber-700 dark:text-amber-500">
-                    <li>• A verifiable DID is created for the list</li>
+                    <li>• A public resource link identifies the list</li>
                     <li>• Anyone with the link can read items</li>
                     <li>• Unpublishing ends public reading; accepted grants remain</li>
                   </ul>
@@ -289,6 +289,11 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
             </button>
           </>
         )}
+
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            The public link shows the current list and can change after publication.
+            It does not show or verify a sealed snapshot.
+          </p>
 
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Removing a named grant does not stop public reading while publication is active. To end public access, unpublish the list. Accepted viewers and editors keep their private access.
