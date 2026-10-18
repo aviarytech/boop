@@ -47,7 +47,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       <h3
         className="text-stone-900 dark:text-stone-50 mb-2"
         style={{
-          fontFamily: 'Nunito, system-ui, sans-serif',
+          fontFamily: 'var(--font-sans)',
           fontWeight: 700,
           fontSize: 22,
           letterSpacing: -0.6,
@@ -78,7 +78,7 @@ export function NoListsEmptyState({ onCreateList }: { onCreateList: () => void }
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-white text-sm transition-transform active:scale-95"
           style={{
             background: 'var(--boop-accent)',
-            boxShadow: '0 8px 20px rgba(107,60,255,0.35)',
+            boxShadow: '0 12px 24px -12px oklch(20% 0.05 180 / 0.5)',
           }}
         >
           Make your first list
@@ -106,7 +106,7 @@ export function NoItemsEmptyState() {
       <h3
         className="text-stone-700 dark:text-stone-200 mb-1"
         style={{
-          fontFamily: 'Nunito, system-ui, sans-serif',
+          fontFamily: 'var(--font-sans)',
           fontWeight: 700,
           fontSize: 18,
           letterSpacing: -0.4,

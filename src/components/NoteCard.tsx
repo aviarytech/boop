@@ -13,7 +13,7 @@ import type { NoteCardSummary } from "../../convex/lib/noteBody";
 import { useSettings } from "../hooks/useSettings";
 import { ownerTag, shortRelativeTime } from "../lib/format";
 
-const MONO = 'Geist Mono, ui-monospace, monospace';
+const MONO = 'var(--font-mono)';
 
 interface NoteCardProps {
   list: Doc<"lists">;
@@ -49,7 +49,7 @@ export const NoteCard = memo(function NoteCard({ list, summary: storedSummary, c
         <h3
           className="text-stone-900 dark:text-stone-50 truncate"
           style={{
-            fontFamily: 'Nunito, system-ui, sans-serif',
+            fontFamily: 'var(--font-sans)',
             fontWeight: 700,
             fontSize: 20,
             letterSpacing: -0.4,

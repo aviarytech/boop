@@ -10,7 +10,7 @@ async function submitEmail(screen: TestFixtures['screen']) {
 
 test('landing page loads with branding', async ({ scenario, screen }) => {
   await scenario.open('/', { authenticated: false });
-  await expect(screen.getByRole('heading', /The todo list your AI agents can use/, { level: 1 })).toBeVisible();
+  await expect(screen.getByRole('heading', /Every checkmark says who made it/, { level: 1 })).toBeVisible();
 });
 
 test('direct navigation to pricing shows the headline', async ({ scenario, screen }) => {

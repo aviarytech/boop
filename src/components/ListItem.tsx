@@ -8,7 +8,7 @@
 
 import { useState, useRef, lazy, Suspense, memo } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
-import { ItemAttribution } from "./ItemAttribution";
+import { ItemAttribution, ItemStamp } from "./ItemAttribution";
 import { useSettings } from "../hooks/useSettings";
 import { useOffline } from "../hooks/useOffline";
 import type { OptimisticItem } from "../hooks/useOptimisticItems";
@@ -166,10 +166,10 @@ export const ListItem = memo(function ListItem({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onClick={isSelectMode ? onToggleSelect : undefined}
-      className={`flex items-center gap-1.5 px-3 py-1 transition-all touch-manipulation ${
+      className={`flex items-center gap-2 px-4 py-2.5 min-h-[60px] transition-all touch-manipulation ${
         isDragging 
           ? "opacity-50 bg-gray-100 dark:bg-gray-700 scale-[1.02]" 
-          : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+          : "hover:bg-[var(--boop-panel)]/60"
       } ${
         isDragOver 
           ? "border-t-2 border-amber-500 -mt-0.5" 
@@ -179,9 +179,7 @@ export const ListItem = memo(function ListItem({
           ? "opacity-60" 
           : ""
       } ${
-        item.checked
-          ? "bg-gray-50/50 dark:bg-gray-800/50"
-          : ""
+        ""
       } ${
         isSelected
           ? "bg-amber-50 dark:bg-amber-900/30 ring-2 ring-amber-400 dark:ring-amber-600"
@@ -206,7 +204,7 @@ export const ListItem = memo(function ListItem({
         >
           <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
             isSelected
-              ? "bg-[#6b3cff] text-white"
+              ? "bg-[var(--boop-accent)] text-white"
               : "bg-stone-200 dark:bg-stone-600"
           }`}>
             {isSelected && (
@@ -225,7 +223,7 @@ export const ListItem = memo(function ListItem({
       {/* Drag handle - only show if user can edit and not in select mode */}
       {canUserEdit && !isSelectMode && (
         <button
-          className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing hover:text-gray-400 dark:hover:text-gray-500 transition-colors touch-none select-none -ml-2"
+          className="flex-shrink-0 w-6 sm:w-8 h-8 flex items-center justify-center text-[color-mix(in_oklch,var(--boop-ink)_25%,transparent)] cursor-grab active:cursor-grabbing hover:text-gray-400 dark:hover:text-gray-500 transition-colors touch-none select-none -ml-2"
           aria-label="Drag to reorder"
           onTouchStart={(e) => {
             if (itemRef.current && onTouchStart) {
@@ -248,14 +246,14 @@ export const ListItem = memo(function ListItem({
             handleToggleCheck();
           }}
           disabled={isUpdating}
-          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 disabled:opacity-50 -ml-2`}
+          className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center transition-all active:scale-90 disabled:opacity-50 -ml-2`}
           aria-label={item.checked ? `Uncheck ${item.name}` : `Check ${item.name}`}
         >
           <div
-            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+            className={`w-6 h-6 rounded-[7px] flex items-center justify-center transition-all ${
               item.checked
-                ? "bg-[#6b3cff] text-white shadow-sm shadow-[#6b3cff]/30"
-                : "bg-transparent border-[1.6px] border-stone-300 dark:border-stone-500 hover:border-[#6b3cff] dark:hover:border-[#9b74ff]"
+                ? "bg-[var(--boop-ink)] text-[var(--boop-card)]"
+                : "bg-[var(--boop-card)] border-[1.8px] border-[color-mix(in_oklch,var(--boop-ink)_45%,transparent)] hover:border-[var(--boop-accent)]"
             }`}
           >
             {item.checked && (
@@ -274,10 +272,10 @@ export const ListItem = memo(function ListItem({
       ) : (
         // Read-only checkbox display for viewers
         <div
-          className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+          className={`flex-shrink-0 w-6 h-6 rounded-[7px] flex items-center justify-center ${
             item.checked
-              ? "bg-[#6b3cff] text-white"
-              : "border-[1.6px] border-stone-300 dark:border-stone-500"
+              ? "bg-[var(--boop-ink)] text-[var(--boop-card)]"
+              : "border-[1.8px] border-[color-mix(in_oklch,var(--boop-ink)_45%,transparent)]"
           }`}
           role="checkbox"
           aria-checked={item.checked}
@@ -325,10 +323,10 @@ export const ListItem = memo(function ListItem({
             />
           )}
           <p
-            className={`text-xs text-gray-900 dark:text-gray-100 transition-all truncate ${
+            className={`text-[16px] sm:text-[15px] leading-snug transition-all truncate ${
               item.checked 
-                ? "line-through text-gray-400 dark:text-gray-500" 
-                : ""
+                ? "text-[var(--boop-muted)]" 
+                : "text-[var(--boop-ink)]"
             }`}
           >
             {item.name}
@@ -342,7 +340,7 @@ export const ListItem = memo(function ListItem({
           )}
           {item.recurrence && (
             <span 
-              className="text-purple-500 flex-shrink-0 inline-flex items-center text-[10px] leading-none gap-0.5 px-1 py-0.5 bg-purple-50 dark:bg-purple-900/20 rounded" 
+              className="text-[var(--boop-muted)] flex-shrink-0 inline-flex items-center text-[12px] leading-none gap-0.5 px-1 py-0.5 rounded" 
               role="img" 
               aria-label={`Repeats every ${item.recurrence.interval && item.recurrence.interval > 1 ? `${item.recurrence.interval} ` : ""}${item.recurrence.frequency.replace("ly", item.recurrence.interval && item.recurrence.interval > 1 ? "s" : "")}`}
               title={`Repeats every ${item.recurrence.interval && item.recurrence.interval > 1 ? `${item.recurrence.interval} ` : ""}${item.recurrence.frequency === "daily" ? (item.recurrence.interval && item.recurrence.interval > 1 ? "days" : "day") : item.recurrence.frequency === "weekly" ? (item.recurrence.interval && item.recurrence.interval > 1 ? "weeks" : "week") : (item.recurrence.interval && item.recurrence.interval > 1 ? "months" : "month")}`}
@@ -351,7 +349,7 @@ export const ListItem = memo(function ListItem({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 whitespace-nowrap overflow-hidden">
           <ItemAttribution item={item} />
           {/* Due date badge */}
           {dueDateStr && (
@@ -390,7 +388,7 @@ export const ListItem = memo(function ListItem({
               className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 inline-flex items-center gap-0.5 ${
                 subItemProgress.checked === subItemProgress.total
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                  : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                  : 'border border-[var(--boop-line)] text-[var(--boop-muted)]'
               }`}
               title={`${subItemProgress.checked} of ${subItemProgress.total} sub-items done`}
             >
@@ -400,6 +398,8 @@ export const ListItem = memo(function ListItem({
         </div>
       </div>
 
+      {item.checked && <ItemStamp item={item} />}
+
       {/* Share button - only show if not in select mode */}
       {!isSelectMode && (
         <button
@@ -407,7 +407,7 @@ export const ListItem = memo(function ListItem({
             e.stopPropagation();
             handleShare();
           }}
-          className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-300 dark:text-gray-600 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all active:scale-90"
+          className="hidden sm:flex flex-shrink-0 w-8 h-8 items-center justify-center text-[var(--boop-dim)] hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-all active:scale-90"
           aria-label="Share item"
         >
           <svg
@@ -434,7 +434,7 @@ export const ListItem = memo(function ListItem({
             handleRemove();
           }}
           disabled={isUpdating}
-          className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg disabled:opacity-50 transition-all active:scale-90 -mr-2"
+          className="flex-shrink-0 w-8 h-8 flex items-center justify-center text-[var(--boop-dim)] hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg disabled:opacity-50 transition-all active:scale-90 -mr-2"
           aria-label={`Remove ${item.name}`}
         >
           <svg

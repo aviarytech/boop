@@ -55,7 +55,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   return (
-    <div className="min-h-screen-safe flex flex-col bg-stone-50 dark:bg-gray-950 transition-colors">
+    <div className="min-h-screen-safe flex flex-col bg-[var(--boop-bg)] transition-colors">
       {/* Skip to main content link */}
       <a
         href="#main-content"
@@ -65,19 +65,19 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       </a>
 
       {/* Header */}
-      <header className="flex-shrink-0 sticky top-0 z-40 bg-stone-50/90 dark:bg-gray-950/90 backdrop-blur-md border-b border-stone-200 dark:border-gray-800 safe-area-inset-top">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <header className="flex-shrink-0 sticky top-0 z-40 bg-[color-mix(in_oklch,var(--boop-bg)_92%,transparent)] backdrop-blur-md border-b border-[var(--boop-line)] safe-area-inset-top">
+        <div className="container mx-auto px-4 py-2.5 sm:py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-3 gap-y-2">
           <Link
             to="/d"
             onClick={() => haptic('light')}
-            className="boop-wordmark text-[20px] leading-none hover:opacity-80 transition-opacity"
+            className="boop-wordmark text-[22px] leading-none hover:opacity-80 transition-opacity"
             aria-label="boop — home"
           >
             <span className="boop-dot" aria-hidden="true" />
             <span>boop</span>
           </Link>
 
-          <nav className="flex items-center gap-1 rounded-full bg-stone-100 dark:bg-gray-900 p-1" aria-label="Primary">
+          <nav className="order-last sm:order-none w-full sm:w-auto flex items-center gap-1 rounded-xl bg-[var(--boop-panel)] p-1" aria-label="Primary">
             {[
               { to: "/d", label: "Todos" },
               { to: "/e", label: "Explorer" },
@@ -89,10 +89,10 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
                 onClick={() => haptic('light')}
                 className={({ isActive }) =>
                   [
-                    "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                    "flex-1 sm:flex-none text-center rounded-lg px-3.5 py-1.5 text-[14px] font-semibold transition-colors",
                     isActive
-                      ? "bg-white dark:bg-gray-800 text-stone-900 dark:text-stone-100 shadow-sm"
-                      : "text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200",
+                      ? "bg-[var(--boop-card)] text-[var(--boop-ink)] shadow-[0_0_0_1px_var(--boop-line)]"
+                      : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]",
                   ].join(" ")
                 }
               >
@@ -101,14 +101,14 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             {/* Settings button */}
             <button
               onClick={() => {
                 haptic('light');
                 setIsSettingsOpen(true);
               }}
-              className="p-3 text-stone-400 dark:text-gray-400 hover:text-stone-600 dark:hover:text-gray-200 hover:bg-stone-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
+              className="p-2.5 text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-xl transition-colors"
               aria-label="Settings"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -123,7 +123,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
                 haptic('light');
                 toggleDarkMode();
               }}
-              className="p-3 text-stone-400 dark:text-gray-400 hover:text-stone-600 dark:hover:text-gray-200 hover:bg-stone-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
+              className="p-2.5 text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-xl transition-colors"
               aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {darkMode ? (
@@ -144,7 +144,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main id="main-content" className="container mx-auto px-4 py-6 safe-area-inset-bottom flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain" style={{ touchAction: "pan-y pinch-zoom" }}>
-        <div className="mb-5 flex justify-end gap-5"><Link to="/shared" className="inline-block py-2 text-sm font-semibold underline underline-offset-4">Shared with me</Link><Link to="/invitations" className="inline-block py-2 text-sm font-semibold text-stone-700 dark:text-gray-300 underline underline-offset-4">Invitations</Link></div>
+        <div className="mb-3 flex justify-end gap-5 text-[14px]"><Link to="/shared" className="inline-block py-2 font-semibold text-[var(--boop-ink)] underline decoration-[var(--boop-line)] decoration-2 underline-offset-4 hover:decoration-[var(--boop-accent)]">Shared with me</Link><Link to="/invitations" className="inline-block py-2 font-semibold text-[var(--boop-ink)] underline decoration-[var(--boop-line)] decoration-2 underline-offset-4 hover:decoration-[var(--boop-accent)]">Invitations</Link></div>
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 
@@ -174,7 +174,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
  */
 function PageLoadingFallback() {
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-gray-950 flex items-center justify-center">
+    <div className="min-h-screen bg-[var(--boop-bg)] flex items-center justify-center">
       <div className="text-center">
         <div
           className="mx-auto mb-5 rounded-full"

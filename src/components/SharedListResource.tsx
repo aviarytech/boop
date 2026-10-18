@@ -197,7 +197,7 @@ export function SharedListResource() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
         <div className="text-center p-8">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2" style={{ fontFamily: 'Nunito, system-ui, sans-serif', letterSpacing: -0.5 }}>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2" style={{ fontFamily: 'var(--font-sans)', letterSpacing: -0.5 }}>
             {error === "List not found" ? "List not found" : "Something went wrong"}
           </h1>
           <p className="text-gray-500 dark:text-gray-400 mb-4">{error}</p>
@@ -221,7 +221,7 @@ export function SharedListResource() {
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <span className="boop-dot" aria-hidden="true" style={{ width: 10, height: 10 }} />
-              <span style={{ fontFamily: 'Geist Mono, ui-monospace, monospace', fontSize: 12 }}>shared list</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>shared list</span>
             </div>
             {/* Favourite button — only for logged-in users */}
             {did && convexListId && (

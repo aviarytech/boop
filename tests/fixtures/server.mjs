@@ -249,6 +249,9 @@ async function apply(account, endpoint, args) {
           after: { checked: true, checkedAt: Number.isFinite(args.checkedAt) ? args.checkedAt : null } }
         : { action: 'item.reopened', subject: itemSubject(account, item), before: { checked: item.checked }, after: { checked: false } });
       item.checked = endpoint === 'items:checkItem';
+      // Mirrors convex/items.ts: the checker is the authenticated actor.
+      item.checkedByDid = item.checked ? user.did : undefined;
+      item.checkedAt = item.checked ? (Number.isFinite(args.checkedAt) ? args.checkedAt : Date.now()) : undefined;
       item.updatedAt = Date.now();
       break;
     case 'items:removeItem':

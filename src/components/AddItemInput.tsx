@@ -73,7 +73,7 @@ export const AddItemInput = forwardRef<HTMLInputElement, AddItemInputProps>(func
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Add item..."
-          className="w-full px-4 py-3.5 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
+          className="w-full px-4 py-3.5 bg-[var(--boop-card)] border-[1.5px] border-[color-mix(in_oklch,var(--boop-ink)_22%,transparent)] rounded-xl text-[var(--boop-ink)] placeholder-[var(--boop-dim)] focus:outline-none focus:border-[var(--boop-accent)] focus:ring-4 focus:ring-[color-mix(in_oklch,var(--boop-accent)_15%,transparent)] transition-all disabled:opacity-50"
         />
         
 {/* Removed "Press Enter" hint per user feedback */}
@@ -82,7 +82,7 @@ export const AddItemInput = forwardRef<HTMLInputElement, AddItemInputProps>(func
       <button
         type="submit"
         disabled={isAdding || !name.trim()}
-        className="px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-white rounded-xl font-semibold shadow-lg shadow-amber-500/25 hover:shadow-xl hover:shadow-amber-500/30 focus:outline-none focus:ring-4 focus:ring-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transition-all active:scale-95"
+        className="px-5 py-3.5 bg-[var(--boop-accent)] hover:bg-[var(--boop-accent-deep)] text-white dark:text-[var(--boop-bg)] rounded-xl font-semibold focus:outline-none focus-visible:ring-4 focus-visible:ring-[color-mix(in_oklch,var(--boop-accent)_30%,transparent)] disabled:bg-transparent disabled:text-[var(--boop-muted)] disabled:border-[1.5px] disabled:border-[var(--boop-line)] disabled:cursor-not-allowed transition-all active:scale-95"
       >
         {isAdding ? (
           <span className="flex items-center gap-2">

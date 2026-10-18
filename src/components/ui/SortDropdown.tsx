@@ -7,8 +7,8 @@ import { useSettings } from '../../hooks/useSettings';
 import type { SortOption } from '../../lib/storage';
 
 const sortOptions: { value: SortOption; label: string; icon: string }[] = [
-  { value: 'newest', label: 'Newest First', icon: '🆕' },
-  { value: 'oldest', label: 'Oldest First', icon: '📅' },
+  { value: 'newest', label: 'Newest first', icon: '🆕' },
+  { value: 'oldest', label: 'Oldest first', icon: '📅' },
   { value: 'name-asc', label: 'A → Z', icon: '🔤' },
   { value: 'name-desc', label: 'Z → A', icon: '🔠' },
 ];
@@ -55,7 +55,7 @@ export function SortDropdown() {
           haptic('light');
           setIsOpen(!isOpen);
         }}
-        className="flex items-center gap-2 px-4 py-3 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all"
+        className="flex items-center gap-2 px-3 py-1.5 text-[14px] font-medium text-[var(--boop-ink)] border border-[var(--boop-line)] rounded-lg hover:bg-[var(--boop-panel)] focus:outline-none focus-visible:ring-4 focus-visible:ring-[color-mix(in_oklch,var(--boop-accent)_25%,transparent)] transition-all"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -87,7 +87,6 @@ export function SortDropdown() {
                   role="option"
                   aria-selected={listSort === option.value}
                 >
-                  <span>{option.icon}</span>
                   <span>{option.label}</span>
                   {listSort === option.value && (
                     <svg className="w-4 h-4 ml-auto text-amber-500" fill="currentColor" viewBox="0 0 20 20">

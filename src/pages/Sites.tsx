@@ -86,7 +86,7 @@ export function Sites() {
           <h1
             className="text-stone-900 dark:text-stone-50"
             style={{
-              fontFamily: "Nunito, system-ui, sans-serif",
+              fontFamily: "var(--font-sans)",
               fontWeight: 700,
               fontSize: "clamp(30px, 5.5vw, 40px)",
               lineHeight: 1.05,

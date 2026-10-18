@@ -27,7 +27,7 @@ const DeleteListDialog = lazy(() => import("../components/DeleteListDialog").the
 const RenameListDialog = lazy(() => import("../components/RenameListDialog").then(m => ({ default: m.RenameListDialog })));
 const ChangeCategoryDialog = lazy(() => import("../components/ChangeCategoryDialog").then(m => ({ default: m.ChangeCategoryDialog })));
 
-const MONO = 'Geist Mono, ui-monospace, monospace';
+const MONO = 'var(--font-mono)';
 
 type Mode = "edit" | "preview";
 type NoteBody = { body: string; updatedAt: number; canEdit: boolean; accessCheckedAt: number };
@@ -142,7 +142,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
               <h1
                 className="text-gray-900 dark:text-gray-100 break-words min-w-0"
                 style={{
-                  fontFamily: 'Nunito, system-ui, sans-serif',
+                  fontFamily: 'var(--font-sans)',
                   fontWeight: 700,
                   fontSize: 'clamp(24px, 4.5vw, 32px)',
                   letterSpacing: -0.9,

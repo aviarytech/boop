@@ -1,8 +1,7 @@
 /**
  * Card displaying a list summary — Boop design.
  *
- * Mono category line up top, big Nunito name, progress bar with
- * done count at the bottom. Matches the Boop prototype BoopListCard.
+ * Owner and age up top, the name, then progress with the done count.
  */
 
 import { memo } from "react";
@@ -38,26 +37,24 @@ export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner
     <Link
       to={`/list/${list._id}`}
       onClick={() => haptic('light')}
-      className="group block relative overflow-hidden bg-white dark:bg-stone-800/70 rounded-[18px] p-[18px] border border-stone-200/70 dark:border-stone-700/50 hover:border-amber-300/60 dark:hover:border-amber-700/50 hover:-translate-y-[1px] transition-all duration-150 active:scale-[0.99]"
+      className="group block relative overflow-hidden bg-[var(--boop-card)] rounded-[18px] px-5 py-[18px] shadow-[0_0_0_1px_var(--boop-line)] hover:shadow-[0_0_0_1.5px_var(--boop-accent)] transition-shadow duration-150 active:scale-[0.99]"
       aria-label={`Open list: ${list.name}`}
     >
       {/* Header: tag line + (placeholder for avatar stack) */}
       <div className="relative flex justify-between items-start mb-4">
         <div className="min-w-0">
           <div
-            className="flex items-center gap-1.5 mb-1 text-[11px] text-stone-500 dark:text-stone-400 lowercase"
-            style={{ fontFamily: 'Geist Mono, ui-monospace, monospace' }}
+            className="flex items-center gap-1.5 mb-1 text-[13px] text-[var(--boop-muted)]"
           >
             <span className="truncate">{tagParts.join(' · ')}</span>
             {isLegacy && <LegacyBadge className="flex-shrink-0" />}
           </div>
           <h3
-            className="text-stone-900 dark:text-stone-50 truncate"
+            className="text-[var(--boop-ink)] truncate"
             style={{
-              fontFamily: 'Nunito, system-ui, sans-serif',
               fontWeight: 700,
-              fontSize: 20,
-              letterSpacing: -0.4,
+              fontSize: 21,
+              letterSpacing: '-0.02em',
               lineHeight: 1.15,
             }}
           >
@@ -68,7 +65,7 @@ export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner
 
       {/* Progress bar + done count */}
       <div className="relative flex items-center gap-2.5">
-        <div className="flex-1 h-[4px] rounded-full overflow-hidden bg-stone-200/70 dark:bg-stone-700/60">
+        <div className="flex-1 h-[4px] rounded-full overflow-hidden bg-[var(--boop-line)]">
           <div
             className="h-full rounded-full transition-[width] duration-300"
             style={{
@@ -78,10 +75,9 @@ export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner
           />
         </div>
         <span
-          className="text-[11px] text-stone-500 dark:text-stone-400 tabular-nums"
-          style={{ fontFamily: 'Geist Mono, ui-monospace, monospace' }}
+          className="text-[13px] text-[var(--boop-muted)] tabular-nums"
         >
-          {items === undefined ? '…' : `${done}/${total}`}
+          {items === undefined ? '…' : total ? `${done} of ${total}` : 'Empty'}
         </span>
       </div>
     </Link>

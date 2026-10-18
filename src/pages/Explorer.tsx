@@ -55,7 +55,7 @@ export function Explorer() {
         <h1
           className="text-stone-900 dark:text-stone-50"
           style={{
-            fontFamily: "Nunito, system-ui, sans-serif",
+            fontFamily: "var(--font-sans)",
             fontWeight: 700,
             fontSize: "clamp(28px, 5vw, 36px)",
             lineHeight: 1.05,

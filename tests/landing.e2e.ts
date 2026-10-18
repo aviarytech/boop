@@ -5,15 +5,15 @@ import { test } from './fixtures/app';
 test.describe("Landing page", () => {
   test("1. page loads with boop hero heading", async ({ screen, scenario }) => {
     await scenario.open("/", { authenticated: false });
-    await expect(screen.getByRole("heading", { level: 1, name: /The todo list your AI agents can use/ })).toBeVisible();
+    await expect(screen.getByRole("heading", { level: 1, name: /Every checkmark says who made it/ })).toBeVisible();
     await expect(
-      screen.getByText(/One shared space where you, your team, and your agents get things done/i),
+      screen.getByText(/A shared todo list for you, your team and your AI agents/i),
     ).toBeVisible();
   });
 
   test("2. primary hero CTA navigates unauthenticated users to /login", async ({ screen, browser, scenario }) => {
     await scenario.open("/", { authenticated: false });
-    await screen.getByRole("link", { name: /Get boop — free/i }).click();
+    await screen.getByRole("link", { name: /Start a list, free/i }).first().click();
     await expect(browser).toHaveURL("/login");
   });
 
@@ -23,11 +23,11 @@ test.describe("Landing page", () => {
     await expect(browser).toHaveURL("/login");
   });
 
-  test("4. audience section lists the three current paths", async ({ screen, scenario }) => {
+  test("4. people-and-agents section lists the three current paths", async ({ screen, scenario }) => {
     await scenario.open("/", { authenticated: false });
     await expect(screen.getByRole("heading", { name: "Lists that keep up." })).toBeVisible();
     await expect(screen.getByRole("heading", { name: "One workspace, no chasing." })).toBeVisible();
-    await expect(screen.getByRole("heading", { name: "Mission Control." })).toBeVisible();
+    await expect(screen.getByRole("heading", { name: "Hand an agent the list." })).toBeVisible();
   });
 
   test("5. pricing section shows Free, Pro, and Team plans", async ({ browser, scenario }) => {
@@ -42,7 +42,7 @@ test.describe("Landing page", () => {
   test("6. FAQ section is present", async ({ screen, browser, scenario }) => {
     await scenario.open("/", { authenticated: false });
     await browser.locator("#faq").scrollIntoView();
-    await expect(screen.getByRole("heading", { name: "Just the honest questions." })).toBeVisible();
+    await expect(screen.getByRole("heading", { name: "Before you sign up." })).toBeVisible();
   });
 
   test("7. footer Privacy link navigates to /privacy", async ({ screen, browser, scenario }) => {
