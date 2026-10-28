@@ -31,8 +31,8 @@ test("KindBadge renders 'page' label for sites", () => {
   cleanup();
 });
 
-test("LayerBadge renders did:cel / did:webvh / did:btco", () => {
-  for (const layer of ["did:cel", "did:webvh", "did:btco"] as const) {
+test("LayerBadge renders did:vh / did:webvh / did:btco", () => {
+  for (const layer of ["did:vh", "did:webvh", "did:btco"] as const) {
     const { container, cleanup } = renderInto(<LayerBadge layer={layer} />);
     expect(container.textContent).toContain(layer);
     cleanup();

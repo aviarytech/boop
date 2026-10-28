@@ -73,12 +73,6 @@ test('items cannot be added to a note', async () => {
   }
 });
 
-test('a note cannot be copied as a list', async () => {
-  const ctx = fixture();
-  await assert.rejects(() => call('lists', 'copyList', ctx, { authToken, sourceListId: 'N1', assetDid: 'did:copy', celEnvelope: '{}', name: 'Journal (copy)', createdAt: 2 }), /note/i);
-  assert.equal(ctx.rows.lists.length, 1, 'copy inserted a list');
-});
-
 test('generated api.d.ts registers every Convex module', async () => {
   const api = await readFile('convex/_generated/api.d.ts', 'utf8');
   const modules = (await readdir('convex', { recursive: true }))

@@ -59,7 +59,7 @@ test("multi-select: chip with active state has aria-pressed=true", () => {
   );
   expect(container.querySelector("[data-chip='kind:list']")?.getAttribute("aria-pressed")).toBe("true");
   expect(container.querySelector("[data-chip='kind:site']")?.getAttribute("aria-pressed")).toBe("true");
-  expect(container.querySelector("[data-chip='layer:did:cel']")?.getAttribute("aria-pressed")).toBe("false");
+  expect(container.querySelector("[data-chip='layer:did:vh']")?.getAttribute("aria-pressed")).toBe("false");
   cleanup();
 });
 

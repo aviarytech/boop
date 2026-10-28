@@ -13,7 +13,6 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { trackTemplate } from "../lib/analytics";
 import { getRunbook } from "../../convex/lib/templateCatalog";
-import { createListAsset } from "../lib/originals";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
 import { Panel } from "./ui/Panel";
@@ -58,12 +57,10 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
 
     try {
       // Create the list
-      const listAsset = await createListAsset(listName, did);
       if (getRunbook(selectedTemplate.id)) trackTemplate("template_use_clicked", selectedTemplate.id);
       const listId = await createListFromTemplate({
         builtinId: selectedTemplate.id,
-        assetDid: listAsset.assetDid,
-        celEnvelope: listAsset.envelope,
+        creationKey: crypto.randomUUID(),
         listName: listName,
       });
 
@@ -86,12 +83,10 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
     haptic('medium');
 
     try {
-      const listAsset = await createListAsset(templateName, did);
       const listId = await createListFromTemplate({
         templateId,
         listName: templateName,
-        assetDid: listAsset.assetDid,
-        celEnvelope: listAsset.envelope,
+        creationKey: crypto.randomUUID(),
       });
 
       haptic('success');

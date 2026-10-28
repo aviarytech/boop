@@ -32,7 +32,6 @@ import { cacheAllLists, getAllCachedLists, type OfflineList } from "../lib/offli
 import { useStreaks } from "../hooks/useStreaks";
 import { StreakBadge } from "../components/StreakBadge";
 import { OnboardingFlow, isOnboardingDone, InviteNudge, isInviteNudgeDone, markInviteNudgeDone } from "../components/OnboardingFlow";
-import { createListAsset } from "../lib/originals";
 import { trackFirstListCreated } from "../lib/analytics";
 import { useBilling } from "../hooks/useBilling";
 import { ReferralInviteCurrentUser } from "../components/ReferralInvite";
@@ -122,10 +121,7 @@ export function Home() {
 
     const createDemo = async () => {
       try {
-        const listAsset = await createListAsset("Getting Started", did);
         const listId = await createList({
-          assetDid: listAsset.assetDid,
-          celEnvelope: listAsset.envelope,
           name: "Getting Started",
           createdAt: Date.now(),
         });
@@ -163,11 +159,11 @@ export function Home() {
 
   // One query for every card on the page rather than one per card. Skipped
   // until the lists arrive, and while offline, where the ids may be stale.
-  const legacyIds = useQuery(
-    api.lists.getLegacyListIds,
+  const originalStatus = useQuery(
+    api.originalsHost.getOriginalStatus,
     lists && !usingCache ? { listIds: lists.map((l) => l._id) } : "skip"
   );
-  const legacySet = useMemo(() => new Set(legacyIds ?? []), [legacyIds]);
+  const legacySet = useMemo(() => new Set(originalStatus?.legacy ?? []), [originalStatus]);
 
   const noteIds = useMemo(() => (lists ?? []).filter(isNote).map((l) => l._id), [lists]);
   const noteSummaries = useMemo(

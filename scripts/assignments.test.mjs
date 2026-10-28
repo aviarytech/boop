@@ -119,17 +119,15 @@ test('reconciliation and orphan cleanup reject oversized batches and never remov
   assert.equal(f.rows.itemAssignees.length,101);
 });
 
-for(const operation of ['checkItem','batchCheckItems','copyList']) test(`${operation} inherits all assignments, retains source evidence and records truthful new history`,async()=>{
+for(const operation of ['checkItem','batchCheckItems']) test(`${operation} inherits all assignments, retains source evidence and records truthful new history`,async()=>{
   const f=await fixture(); await seed(f,'a',['b','b','c']);
   await f.ctx.db.patch('I1',{recurrence:{frequency:'daily'},dueDate:10});
   const source=structuredClone(f.rows.items[0]); const sourceRows=structuredClone(f.rows.itemAssignees);
-  if(operation==='copyList') await f.call('lists',operation,{sourceListId:'L1',assetDid:'did:new',celEnvelope:'{}',name:'Copy',createdAt:5});
-  else await f.call('items',operation,operation==='checkItem'?{itemId:'I1',checkedAt:10}:{itemIds:['I1']});
+  await f.call('items',operation,operation==='checkItem'?{itemId:'I1',checkedAt:10}:{itemIds:['I1']});
   const next=f.rows.items.find(i=>i._id!=='I1');
   assert.deepEqual(f.rows.itemAssignees.filter(r=>r.itemId===next._id).map(r=>r.assigneeDid).sort(),['a','b','c']);
   assert.deepEqual(f.rows.itemAssignees.filter(r=>r.itemId==='I1'),sourceRows);
   assert.deepEqual(f.rows.items[0].vcProofs[0],source.vcProofs[0]);
-  if(operation==='copyList') assert.deepEqual(f.rows.items[0],source);
   assert.equal(next.vcProofs,undefined);
   const explorer=await f.call('originals','listOwnedOriginals',{});
   assert.equal(explorer.find(row=>row.sourceId===next.listId).collaborators,3);
@@ -351,37 +349,6 @@ test('singleton and empty filtered results avoid whole-list assignment reads',as
   const before=reads.queries.length;
   assert.deepEqual(await f.call('items','getItemsWithDueDates',{listId:'L1',startDate:100}),[]);
   assert.equal(reads.queries.slice(before).filter(q=>q.table==='itemAssignees').length,0);
-});
-
-for(const count of [20,1200]) test(`copy ${count} mostly unassigned items uses constant assignment/source reads and no new-target reads`,async()=>{
-  const f=await fixture(); seedLargeList(f,count);
-  const sourceItems=structuredClone(f.rows.items), sourceRows=structuredClone(f.rows.itemAssignees);
-  const sourceEvent={_id:'source-event',listId:'L1',itemId:'large-1',actorDid:'historical',type:'item_assigned',metadata:{assigneeDid:'row-member'},createdAt:1};
-  f.rows.activities=[sourceEvent];
-  f.rows.items[0].vcProofs=[{type:'ExistingSigned',proof:'source-only',issuer:'historical'}];
-  sourceItems[0].vcProofs=structuredClone(f.rows.items[0].vcProofs);
-  const reads=measureReads(f,50);
-  const copied=await f.call('lists','copyList',{sourceListId:'L1',assetDid:'did:new',celEnvelope:'{}',name:'Large copy',createdAt:100});
-  assert.equal(copied.itemsCopied,count);
-  assert.deepEqual(reads.queries.filter(q=>q.table==='itemAssignees'),[{table:'itemAssignees',index:'by_list',bounds:{listId:'L1'}}]);
-  assert.ok(reads.gets<15,'no reads of new items, including unassigned ones');
-  assert.deepEqual(f.rows.items.filter(i=>i.listId==='L1'),sourceItems);
-  assert.deepEqual(f.rows.itemAssignees.filter(i=>i.listId==='L1'),sourceRows);
-  assert.deepEqual(f.rows.activities.filter(i=>i.listId==='L1'),[sourceEvent]);
-  const targets=f.rows.items.filter(i=>i.listId===copied.listId);
-  assert.equal(targets.length,count);
-  assert.equal(targets.some(target=>reads.getIds.includes(target._id)),false,'new target items are never reread');
-  for(let i=0;i<count;i++) {
-    const target=targets.find(t=>t.name===`Task ${i}`), expected=largeExpected[i]??[];
-    assert.equal(target.vcProofs,undefined);
-    assert.equal(target.assigneeDid,expected[0]);
-    assert.equal(target.assignmentsVersion,expected.length?2:1);
-    assert.deepEqual(f.rows.itemAssignees.filter(r=>r.itemId===target._id).map(r=>r.assigneeDid).sort(),expected);
-    const events=f.rows.activities.filter(a=>a.itemId===target._id);
-    assert.equal(events.length,expected.length);
-    for(const event of events) {assert.equal(event.actorDid,f.owner.user.did);assert.match(event.metadata.note,new RegExp(`copy from item large-${i};`));}
-    if(i<8) assert.equal(target.parentId,targets.find(t=>t.name==='Task 10')._id);
-  }
 });
 
 test('batch recurrence preloads assignment/order once per list and inserts truthful new memberships without target reads',async()=>{

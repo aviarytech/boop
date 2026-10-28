@@ -443,13 +443,13 @@ test('publication DIDs name the publisher, and the resolver fallback requires th
 
 test('lists can only be filed in the caller\'s own categories', async () => {
   const ctx = fixture();
-  for (const [name, args] of [['createList', { assetDid: 'did:cel:x', name: 'New', createdAt: 2 }], ['updateListCategory', { listId: 'L1' }]]) {
+  for (const [name, args] of [['createList', { name: 'New', createdAt: 2 }], ['updateListCategory', { listId: 'L1' }]]) {
     await assert.rejects(() => call('lists', name, ctx, { ...args, authToken: ownerToken, categoryId: 'C-victim' }), /Resource unavailable/);
   }
   await assert.rejects(() => call('lists', 'updateListCategory', ctx, { listId: 'L1', authToken: ownerToken, categoryId: 'missing' }), /Resource unavailable/);
   assert.equal(ctx.rows.lists.length, 2);
   // A category deleted on another device leaves a new list uncategorized rather than failing.
-  await call('lists', 'createList', ctx, { assetDid: 'did:cel:y', name: 'New', createdAt: 2, authToken: ownerToken, categoryId: 'missing' });
+  await call('lists', 'createList', ctx, { name: 'New', createdAt: 2, authToken: ownerToken, categoryId: 'missing' });
   assert.equal(ctx.rows.lists.at(-1).categoryId, undefined);
   ctx.rows.lists.pop();
   assert.equal(ctx.rows.lists[0].categoryId, undefined);

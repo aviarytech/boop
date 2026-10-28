@@ -13,17 +13,18 @@ await build({
   outdir: "tmp/publication-ui", bundle: true, jsx: "automatic", platform: "node", format: "esm", outExtension: { ".js": ".mjs" },
   external: ["react", "react/jsx-runtime", "react-router-dom", "convex/server"],
   plugins: [{ name: "publication-ui-fixtures", setup(b) {
-    b.onResolve({ filter: /(?:lib\/(authenticatedConvex|webvh|share|analytics|originals)|hooks\/(useCurrentUser|useSettings)|ui\/Panel|ProvenanceInfo)$/ }, ({ path }) => ({ path: path.split("/").pop(), namespace: "fixture" }));
+    b.onResolve({ filter: /(?:lib\/(authenticatedConvex|webvh|share|analytics|originals)|hooks\/(useCurrentUser|useSettings|useListOriginal)|ui\/Panel|ProvenanceInfo)$/ }, ({ path }) => ({ path: path.split("/").pop(), namespace: "fixture" }));
     b.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({ contents: {
       authenticatedConvex: `import {getFunctionName} from "convex/server";
         export const useQuery=ref=>({"publication:getPublicationStatus":globalThis.__publicationUi.publication,"invitations:getListInvitations":[],"listGrants:getListGrants":[],"users:getMyPublicDisplayName":{displayName:"Owner"}}[getFunctionName(ref)]);
         export const useMutation=ref=>async args=>{globalThis.__publicationUi.calls.push([getFunctionName(ref),args]);};`,
       useCurrentUser: 'export const useCurrentUser=()=>({did:"did:owner",subOrgId:"owner"});',
       useSettings: 'export const useSettings=()=>({haptic:()=>{}});',
+      useListOriginal: 'export const useOriginalsClient=()=>({query:async()=>null,action:async()=>null});',
       webvh: 'export const buildListResourceDid=(did,id)=>`${did}/resources/list-${id}`;export const buildListResourceUrl=()=>"https://fixture.invalid/owner/resources/list-L";',
       share: 'export const canShare=async()=>false;export const shareList=async()=>{};',
       analytics: 'export const trackListShared=()=>{};export const trackInviteSent=()=>{};',
-      originals: 'export const buildListSnapshot=()=>({});export const recordPublishedVersion=async()=>({});export class ListNotAuthorableError extends Error {}',
+      originals: 'export const buildListSnapshot=()=>({});export const recordPublishedVersion=async(...args)=>{globalThis.__publicationUi.calls.push(["recordPublishedVersion",args[1]]);return {};};export class ListNotAuthorableError extends Error {}',
       Panel: 'import React from "react";export const Panel=({header,footer,children})=>React.createElement("div",null,header,children,footer);',
       ProvenanceInfo: 'export const ListProvenanceInfo=()=>null;',
     }[path] }));
@@ -61,6 +62,26 @@ for (const Component of [ShareModal, PublishModal]) {
     assert.equal(state.calls[0][1].listId, "L");
   });
 }
+
+test("publishing an Original records the signed published version before the publication row", async () => {
+  render(React.createElement(MemoryRouter, null, React.createElement(PublishModal, {
+    list: { _id: "L", name: "Groceries", ownerDid: "did:owner", assetDid: "did:vh:zList" }, onClose() {},
+  })));
+  fireEvent.click(screen.getByRole("button", { name: "Publish publicly" }));
+  await waitFor(() => assert.equal(state.calls.length, 2));
+  assert.deepEqual(state.calls[0], ["recordPublishedVersion", { listId: "L", ownerDid: "did:owner", did: "did:vh:zList" }]);
+  assert.equal(state.calls[1][0], "publication:publishList");
+  assert.equal("celEnvelope" in state.calls[1][1], false);
+  assert.equal(screen.queryByText(/isn't in the list's signed history/), null);
+});
+
+test("a list with no Original yet still publishes, and says the publish went unrecorded", async () => {
+  mount(PublishModal);
+  fireEvent.click(screen.getByRole("button", { name: "Publish publicly" }));
+  await waitFor(() => assert.equal(state.calls.length, 1));
+  assert.equal(state.calls[0][0], "publication:publishList");
+  await waitFor(() => assert.ok(screen.getByText(/isn't in the list's signed history/)));
+});
 
 test("Share modal never offers publishing before publication status has loaded", () => {
   state.publication = undefined; mount(ShareModal);

@@ -11,7 +11,6 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
-import { createListAsset } from "../lib/originals";
 import { isPlanLimitError } from "../lib/planLimit";
 import { isNote } from "../../convex/lib/noteBody";
 import { CategorySelector } from "./lists/CategorySelector";
@@ -92,12 +91,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
     haptic('medium');
 
     try {
-      const listAsset = await createListAsset(trimmedName, did);
-      if (!mountedRef.current || dismissedRef.current) return;
-
       const listId = await createList({
-        assetDid: listAsset.assetDid,
-        celEnvelope: listAsset.envelope,
         name: trimmedName,
         categoryId,
         createdAt: Date.now(),

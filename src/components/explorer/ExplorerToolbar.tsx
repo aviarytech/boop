@@ -27,7 +27,7 @@ const KIND_OPTIONS: { value: ExplorerSource; label: string }[] = [
   { value: "site", label: "Page" },
 ];
 const LAYER_OPTIONS: { value: ExplorerLayer; label: string }[] = [
-  { value: "did:cel", label: "cel" },
+  { value: "did:vh", label: "vh" },
   { value: "did:webvh", label: "webvh" },
   { value: "did:btco", label: "btco" },
 ];

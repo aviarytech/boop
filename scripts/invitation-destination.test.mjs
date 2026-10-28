@@ -27,7 +27,7 @@ await build({ stdin: { contents: 'export { Invitations } from "./src/pages/Invit
   plugins: [{ name: 'invitation-destination-contexts', setup(b) {
     b.onResolve({ filter: /\/(authenticatedConvex|useOffline|useOptimisticItems|useSettings|useCurrentUser|useAuth|useNotifications|useStreaks|useCategories|originals|observability|analytics|share)$/ }, args => ({ path: args.path, namespace: 'destination-fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'destination-fixture' }, ({ path }) => ({ resolveDir: process.cwd(), contents:
-      path.endsWith('/authenticatedConvex') ? `import {useSyncExternalStore} from 'react'; export function useQuery(ref,args){const s=globalThis.__invitationDestination;useSyncExternalStore(s.subscribe,()=>s.revision);return s.query(ref,args)} export const useMutation=ref=>args=>globalThis.__invitationDestination.mutate(ref,args);export const useAction=useMutation;` :
+      path.endsWith('/authenticatedConvex') ? `import {useSyncExternalStore} from 'react'; export function useQuery(ref,args){const s=globalThis.__invitationDestination;useSyncExternalStore(s.subscribe,()=>s.revision);return s.query(ref,args)} export const useMutation=ref=>args=>globalThis.__invitationDestination.mutate(ref,args);export const useAction=useMutation;export const sessionArgs=(ref,args)=>args;` :
       path.endsWith('/useOffline') ? 'export const useOffline=()=>globalThis.__invitationDestination.offline;' :
       path.endsWith('/useOptimisticItems') ? 'export const useOptimisticItems=()=>globalThis.__invitationDestination.optimistic;' :
       path.endsWith('/useSettings') ? 'const settings={haptic:()=>{}};export const useSettings=()=>settings;' :
@@ -39,7 +39,7 @@ await build({ stdin: { contents: 'export { Invitations } from "./src/pages/Invit
       path.endsWith('/observability') ? 'export const recordLatencyMs=()=>{};export const setGaugeMetric=()=>{};' :
       path.endsWith('/analytics') ? 'export const trackSignupStarted=()=>{};export const trackSignupCompleted=()=>{};export const trackListShared=()=>{};export const trackInviteSent=()=>{};' :
       path.endsWith('/share') ? 'export const shareList=async()=>{};export const shareItem=async()=>{};export const canShare=async()=>false;' :
-      'export const verifyListEnvelope=()=>{};export const isRetroactiveGenesis=()=>false;export const createListAsset=()=>{};export const buildListSnapshot=()=>{};export const recordPublishedVersion=()=>{};export class ListNotAuthorableError extends Error {}',
+      'export const verifyList=async()=>null;export const isLegacyAssetDid=d=>!!d&&!d.startsWith("did:vh:");export const mintList=async()=>{};export const buildListSnapshot=(name,items)=>({name,items});export const recordPublishedVersion=async()=>({});export const setListAuthorSource=()=>{};export const getListAuthor=async()=>null;export class ListNotAuthorableError extends Error {}',
     }));
   } }],
 });
@@ -90,6 +90,8 @@ async function setup({ role = 'viewer', published = false, actor = 'pending', ac
       case 'items:getSubItems': return state.optimistic.items.filter(item => item.parentId === args.parentId);
       case 'comments:getItemComments': return ctx.rows.comments.filter(comment => comment.itemId === args.itemId);
       case 'users:getUsersByDids': return {};
+      // Already an Original: nothing to mint or re-mint on open.
+      case 'originalsHost:getOriginalStatus': return { unminted: [], legacy: [] };
       default: return [];
     }
   };

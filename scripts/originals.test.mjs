@@ -1,3 +1,6 @@
+// The list wrapper's genesis and verification (src/lib/originals.ts) under
+// Originals 5, with real keys: see scripts/helpers/originals-v5-fixture.ts.
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -5,146 +8,88 @@ import { build } from "esbuild";
 
 const outdir = "tmp/originals-test";
 
-async function loadOriginalsModule() {
+async function loadFixture() {
   await rm(outdir, { recursive: true, force: true });
   await mkdir(outdir, { recursive: true });
   await build({
-    entryPoints: ["src/lib/originals.ts"],
-    outfile: `${outdir}/originals.mjs`,
+    entryPoints: ["scripts/helpers/originals-v5-fixture.ts"],
+    outfile: `${outdir}/fixture.mjs`,
     bundle: true,
     platform: "node",
     format: "esm",
     target: "node20",
-    // jsonld/rdf-canonize are CJS and call require() at load; esm output needs a real require.
-    banner: {
-      js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
-    },
+    banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+    logLevel: "silent",
   });
-  return import(pathToFileURL(`${process.cwd()}/${outdir}/originals.mjs`).href);
+  return import(pathToFileURL(`${process.cwd()}/${outdir}/fixture.mjs`).href);
 }
 
-const originals = await loadOriginalsModule();
+const { originals, judgeSubmission, makeAuthor, makeHost } = await loadFixture();
 
-// buildListResource: the genesis resource is content-addressed over the metadata
-{
-  const r = await originals.buildListResource("Groceries", "did:webvh:example:alice", "2026-07-27T00:00:00.000Z");
-  assert.equal(r.contentType, "application/json");
-  assert.match(r.hash, /^[0-9a-f]{64}$/, "hash should be lowercase hex sha-256");
-
-  const same = await originals.buildListResource("Groceries", "did:webvh:example:alice", "2026-07-27T00:00:00.000Z");
-  assert.equal(r.hash, same.hash, "same metadata should hash identically");
-
-  const different = await originals.buildListResource("Chores", "did:webvh:example:alice", "2026-07-27T00:00:00.000Z");
-  assert.notEqual(r.hash, different.hash, "different names should hash differently");
-
-  // The hash must cover the content actually carried on the resource.
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(r.content));
-  const expected = Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  assert.equal(r.hash, expected, "hash must be the sha-256 of resource.content");
+async function minted(content, name = "Groceries") {
+  const owner = await makeAuthor();
+  const host = makeHost({ ownerDid: owner.did, authorLog: owner.log, judgeSubmission });
+  originals.setListAuthorSource(async () => owner.listAuthor);
+  const did = await originals.mintList(host.client, { listId: host.listId, ownerDid: owner.did, name, content });
+  originals.setListAuthorSource(async () => null);
+  return { owner, host, did };
 }
 
-// createListAsset: real did:cel genesis, no network
-{
-  const asset = await originals.createListAsset("Groceries", "did:webvh:example:alice");
-  assert.match(asset.assetDid, /^did:cel:/, "genesis must produce a did:cel, not did:peer");
-  assert.equal(asset.name, "Groceries");
-  assert.equal(asset.createdBy, "did:webvh:example:alice");
-  assert.ok(!Number.isNaN(Date.parse(asset.createdAt)), "createdAt should be an ISO timestamp");
-
-  const second = await originals.createListAsset("Groceries", "did:webvh:example:alice");
-  assert.notEqual(asset.assetDid, second.assetDid, "each list gets its own DID");
-
-  // The envelope is what makes the DID more than an opaque string.
-  const envelope = JSON.parse(asset.envelope);
-  assert.equal(envelope.format, "originals/asset");
-  assert.equal(envelope.assetId, asset.assetDid, "envelope must describe this asset");
-  assert.ok(envelope.eventLog, "envelope must carry the signed CEL log");
-  assert.equal(envelope.version, 4);
-  assert.ok(originals.genesisSealedAt(asset.envelope), "v4 genesis must have a readable seal time");
-  assert.equal(envelope.eventLog.log[0].event.operation.data.profile, "originals/cel/3");
+/** The host's answers with `edit` applied to the served log — a host that lies. */
+function lyingClient(host, edit) {
+  return {
+    action: host.client.action,
+    async query(ref, args) {
+      const served = await host.client.query(ref, args);
+      return served && { ...served, log: edit(served.log) };
+    },
+  };
 }
 
-// buildNoteBodyResource / createNoteAsset: a note's body is its own genesis resource
-{
-  const r = await originals.buildNoteBodyResource("");
-  assert.equal(r.id, "note-body");
-  assert.equal(r.type, "NoteBody");
-  assert.equal(r.contentType, "text/markdown");
-  assert.equal(r.content, "");
-  assert.equal(
-    r.hash,
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "empty body must hash to the sha-256 of the empty string",
-  );
-  assert.equal((await originals.buildNoteBodyResource("")).hash, r.hash, "hash must be stable");
+test("each list mints its own did:vh Original, named by its genesis", async () => {
+  const a = await minted({ kind: "list", snapshot: originals.buildListSnapshot("Groceries", []) });
+  const b = await minted({ kind: "list", snapshot: originals.buildListSnapshot("Groceries", []) });
+  assert.match(a.did, /^did:vh:/, "genesis must produce a did:vh, not a CEL DID");
+  assert.notEqual(a.did, b.did, "each list gets its own DID");
 
-  const asset = await originals.createNoteAsset("Why boop signs", "did:webvh:example:alice");
-  assert.match(asset.assetDid, /^did:cel:/);
-  const envelope = JSON.parse(asset.envelope);
-  assert.deepEqual(
-    envelope.resources.map((res) => res.id),
-    ["list-metadata", "note-body"],
-    "note genesis must carry the metadata and the body",
-  );
-  const ok = await originals.verifyListEnvelope(asset.envelope);
-  assert.equal(ok.verified, true, `note envelope should verify, got: ${ok.error ?? ""}`);
-}
+  const [genesis] = a.host.logLines();
+  const entry = JSON.parse(genesis);
+  assert.equal(entry.state.id, a.did);
+  assert.equal(entry.state.asset.name, "Groceries");
+  assert.equal(entry.state.author.did, a.owner.did, "the owner's DID is the author fixed at genesis");
+  assert.deepEqual(entry.state.asset.metadata, { app: "boop", kind: "list" });
+});
 
-// verifyListEnvelope: a persisted envelope round-trips and verifies
-{
-  const asset = await originals.createListAsset("Chores", "did:webvh:example:alice");
+test("a note's genesis commits to its markdown body, not list metadata", async () => {
+  const { host } = await minted({ kind: "note", body: "" }, "Why boop signs");
+  const entry = JSON.parse(host.logLines()[0]);
+  assert.deepEqual(entry.state.asset.resources.map((r) => [r.id, r.mediaType]), [["note-body", "text/markdown"]]);
+  assert.deepEqual(entry.state.asset.metadata, { app: "boop", kind: "note" });
 
-  const ok = await originals.verifyListEnvelope(asset.envelope);
-  assert.equal(ok.verified, true, `envelope should verify, got: ${ok.error ?? ""}`);
-  assert.equal(ok.assetDid, asset.assetDid);
-  assert.deepEqual(ok.warnings, []);
+  const ok = await originals.verifyList(host.client, host.listId);
+  assert.equal(ok.verified, true, `note should verify, got: ${ok.error ?? ok.reasons.join(", ")}`);
+});
 
-  // Tampering with the genesis resource must fail closed, not pass quietly.
-  const tampered = JSON.parse(asset.envelope);
-  tampered.resources[0].content.data = Buffer.from("Not Chores").toString("base64");
-  const bad = await originals.verifyListEnvelope(JSON.stringify(tampered));
-  assert.equal(bad.verified, false, "tampered resource content must not verify");
+test("verifyList round-trips and fails closed on a changed history", async () => {
+  const { host, did } = await minted({ kind: "list", snapshot: originals.buildListSnapshot("Chores", []) }, "Chores");
 
-  const changedHistory = JSON.parse(asset.envelope);
-  changedHistory.eventLog.log[0].event.operation.data.name = "Forged";
-  assert.equal((await originals.verifyListEnvelope(JSON.stringify(changedHistory))).verified, false);
+  const ok = await originals.verifyList(host.client, host.listId);
+  assert.equal(ok.verified, true, `should verify, got: ${ok.error ?? ok.reasons.join(", ")}`);
+  assert.equal(ok.did, did);
+  assert.equal(ok.content, "available");
 
-  // Unknown containers must not fall back to the legacy verifier.
-  const unknown = { ...JSON.parse(asset.envelope), version: 99 };
-  assert.equal((await originals.verifyListEnvelope(JSON.stringify(unknown))).verified, false);
+  // A host serving an edited entry must not verify, and must not throw at the call site.
+  const forged = await originals.verifyList(lyingClient(host, (log) => log.replace('"Chores"', '"Forged"')), host.listId);
+  assert.equal(forged.verified, false, "a changed name in signed history must not verify");
+  assert.ok(forged.error, "a failed verification reports why");
 
-  // Garbage in must not throw at the call site.
-  const garbage = await originals.verifyListEnvelope("not json");
+  const garbage = await originals.verifyList(lyingClient(host, () => "not json\n"), host.listId);
   assert.equal(garbage.verified, false);
-  assert.ok(garbage.error, "malformed input should report an error, not throw");
-}
+  assert.ok(garbage.error, "malformed logs report an error, not throw");
+});
 
-// --- envelopes sealed before the CEL cryptosuite rename still verify -------
-
-// SDK 3.0 renamed the CEL cryptosuite to `originals-cel-ed25519-jcs-v1` and
-// started signing the proof configuration. Logs sealed earlier cannot be
-// re-signed, so `eddsa-jcs-2022` stays accepted on READ — every list already in
-// the database depends on that. The fixture is a real envelope minted by SDK
-// 2.1.0; if a future bump drops the legacy suite, this fails instead of every
-// existing list silently going unverifiable.
-{
-  const { readFile } = await import("node:fs/promises");
-  const legacy = await readFile("scripts/fixtures/cel-envelope-sdk-2.1.0.json", "utf8");
-
-  assert.ok(
-    legacy.includes('"cryptosuite":"eddsa-jcs-2022"'),
-    "fixture must carry the pre-3.0 suite, else it proves nothing"
-  );
-
-  const result = await originals.verifyListEnvelope(legacy);
-  assert.equal(
-    result.verified,
-    true,
-    `2.x-sealed envelope must still verify, got: ${result.error ?? ""}`
-  );
-  assert.deepEqual(result.warnings, []);
-}
-
-console.log("originals helper tests passed");
+test("a list with no Original yet has nothing to verify", async () => {
+  const owner = await makeAuthor();
+  const host = makeHost({ ownerDid: owner.did, authorLog: owner.log, judgeSubmission });
+  assert.equal(await originals.verifyList(host.client, host.listId), null);
+});

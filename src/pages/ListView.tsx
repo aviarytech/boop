@@ -31,6 +31,9 @@ import { NestedListItem } from "../components/NestedListItem";
 import { useStreaks } from "../hooks/useStreaks";
 import { StreakBadge } from "../components/StreakBadge";
 import { LegacyBadge } from "../components/LegacyBadge";
+import { RemintListModal } from "../components/RemintListModal";
+import { useListOriginal } from "../hooks/useListOriginal";
+import { buildListSnapshot } from "../lib/originals";
 import { StreakCelebration } from "../components/StreakCelebration";
 import { NoItemsEmptyState } from "../components/ui/EmptyState";
 import { ListViewSkeleton } from "../components/ui/Skeleton";
@@ -94,12 +97,6 @@ export function ListView() {
   const userIsOwner = access?.role === "owner";
   const canUserEdit = userIsOwner || access?.role === "editor";
 
-  // Same source of truth as the list index, asked for one id.
-  const legacyIds = useQuery(
-    api.lists.getLegacyListIds,
-    list ? { listIds: [list._id] } : "skip"
-  );
-  const isLegacyList = (legacyIds?.length ?? 0) > 0;
   const listLoadStartedAtRef = useRef(performance.now());
   const hasRecordedRenderLatencyRef = useRef(false);
 
@@ -116,6 +113,17 @@ export function ListView() {
     isLoading: itemsLoading,
     usingCache,
   } = useOptimisticItems(listId);
+
+  // Genesis commits to the list as it is when minted, so wait for its items.
+  const { isOnline } = useOffline();
+  const originalContent = useMemo(
+    () => list && !itemsLoading && !usingCache
+      ? { kind: "list" as const, snapshot: buildListSnapshot(list.name, items) }
+      : null,
+    [list, items, itemsLoading, usingCache]
+  );
+  const original = useListOriginal(list, userIsOwner, originalContent, isOnline);
+  const isLegacyList = original.isLegacy;
   
   // Streak tracking
   const { streak, recordTaskCompletion } = useStreaks(did ?? undefined);
@@ -304,8 +312,6 @@ export function ListView() {
     }
   }, [did, favouritePending, haptic, isBookmarked, unbookmarkMutation, listId, bookmarkMutation]);
 
-  // Get online status for disabling destructive operations
-  const { isOnline } = useOffline();
 
   // Schedule notifications for items with due dates
   // Note: The actual items array type from useOptimisticItems includes Doc<"items"> properties
@@ -1252,7 +1258,7 @@ export function ListView() {
       {/* Add Item Input - sticky at bottom of viewport */}
       {canUserEdit && viewMode === "list" && (
         <div className="sticky bottom-0 z-10 pt-2 pb-3 mt-4 bg-gradient-to-t from-[var(--boop-bg)] via-[var(--boop-bg)] to-transparent animate-slide-up">
-          <AddItemInput ref={addItemInputRef} assetDid={list.assetDid} onAddItem={addItem} />
+          <AddItemInput ref={addItemInputRef} onAddItem={addItem} />
         </div>
       )}
 
@@ -1291,6 +1297,10 @@ export function ListView() {
 
         {userIsOwner && isShareModalOpen && (
           <ShareModal list={list} onClose={() => setIsShareModalOpen(false)} />
+        )}
+
+        {userIsOwner && isLegacyList && (
+          <RemintListModal kind="list" state={original.state} error={original.error} onRemint={() => void original.remint()} />
         )}
 
         {userIsOwner && isPublishModalOpen && (

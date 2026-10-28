@@ -11,7 +11,8 @@ import { jsonResponse, errorResponse, handlerErrorResponse } from "./lib/httpRes
  *
  * Create a new list. Requires authentication.
  *
- * Request: { "assetDid": "...", "name": "...", "categoryId": "..." (optional) }
+ * Request: { "name": "...", "categoryId": "..." (optional) }
+ * The list's Original is minted by the owner's device, not by this endpoint.
  * Response: { "listId": "..." }
  */
 export const createList = httpAction(async (ctx, request) => {
@@ -20,20 +21,18 @@ export const createList = httpAction(async (ctx, request) => {
 
     // Parse request body
     const body = await request.json();
-    const { assetDid, name, categoryId } = body as {
-      assetDid: string;
+    const { name, categoryId } = body as {
       name: string;
       categoryId?: string;
     };
 
-    if (!assetDid || !name) {
-      return errorResponse(request, "assetDid and name are required");
+    if (!name) {
+      return errorResponse(request, "name is required");
     }
 
     // Call the mutation with server-verified DID
     const listId = await ctx.runMutation(internal.lists.createListInternal, {
       ...await authenticatedRequest(ctx, request),
-      assetDid,
       name,
       categoryId: categoryId as unknown as undefined, // Optional category ID
       createdAt: Date.now(),

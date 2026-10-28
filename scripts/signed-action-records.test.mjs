@@ -102,12 +102,14 @@ test('canonical payload bytes are deterministic and reject values that have no s
 
 test('create, complete, reopen, list create and rename each write one unsigned record bound to the authenticated session', async () => {
   const f = await fixture();
+  // A pre-Originals-5 client's queued create still sends an asset DID; it is ignored, so
+  // records name no asset until the owner's device mints the list's Original.
   const listId = await f.call('lists', 'createList', { assetDid: 'did:cel:new', name: 'Errands', createdAt: 1 });
   await f.call('lists', 'renameList', { listId, name: 'Chores' });
   const itemId = await f.call('items', 'addItem', { listId, name: 'Sweep', createdAt: 2 });
   await f.call('items', 'checkItem', { itemId, checkedAt: 3 });
   await f.call('items', 'uncheckItem', { itemId });
-  const subject = { listId, listAssetDid: 'did:cel:new' };
+  const subject = { listId };
   assert.deepEqual(f.payloads().map(p => [p.action, p.subject, p.before, p.after]), [
     ['list.created', subject, null, { name: 'Errands', kind: 'list' }],
     ['list.renamed', subject, { name: 'Errands' }, { name: 'Chores' }],
@@ -307,7 +309,7 @@ test('recording never depends on signing infrastructure, so an account without a
 test('template creation records the list and every item through the same path', async () => {
   const f = await fixture();
   f.rows.listTemplates = [{ _id: 'T1', name: 'Saved', ownerDid: f.owner.user.did, isPublic: false, items: [{ name: 'Step one', order: 0 }, { name: 'Step two', order: 1 }] }];
-  const listId = await f.call('templates', 'createListFromTemplate', { templateId: 'T1', listName: 'From template', assetDid: 'did:cel:template' });
+  const listId = await f.call('templates', 'createListFromTemplate', { templateId: 'T1', listName: 'From template', creationKey: 'template-attempt-1' });
   const origin = { kind: 'template', source: 'saved:T1' };
   assert.deepEqual(f.payloads().map(p => [p.action, p.after, p.origin]), [
     ['list.created', { name: 'From template', kind: 'list' }, origin],
@@ -324,15 +326,12 @@ test('template creation records the list and every item through the same path', 
   for (const record of f.records()) assert.equal((await verifyActionRecord(record, { trustedKeys })).verified, true);
 });
 
-test('copying a list records the new list only, and notes are recorded as notes', async () => {
+test('notes are recorded as notes', async () => {
   const f = await fixture();
-  const { listId } = await f.call('lists', 'copyList', { sourceListId: 'L1', assetDid: 'did:cel:copy', celEnvelope: '{}', name: 'Copy', createdAt: 5 });
-  const noteId = await f.call('lists', 'createList', { assetDid: 'did:cel:note', name: 'Thoughts', createdAt: 6, kind: 'note' });
+  const noteId = await f.call('lists', 'createList', { name: 'Thoughts', createdAt: 6, kind: 'note' });
   assert.deepEqual(f.payloads().map(p => [p.action, p.subject, p.after, p.origin]), [
-    ['list.created', { listId, listAssetDid: 'did:cel:copy' }, { name: 'Copy', kind: 'list' }, { kind: 'copy', sourceListId: 'L1' }],
-    ['list.created', { listId: noteId, listAssetDid: 'did:cel:note' }, { name: 'Thoughts', kind: 'note' }, undefined],
+    ['list.created', { listId: noteId }, { name: 'Thoughts', kind: 'note' }, undefined],
   ]);
-  assert.equal(f.rows.items.find(i => i.listId === listId).vcProofs, undefined);
 });
 
 test('records are readable with the access of their subject and are removed with it', async () => {

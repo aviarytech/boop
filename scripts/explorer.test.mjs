@@ -31,7 +31,7 @@ function makeList(over = {}) {
   return {
     _id: "list1",
     _creationTime: 1000,
-    assetDid: "did:cel:list1",
+    assetDid: "did:vh:list1",
     name: "Untitled list",
     ownerDid: "did:webvh:owner",
     ...over,
@@ -155,7 +155,7 @@ test("published list (active publication) → did:webvh + identifier", () => {
   assert.equal(rows[0].identifier, "did:webvh:list-L");
 });
 
-test("list with no publication → did:cel + null identifier", () => {
+test("list with no publication → did:vh + null identifier", () => {
   const rows = explorer.deriveExplorerRows({
     lists: [makeList({ _id: "L" })],
     sites: [],
@@ -165,11 +165,11 @@ test("list with no publication → did:cel + null identifier", () => {
     activitiesByList: new Map(),
     assigneesByList: new Map(),
   });
-  assert.equal(rows[0].layer, "did:cel");
+  assert.equal(rows[0].layer, "did:vh");
   assert.equal(rows[0].identifier, null);
 });
 
-test("list with unpublished publication → treated as did:cel", () => {
+test("list with unpublished publication → treated as did:vh", () => {
   const rows = explorer.deriveExplorerRows({
     lists: [makeList({ _id: "L" })],
     sites: [],
@@ -181,7 +181,7 @@ test("list with unpublished publication → treated as did:cel", () => {
     activitiesByList: new Map(),
     assigneesByList: new Map(),
   });
-  assert.equal(rows[0].layer, "did:cel");
+  assert.equal(rows[0].layer, "did:vh");
   assert.equal(rows[0].identifier, null);
 });
 
@@ -367,7 +367,7 @@ test("filter by kind list-only → excludes sites", () => {
   assert.equal(filtered[0].source, "list");
 });
 
-test("filter by layer did:webvh → excludes did:cel", () => {
+test("filter by layer did:webvh → excludes did:vh", () => {
   const filtered = explorer.applyExplorerFilters(rowsForFilterTests(), {
     kind: [], layer: ["did:webvh"], verify: [], q: "",
   });

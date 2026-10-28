@@ -171,7 +171,12 @@ export default defineSchema({
   // Lists table - each list is an Originals asset
   lists: defineTable({
     templateSource: v.optional(v.string()), // Catalog/source identity for safe creation retries
-    assetDid: v.string(), // Originals asset DID (did:cel at genesis, did:webvh once published)
+    // The list's Original (did:vh), set when the owner's device mints it. Absent
+    // until then. A did:cel value is a legacy asset that must be re-minted:
+    // Originals 5 reads nothing written under CEL.
+    assetDid: v.optional(v.string()),
+    // Client-chosen key that makes a template creation safe to retry.
+    creationKey: v.optional(v.string()),
     name: v.string(),
     ownerDid: v.string(), // Creator's DID
     categoryId: v.optional(v.id("categories")), // User's category for this list (Phase 2)
@@ -216,6 +221,7 @@ export default defineSchema({
   })
     .index("by_owner", ["ownerDid"])
     .index("by_asset_did", ["assetDid"])
+    .index("by_creation_key", ["creationKey"])
     .index("by_category", ["categoryId"]),
 
   // A note's live markdown body. Off the lists row so the index subscriptions
@@ -226,23 +232,38 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_list", ["listId"]),
 
-  // Serialized Originals AssetEnvelope per list — the signed CEL event log that
-  // makes a list's did:cel verifiable. Kept off the lists row (~1.8KB at genesis,
-  // and it grows per event) so the hot list subscriptions stay small; only the
-  // provenance and publish paths read it.
+  // Legacy CEL envelopes. Nothing reads them since Originals 5; kept until the
+  // data is dropped so a re-mint never destroys the only copy of old history.
   listEnvelopes: defineTable({
     listId: v.id("lists"),
     assetDid: v.string(),
-    envelope: v.string(), // JSON.stringify(AssetEnvelope)
+    envelope: v.string(),
     updatedAt: v.number(),
-    // When the GENESIS proof was signed, captured at write time so the list
-    // index never has to parse the envelope. Immutable once set: later events
-    // append, but events[0] does not change. Optional for rows written before
-    // this field existed; backfillGenesisSealedAt fills them.
     genesisSealedAt: v.optional(v.number()),
   })
     .index("by_list", ["listId"])
     .index("by_asset_did", ["assetDid"]),
+
+  // A list's Original: its accepted did:vh asset log. Convex is the shared host
+  // (originalsHost.ts) — it appends only an entry that extends `head` and
+  // verifies, so the log here is the one every device syncs from.
+  originalLogs: defineTable({
+    listId: v.id("lists"),
+    did: v.string(), // did:vh:<SCID>
+    log: v.string(), // did.jsonl: one compact JSON entry per line, each ending in LF
+    head: v.string(), // versionId of the last entry
+    updatedAt: v.number(),
+  })
+    .index("by_list", ["listId"])
+    .index("by_did", ["did"]),
+
+  // Resource bytes an accepted entry lists, content addressed by digest.
+  originalResources: defineTable({
+    did: v.string(),
+    digest: v.string(),
+    bytes: v.bytes(),
+  })
+    .index("by_did_digest", ["did", "digest"]),
 
   // Items table - items within a list
   items: defineTable({
