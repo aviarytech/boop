@@ -5,7 +5,7 @@
  * and Convex only allows actions in Node modules.
  *
  * A did:webvh encodes its domain in the identifier and these DIDs are minted
- * `portable: false` (didCreation.ts:57), so a domain change is a NEW DID, not an
+ * `portable: false` (src/lib/webvh.ts), so a domain change is a NEW DID, not an
  * update. Every row keyed to the old DID has to move with it or it is orphaned:
  * lists become invisible to their owner, assignments point at nobody.
  *

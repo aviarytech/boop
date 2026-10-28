@@ -85,7 +85,7 @@ for (const [endpoint, key, maxAttempts] of [['initiate', '203.0.113.8', 10], ['v
     const [handler] = router.lookup(`/auth/${endpoint}`, 'POST');
     const request = () => new Request(`https://test/auth/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `${key}, proxy` },
-      body: JSON.stringify(endpoint === 'initiate' ? { email: 'test@example.test' } : { sessionId: key, code: '123456' }),
+      body: JSON.stringify(endpoint === 'initiate' ? { email: 'test@example.test' } : { sessionId: key, encryptedOtpBundle: 'sealed-code' }),
     });
     const originalNow = Date.now;
     let now = 1000000;

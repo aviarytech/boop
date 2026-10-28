@@ -36,7 +36,6 @@ export const authenticatedOperations = new Set([
   api.comments.deleteComment,
   api.comments.getCommentCount,
   api.comments.getItemComments,
-  api.didCreation.createListDID,
   api.didResources.checkSharedItem,
   api.didResources.uncheckSharedItem,
   api.feedback.submit,

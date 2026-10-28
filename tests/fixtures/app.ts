@@ -80,7 +80,8 @@ export const test = webTest.extend<{ scenario: Scenario }>({
             if (url.hostname === '127.0.0.1' && ['/auth/initiate', '/auth/verify', '/auth/logout', '/api/billing/checkout'].includes(url.pathname)) {
               const body = JSON.parse(route.request.postData || '{}');
               httpCalls.push({ path: url.pathname, body });
-              const json = url.pathname === '/auth/initiate' ? { sessionId: 'e2e-otp' }
+              const json = url.pathname === '/auth/initiate'
+                ? { sessionId: 'e2e-otp', otpEncryptionTargetBundle: auth.otpEncryptionTargetBundle }
                 : url.pathname === '/auth/verify' ? auth
                 : url.pathname === '/api/billing/checkout' ? { url: CHECKOUT_URL } : {};
               await route.fulfill({ json });

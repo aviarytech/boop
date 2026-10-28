@@ -11,12 +11,15 @@ import { api } from "../../convex/_generated/api";
  * authentication mechanism for the app.
  *
  * Authentication flow uses Convex HTTP endpoints:
- * - /auth/initiate - Start OTP flow, get sessionId
- * - /auth/verify - Verify OTP, get JWT token (DID created server-side)
+ * - /auth/initiate - Start OTP flow, get sessionId and Turnkey's encryption target
+ * - /auth/verify - Relay the code, encrypted on this device to Turnkey's enclave
+ *   with this device's Turnkey session key; get the JWT and a verification
+ *   token only this device can redeem
  * - /auth/logout - Clear auth cookie
  *
- * The JWT token is stored in localStorage and sent with API requests.
- * All signing operations (credentials, DIDs) are handled server-side.
+ * The JWT token is stored in localStorage and sent with API requests. The
+ * Turnkey session (lib/turnkeySession) is completed by this client, never by
+ * the server, and is the only thing that can use the author's Turnkey key.
  * 
  * Storage uses the async storageAdapter (Capacitor Preferences on native, localStorage on web)
  * for reliable persistence across platforms.
@@ -37,6 +40,13 @@ import { useDidDomainRemint } from "./useDidDomainRemint";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
 import { identifyUser, resetAnalytics } from "../lib/analytics";
+import {
+  clearTurnkeySession,
+  completeTurnkeyLogin,
+  discardSessionKey,
+  encryptOtpForSession,
+  startTurnkeySessionRefresh,
+} from "../lib/turnkeySession";
 
 /**
  * Get the Convex HTTP endpoint base URL from the Convex URL.
@@ -94,6 +104,8 @@ interface OtpFlowState {
   /** Session ID from /auth/initiate (used for /auth/verify) */
   sessionId: string | null;
   email: string | null;
+  /** Turnkey enclave target the code is encrypted to; its signature is checked before use. */
+  otpEncryptionTargetBundle: string | null;
 }
 
 /**
@@ -123,6 +135,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [otpFlowState, setOtpFlowState] = useState<OtpFlowState>({
     sessionId: null,
     email: null,
+    otpEncryptionTargetBundle: null,
   });
 
   // Track mounted state to prevent setState after unmount
@@ -283,10 +296,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw new Error(errorData.error || "Failed to initiate authentication");
         }
 
-        const { sessionId } = await response.json();
+        const { sessionId, otpEncryptionTargetBundle } = await response.json();
         console.log("[useAuth] OTP initiated, sessionId:", sessionId);
 
-        setOtpFlowState({ sessionId, email });
+        setOtpFlowState({ sessionId, email, otpEncryptionTargetBundle: otpEncryptionTargetBundle ?? null });
       } catch (err) {
         console.error("[useAuth] Failed to start OTP:", err);
         throw err;
@@ -305,15 +318,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const verifyOtp = useCallback(
     async (code: string) => {
-      if (!otpFlowState.sessionId || !otpFlowState.email) {
+      if (!otpFlowState.sessionId || !otpFlowState.email || !otpFlowState.otpEncryptionTargetBundle) {
         throw new Error("OTP flow not started. Call startOtp first.");
       }
 
       if (authTransitionRef.current) throw new Error("Authentication is already in progress");
       authTransitionRef.current = true;
       setIsLoading(true);
+      let sessionPublicKey: string | null = null;
       try {
         console.log("[useAuth] Verifying OTP via server...");
+
+        const { encryptedOtpBundle, publicKey } = await encryptOtpForSession(code, otpFlowState.otpEncryptionTargetBundle);
+        sessionPublicKey = publicKey;
 
         const httpUrl = getConvexHttpUrl();
         const response = await fetch(`${httpUrl}/auth/verify`, {
@@ -324,7 +341,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           credentials: "include", // Include cookies for httpOnly auth cookie
           body: JSON.stringify({
             sessionId: otpFlowState.sessionId,
-            code,
+            encryptedOtpBundle,
             platform: Capacitor.getPlatform(),
           }),
         });
@@ -334,8 +351,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw new Error(errorData.error || "Verification failed");
         }
 
-        const { token: jwtToken, user: serverUser } = await response.json();
+        const { token: jwtToken, user: serverUser, turnkey } = await response.json();
         console.log("[useAuth] OTP verified, got JWT for:", serverUser.email);
+
+        // The Turnkey session only gates DID updates, so a failure here must not
+        // block sign-in; the next OTP login retries it.
+        try {
+          if (!turnkey?.verificationToken) throw new Error("Server returned no Turnkey verification token");
+          const audit = await completeTurnkeyLogin({
+            verificationToken: turnkey.verificationToken,
+            subOrgId: turnkey.subOrgId,
+            publicKey,
+          });
+          if (!audit.clean) console.warn("[useAuth] Turnkey sub-org audit:", audit.findings);
+        } catch (turnkeyErr) {
+          console.error("[useAuth] Turnkey session login failed:", turnkeyErr);
+          await discardSessionKey(publicKey);
+        }
+        sessionPublicKey = null;
 
         await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
@@ -386,7 +419,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         // Update state
         setUser(authUser);
-        setOtpFlowState({ sessionId: null, email: null });
+        setOtpFlowState({ sessionId: null, email: null, otpEncryptionTargetBundle: null });
 
         // Identify user in analytics
         identifyUser(authUser.turnkeySubOrgId, { email_domain: authUser.email.split('@')[1] });
@@ -394,6 +427,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[useAuth] Authentication complete, DID:", userDid);
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
+        if (sessionPublicKey) await discardSessionKey(sessionPublicKey);
         setUser(null);
         setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);
@@ -417,10 +451,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsLoading(true);
     setToken(null);
     setUser(null);
-    setOtpFlowState({ sessionId: null, email: null });
+    setOtpFlowState({ sessionId: null, email: null, otpEncryptionTargetBundle: null });
     resetAnalytics();
 
     try {
+      await clearTurnkeySession();
       await storageAdapter.remove(AUTH_STORAGE_KEY);
       await storageAdapter.remove(JWT_STORAGE_KEY);
       const httpUrl = getConvexHttpUrl();
@@ -455,6 +490,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       void storageAdapter.remove(JWT_STORAGE_KEY);
     });
   }, [token]);
+
+  // Keep this device's Turnkey session alive (7 days, refreshed silently).
+  const subOrgId = user?.turnkeySubOrgId;
+  useEffect(() => {
+    if (!subOrgId) return;
+    return startTurnkeySessionRefresh(subOrgId);
+  }, [subOrgId]);
 
   // Repairs identities minted on a domain we no longer serve. Temporary.
   useDidDomainRemint(user, token);

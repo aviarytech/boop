@@ -7,11 +7,13 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 const { renderHook, cleanup, act } = await import('@testing-library/react');
 const unexpectedMint = async () => { throw new Error('Unexpected DID creation'); };
-const state = globalThis.__authProviderTest = { platform: 'web', storage: new Map(), establish: async () => {}, mint: unexpectedMint };
+const turnkeyCalls = [];
+const turnkeyDefaults = { complete: async () => ({ clean: true, findings: [] }) };
+const state = globalThis.__authProviderTest = { platform: 'web', storage: new Map(), establish: async () => {}, mint: unexpectedMint, turnkeyCalls, turnkey: { ...turnkeyDefaults } };
 state.convex = { mutation: (...args) => state.establish(...args) };
 await build({entryPoints:['src/hooks/useAuth.tsx'],outfile:'tmp/auth-provider-test.mjs',bundle:true,jsx:'automatic',platform:'node',format:'esm',external:['react','react/jsx-runtime','convex/server','convex/values'],plugins:[{
   name:'auth-provider-fixtures', setup(b) {
-    b.onResolve({filter:/^(@capacitor\/core|convex\/react|\.\.?\/.*(storageAdapter|webvh|useDidDomainRemint|convexUrls|analytics))$/}, args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));
+    b.onResolve({filter:/^(@capacitor\/core|convex\/react|\.\.?\/.*(storageAdapter|webvh|useDidDomainRemint|convexUrls|analytics|turnkeySession))$/}, args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));
     b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({contents:({
       core:'export const Capacitor={getPlatform:()=>globalThis.__authProviderTest.platform,isNativePlatform:()=>globalThis.__authProviderTest.platform!=="web"};',
       react:'export function useConvex(){return globalThis.__authProviderTest.convex;}',
@@ -20,6 +22,12 @@ await build({entryPoints:['src/hooks/useAuth.tsx'],outfile:'tmp/auth-provider-te
       useDidDomainRemint:'export const useDidDomainRemint=()=>{};',
       convexUrls:'export const getConvexHttpUrl=()=>"https://auth.example.test";',
       analytics:'export const identifyUser=()=>{};export const resetAnalytics=()=>{};',
+      turnkeySession:`const t=()=>globalThis.__authProviderTest;
+        export const encryptOtpForSession=async(code,bundle)=>{t().turnkeyCalls.push(['encrypt',code,bundle]);return {encryptedOtpBundle:'sealed:'+bundle,publicKey:'session-pub'};};
+        export const discardSessionKey=async k=>{t().turnkeyCalls.push(['discard',k]);};
+        export const completeTurnkeyLogin=async p=>{t().turnkeyCalls.push(['login',p]);return t().turnkey.complete(p);};
+        export const startTurnkeySessionRefresh=s=>{t().turnkeyCalls.push(['refresh',s]);return()=>{};};
+        export const clearTurnkeySession=async()=>{t().turnkeyCalls.push(['clear']);};`,
     })[path]}));
   }
 }]});
@@ -29,7 +37,7 @@ const token=`header.${btoa(JSON.stringify({exp:Math.floor(Date.now()/1000)+30*86
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const flush=()=>act(async()=>{await Promise.resolve();});
 const fetchBefore=globalThis.fetch;
-afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.platform='web';state.establish=async()=>{};state.mint=unexpectedMint;});
+afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.platform='web';state.establish=async()=>{};state.mint=unexpectedMint;turnkeyCalls.length=0;state.turnkey={...turnkeyDefaults};});
 function seed(){state.storage.set('lisa-auth-state',JSON.stringify({user,token}));state.storage.set('lisa-jwt-token',token);}
 
 async function withEstablishClock(run) {
@@ -53,7 +61,7 @@ for(const flow of ['restore','OTP']){
       const nextUser={...user,did:'did:webvh:next-owner',email:'next@example.test'};
       const nextToken=`header.${btoa(JSON.stringify({exp:Math.floor(Date.now()/1000)+86400}))}.next-signature`;
       let loginResult={user,token};
-      globalThis.fetch=async url=>Response.json(url.endsWith('/auth/initiate')?{sessionId:'otp-session'}:loginResult);
+      globalThis.fetch=async url=>Response.json(url.endsWith('/auth/initiate')?{sessionId:'otp-session',otpEncryptionTargetBundle:'target'}:loginResult);
       if(flow==='restore')seed();
       const {result}=renderHook(()=>useAuth(),{wrapper:AuthProvider});await flush();
       let verificationRejected;
@@ -111,7 +119,7 @@ test('failed restore removes persisted credentials and leaves private queries si
   assert.equal(result.current.token,null);assert.equal(result.current.isAuthenticated,false);assert.equal(result.current.isLoading,false);assert.equal(state.storage.size,0);
 });
 test('OTP cannot persist or expose a token when session establishment fails',async()=>{
-  globalThis.fetch=async url=>Response.json(url.endsWith('/auth/initiate')?{sessionId:'otp-session'}:{user,token});
+  globalThis.fetch=async url=>Response.json(url.endsWith('/auth/initiate')?{sessionId:'otp-session',otpEncryptionTargetBundle:'target'}:{user,token});
   const {result}=renderHook(()=>useAuth(),{wrapper:AuthProvider});await flush();
   await act(async()=>result.current.startOtp(user.email));
   state.establish=async()=>{throw new Error('session rejected')};
@@ -127,7 +135,7 @@ test('logout drops credentials immediately and serializes the next login until i
   assert.equal(logoutRequest.options.headers.Authorization,`Bearer ${token}`);
   await assert.rejects(()=>result.current.startOtp(user.email),/already in progress/);
   await act(async()=>{pending.resolve(new Response(null,{status:204}));await logout;});assert.equal(result.current.isLoading,false);
-  globalThis.fetch=async()=>Response.json({sessionId:'new-otp'});
+  globalThis.fetch=async()=>Response.json({sessionId:'new-otp',otpEncryptionTargetBundle:'target'});
   await act(async()=>result.current.startOtp(user.email));
 });
 
@@ -156,7 +164,7 @@ for (const platform of ['ios', 'android', 'web']) {
     state.platform = platform;
     let verifyBody;
     globalThis.fetch = async (url, options) => {
-      if (url.endsWith('/auth/initiate')) return Response.json({sessionId:'otp-session'});
+      if (url.endsWith('/auth/initiate')) return Response.json({sessionId:'otp-session',otpEncryptionTargetBundle:'target'});
       verifyBody = JSON.parse(options.body);
       return Response.json({user, token});
     };
@@ -226,7 +234,7 @@ for (const flow of ['restore', 'OTP']) for (const status of [403, 200]) {
     globalThis.fetch = async (url, options) => {
       calls.push(url.split('/').slice(3).join('/'));
       if (url.endsWith('/api/user/updateDID')) return Response.json(status === 200 ? { success: true } : { error: 'denied' }, { status });
-      if (url.endsWith('/auth/initiate')) return Response.json({ sessionId: 'otp-session' });
+      if (url.endsWith('/auth/initiate')) return Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' });
       if (url.endsWith('/auth/verify')) return Response.json({ user: legacy, token });
       return Response.json({ ok: true });
     };
@@ -240,3 +248,55 @@ for (const flow of ['restore', 'OTP']) for (const status of [403, 200]) {
     if (status !== 200) assert.ok(!calls.includes('api/did/log'), 'no DID log is stored for a refused DID');
   });
 }
+
+// #286: the code is encrypted on this device with its own Turnkey session key,
+// and only this device redeems the verification token for a Turnkey session.
+test('OTP verification sends only the encrypted bundle and completes the Turnkey login on this device', async () => {
+  let verifyBody;
+  globalThis.fetch = async (url, options) => {
+    if (url.endsWith('/auth/initiate')) return Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'enclave-target' });
+    verifyBody = JSON.parse(options.body);
+    return Response.json({ user, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  };
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => result.current.verifyOtp('123456'));
+  assert.equal(verifyBody.encryptedOtpBundle, 'sealed:enclave-target');
+  assert.ok(!('code' in verifyBody), 'the plaintext code never leaves the device');
+  assert.ok(!JSON.stringify(verifyBody).includes('123456'));
+  assert.deepEqual(turnkeyCalls.find(c => c[0] === 'encrypt'), ['encrypt', '123456', 'enclave-target']);
+  assert.deepEqual(turnkeyCalls.find(c => c[0] === 'login')[1], { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId, publicKey: 'session-pub' });
+  assert.ok(turnkeyCalls.some(c => c[0] === 'refresh' && c[1] === user.turnkeySubOrgId), 'silent refresh starts for the signed-in author');
+  assert.equal(result.current.isAuthenticated, true);
+});
+
+test('a failed Turnkey login does not block sign-in and discards the unused session key', async () => {
+  state.turnkey.complete = async () => { throw new Error('turnkey down'); };
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ user, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => result.current.verifyOtp('123456'));
+  assert.equal(result.current.isAuthenticated, true);
+  assert.deepEqual(turnkeyCalls.filter(c => c[0] === 'discard'), [['discard', 'session-pub']]);
+});
+
+test('a rejected code discards the session key it was bound to', async () => {
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ error: "That code didn't work." }, { status: 400 });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => assert.rejects(() => result.current.verifyOtp('000000'), /didn't work/));
+  assert.deepEqual(turnkeyCalls.filter(c => c[0] === 'discard'), [['discard', 'session-pub']]);
+  assert.ok(!turnkeyCalls.some(c => c[0] === 'login'));
+});
+
+test('logout clears the Turnkey session', async () => {
+  seed();
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.logout());
+  assert.ok(turnkeyCalls.some(c => c[0] === 'clear'));
+});

@@ -31,7 +31,7 @@ ones (tags, comments, categories, templates, sites, grants, invitations) are che
 against the actor inside the handler.
 
 `activity`, `assignees`, `attachments`, `billing`, `bitcoinAnchors` (reads, `anchorListState`,
-`verifyAnchorState`), `categories`, `comments`, `didCreation`, `didResources`
+`verifyAnchorState`), `categories`, `comments`, `didResources`
 (`checkSharedItem`, `uncheckSharedItem`), `feedback`, `invitations`, `itemCategories`,
 `items` (including `*Replay`), `listGrants`, `lists` (including `*Replay`), `notes`,
 `notificationActions.sendPushNotification`, `notifications`, `originals`, `presence`,

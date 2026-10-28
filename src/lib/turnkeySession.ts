@@ -1,0 +1,237 @@
+/**
+ * The author's Turnkey session, held by this client (#286).
+ *
+ * The session key is a non-extractable P-256 key the client generates
+ * (IndexedDbStamper; the Capacitor WebView uses the same store). Login binds
+ * it to the email OTP: the code is encrypted to Turnkey's enclave together
+ * with the session public key, our server only relays the ciphertext, and the
+ * resulting verification token can only be redeemed by the holder of this key.
+ * So boop's backend can start an OTP but can never obtain the session.
+ *
+ * The session's only job is DID control: signing updates to the author's
+ * did:webvh with the author's Turnkey Ed25519 key. Routine records are signed
+ * by device keys, so an expired session blocks DID updates and nothing else.
+ *
+ * See docs/turnkey-custody.md for the Turnkey-side guarantees this relies on.
+ */
+import { TurnkeyClient, decodeVerificationToken } from "@turnkey/core";
+import { encryptOtpCodeToBundle } from "@turnkey/crypto";
+
+/** Decided on #286: seven days, refreshed silently while the app is used. */
+export const TURNKEY_SESSION_SECONDS = 7 * 24 * 60 * 60;
+/** Refresh once less than this remains, so each device holds at most ~2 live keys (Turnkey allows 10 per user). */
+const REFRESH_WINDOW_SECONDS = 2 * 24 * 60 * 60;
+const REFRESH_CHECK_MS = 60 * 60 * 1000;
+const AUDIT_STORAGE_PREFIX = "boop-turnkey-audit";
+
+/**
+ * Sub-org features that let the parent org choose a credential's target key
+ * (or bypass the email OTP) and so would let boop's backend obtain a session.
+ */
+export const PARENT_INITIATED_AUTH_FEATURES = [
+  "FEATURE_NAME_EMAIL_AUTH",
+  "FEATURE_NAME_EMAIL_RECOVERY",
+  "FEATURE_NAME_ROOT_USER_EMAIL_RECOVERY",
+  "FEATURE_NAME_SMS_AUTH",
+] as const;
+
+export type TurnkeySessionStatus = "active" | "expired" | "none";
+
+export interface SubOrgAudit {
+  subOrgId: string;
+  checkedAt: number;
+  /** True when nothing but this user's own email OTP sessions can act in the sub-org. */
+  clean: boolean;
+  findings: string[];
+}
+
+let clientPromise: Promise<TurnkeyClient> | null = null;
+
+function getClient(): Promise<TurnkeyClient> {
+  clientPromise ??= (async () => {
+    const client = new TurnkeyClient({
+      apiBaseUrl: "https://api.turnkey.com",
+      // Only a default; every call below names the author's sub-org explicitly.
+      organizationId: (import.meta.env.VITE_TURNKEY_ORGANIZATION_ID as string | undefined) ?? "unset",
+    });
+    await client.init();
+    return client;
+  })();
+  clientPromise.catch(() => { clientPromise = null; });
+  return clientPromise;
+}
+
+/**
+ * Generate the key this login's Turnkey session will be bound to, and encrypt
+ * the code with it. `encryptOtpCodeToBundle` checks the target bundle's enclave
+ * signature first, so a server that substitutes its own encryption target is
+ * refused here rather than learning the code.
+ */
+export async function encryptOtpForSession(code: string, otpEncryptionTargetBundle: string): Promise<{
+  encryptedOtpBundle: string;
+  publicKey: string;
+}> {
+  const client = await getClient();
+  const publicKey = await client.createApiKeyPair();
+  try {
+    const encryptedOtpBundle = await encryptOtpCodeToBundle(code, otpEncryptionTargetBundle, publicKey,
+      // Dev/E2E only: production builds compile this to undefined (Turnkey's own signer).
+      import.meta.env.DEV ? import.meta.env.VITE_TURNKEY_TEST_OTP_SIGNER as string | undefined : undefined);
+    return { encryptedOtpBundle, publicKey };
+  } catch (err) {
+    await discardSessionKey(publicKey);
+    throw err;
+  }
+}
+
+/** Remove a key pair that never became a session (wrong code, server error). */
+export async function discardSessionKey(publicKey: string): Promise<void> {
+  try {
+    await (await getClient()).deleteApiKeyPair({ publicKey });
+  } catch (err) {
+    console.warn("[turnkeySession] Could not discard unused session key:", err);
+  }
+}
+
+/**
+ * Redeem the verification token for a Turnkey session (attested STAMP_LOGIN,
+ * sent by this client straight to Turnkey), then close parent-initiated auth
+ * paths and audit the sub-org. Throws only if the login itself fails.
+ */
+export async function completeTurnkeyLogin(params: {
+  verificationToken: string;
+  subOrgId: string;
+  publicKey: string;
+}): Promise<SubOrgAudit> {
+  const client = await getClient();
+  const { public_key: boundKey } = decodeVerificationToken(params.verificationToken) as { public_key?: string };
+  if (boundKey !== params.publicKey) {
+    await discardSessionKey(params.publicKey);
+    throw new Error("Verification token is not bound to this device's session key");
+  }
+  await client.loginWithOtp({
+    verificationToken: params.verificationToken,
+    organizationId: params.subOrgId,
+    expirationSeconds: String(TURNKEY_SESSION_SECONDS),
+  });
+  await client.clearUnusedKeyPairs().catch(() => {});
+  return hardenAndAuditSubOrg(params.subOrgId);
+}
+
+/**
+ * Sub-orgs created before #286 still allow EMAIL_AUTH and email recovery,
+ * which the parent org can start with a target key of its choosing. Only the
+ * sub-org's root user can remove them, so this session does it at login.
+ * Then record anything other than this user's own sessions that could act.
+ */
+export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudit> {
+  const findings: string[] = [];
+  try {
+    const client = await getClient();
+    const session = await client.getSession();
+    const { configs } = await client.httpClient.getOrganizationConfigs({ organizationId: subOrgId });
+    for (const feature of configs.features ?? []) {
+      if (!(PARENT_INITIATED_AUTH_FEATURES as readonly string[]).includes(feature.name ?? "")) continue;
+      try {
+        await client.httpClient.removeOrganizationFeature({ organizationId: subOrgId, name: feature.name! });
+      } catch (err) {
+        findings.push(`could not disable ${feature.name}`);
+        console.error("[turnkeySession] Failed to disable sub-org feature:", feature.name, err);
+      }
+    }
+
+    const { users } = await client.httpClient.getUsers({ organizationId: subOrgId });
+    if (users.length !== 1 || users[0].userId !== session?.userId) {
+      findings.push(`sub-org has ${users.length} users`);
+    }
+    // Passkeys are allowed: only the root user can add one. Non-expiring API
+    // keys are not: boop never creates them, so one means a hijacked session.
+    for (const user of users) {
+      const permanent = user.apiKeys.filter(key => !key.expirationSeconds);
+      if (permanent.length > 0) findings.push(`user ${user.userId} has ${permanent.length} non-expiring API keys`);
+    }
+    const quorum = configs.quorum;
+    if (!quorum || quorum.threshold !== 1 || quorum.userIds.length !== 1 || quorum.userIds[0] !== session?.userId) {
+      findings.push("root quorum is not this user alone");
+    }
+  } catch (err) {
+    console.error("[turnkeySession] Sub-org audit failed:", err);
+    findings.push("audit could not complete");
+  }
+  const audit: SubOrgAudit = { subOrgId, checkedAt: Date.now(), clean: findings.length === 0, findings };
+  try {
+    localStorage.setItem(`${AUDIT_STORAGE_PREFIX}:${subOrgId}`, JSON.stringify(audit));
+  } catch { /* storage unavailable: the audit reruns at next login */ }
+  if (!audit.clean) console.warn("[turnkeySession] Sub-org audit findings:", findings);
+  return audit;
+}
+
+/** The last audit this device ran; DID updates refuse to sign without a clean one. */
+export function lastSubOrgAudit(subOrgId: string): SubOrgAudit | null {
+  try {
+    const stored = localStorage.getItem(`${AUDIT_STORAGE_PREFIX}:${subOrgId}`);
+    return stored ? JSON.parse(stored) as SubOrgAudit : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function turnkeySessionStatus(subOrgId: string): Promise<TurnkeySessionStatus> {
+  const session = await (await getClient()).getSession();
+  if (!session || session.organizationId !== subOrgId) return "none";
+  return session.expiry * 1000 > Date.now() ? "active" : "expired";
+}
+
+/**
+ * Silent refresh: STAMP_LOGIN stamped by the current session key, for a new
+ * key pair. Never `invalidateExisting`, which would sign out the user's other
+ * devices. Returns the status after any refresh.
+ */
+export async function refreshTurnkeySessionIfDue(subOrgId: string): Promise<TurnkeySessionStatus> {
+  const client = await getClient();
+  const session = await client.getSession();
+  if (!session || session.organizationId !== subOrgId) return "none";
+  const remaining = session.expiry - Date.now() / 1000;
+  if (remaining <= 0) return "expired";
+  if (remaining > REFRESH_WINDOW_SECONDS) return "active";
+  await client.refreshSession({ expirationSeconds: String(TURNKEY_SESSION_SECONDS) });
+  await client.clearUnusedKeyPairs().catch(() => {});
+  return "active";
+}
+
+/** Check hourly and whenever the app returns to the foreground. */
+export function startTurnkeySessionRefresh(subOrgId: string): () => void {
+  const check = () => {
+    refreshTurnkeySessionIfDue(subOrgId).catch(err =>
+      console.warn("[turnkeySession] Silent refresh failed; retrying later:", err));
+  };
+  check();
+  const interval = setInterval(check, REFRESH_CHECK_MS);
+  const onVisible = () => { if (document.visibilityState === "visible") check(); };
+  document.addEventListener("visibilitychange", onVisible);
+  return () => {
+    clearInterval(interval);
+    document.removeEventListener("visibilitychange", onVisible);
+  };
+}
+
+/** Logout: revoke this device's session key at Turnkey, then forget it locally. */
+export async function clearTurnkeySession(): Promise<void> {
+  try {
+    const client = await getClient();
+    const session = await client.getSession();
+    if (session?.publicKey && session.expiry * 1000 > Date.now()) {
+      const { users } = await client.httpClient.getUsers({ organizationId: session.organizationId });
+      const keyIds = users.flatMap(user => user.apiKeys)
+        .filter(key => key.credential.publicKey === session.publicKey).map(key => key.apiKeyId);
+      if (keyIds.length > 0) {
+        await client.httpClient.deleteApiKeys({
+          organizationId: session.organizationId, userId: session.userId, apiKeyIds: keyIds,
+        });
+      }
+    }
+    await client.clearAllSessions();
+  } catch (err) {
+    console.warn("[turnkeySession] Could not fully clear the Turnkey session:", err);
+  }
+}

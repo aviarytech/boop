@@ -300,7 +300,7 @@ async function turnkeyRequest<T>(
 interface CreateSubOrgResponse {
   activity: {
     result: {
-      createSubOrganizationResultV7: {
+      createSubOrganizationResultV8: {
         subOrganizationId: string;
       };
     };
@@ -310,8 +310,9 @@ interface CreateSubOrgResponse {
 interface InitOtpResponse {
   activity: {
     result: {
-      initOtpResult: {
+      initOtpResultV2: {
         otpId: string;
+        otpEncryptionTargetBundle: string;
       };
     };
   };
@@ -336,7 +337,7 @@ async function createSubOrganization(
   const response = await turnkeyRequest<CreateSubOrgResponse>(
     "/public/v1/submit/create_sub_organization",
     {
-      type: "ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V7",
+      type: "ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V8",
       timestampMs: Date.now().toString(),
       organizationId: credentials.organizationId,
       parameters: {
@@ -351,6 +352,13 @@ async function createSubOrganization(
           },
         ],
         rootQuorumThreshold: 1,
+        // Only email OTP (completed by the user's own client key) may log in.
+        // EMAIL_AUTH and email recovery let the parent choose the target key,
+        // so they would let this backend obtain a session. See
+        // docs/turnkey-custody.md.
+        disableEmailAuth: true,
+        disableEmailRecovery: true,
+        disableSmsAuth: true,
         wallet: {
           walletName: "default-wallet",
           accounts: [
@@ -379,7 +387,7 @@ async function createSubOrganization(
     credentials
   );
 
-  const subOrgId = response.activity?.result?.createSubOrganizationResultV7?.subOrganizationId;
+  const subOrgId = response.activity?.result?.createSubOrganizationResultV8?.subOrganizationId;
   if (!subOrgId) {
     throw new Error("No sub-organization ID returned from Turnkey");
   }
@@ -389,7 +397,7 @@ async function createSubOrganization(
 async function initOtp(
   email: string,
   credentials: TurnkeyCredentials
-): Promise<string> {
+): Promise<{ otpId: string; otpEncryptionTargetBundle: string }> {
   // Generate user identifier from email hash
   const emailBytes = new TextEncoder().encode(email);
   const hashBuffer = await crypto.subtle.digest("SHA-256", emailBytes);
@@ -398,7 +406,7 @@ async function initOtp(
   const response = await turnkeyRequest<InitOtpResponse>(
     "/public/v1/submit/init_otp",
     {
-      type: "ACTIVITY_TYPE_INIT_OTP",
+      type: "ACTIVITY_TYPE_INIT_OTP_V3",
       timestampMs: Date.now().toString(),
       organizationId: credentials.organizationId,
       parameters: {
@@ -413,28 +421,36 @@ async function initOtp(
     credentials
   );
 
-  const otpId = response.activity?.result?.initOtpResult?.otpId;
-  if (!otpId) {
+  const result = response.activity?.result?.initOtpResultV2;
+  if (!result?.otpId || !result.otpEncryptionTargetBundle) {
     throw new Error("No OTP ID returned from Turnkey");
   }
-  return otpId;
+  return { otpId: result.otpId, otpEncryptionTargetBundle: result.otpEncryptionTargetBundle };
 }
 
+/**
+ * Relays the client's encrypted OTP bundle (VERIFY_OTP_V2).
+ *
+ * The bundle is HPKE-encrypted to Turnkey's enclave and carries the code with
+ * the client's session public key, so this backend never sees the code. The
+ * returned verification token is bound to that client key: only the client can
+ * turn it into a Turnkey session, never this backend.
+ */
 async function verifyOtp(
   otpId: string,
-  otpCode: string,
+  encryptedOtpBundle: string,
   credentials: TurnkeyCredentials
 ): Promise<string> {
   const response = await turnkeyRequest<VerifyOtpResponse>(
     "/public/v1/submit/verify_otp",
     {
-      type: "ACTIVITY_TYPE_VERIFY_OTP",
+      type: "ACTIVITY_TYPE_VERIFY_OTP_V2",
       timestampMs: Date.now().toString(),
       organizationId: credentials.organizationId,
       parameters: {
         otpId,
-        otpCode,
-        expirationSeconds: "900", // 15 minutes
+        encryptedOtpBundle,
+        expirationSeconds: "900", // 15 minutes to complete the client login
       },
     },
     credentials
@@ -484,6 +500,10 @@ function buildLogoutCookieValue(): string {
 
 /**
  * Initiate email authentication - sends OTP to user.
+ *
+ * Returns Turnkey's enclave encryption target. The client encrypts the code to
+ * it together with its own session public key, so the code never passes
+ * through this backend in the clear.
  */
 export const initiateAuth = internalAction({
   args: {
@@ -492,9 +512,10 @@ export const initiateAuth = internalAction({
   handler: async (ctx, args): Promise<{
     sessionId: string;
     message: string;
+    otpEncryptionTargetBundle: string;
     session: {
       email: string;
-      subOrgId: string;
+      subOrgId?: string;
       otpId: string;
     };
   }> => {
@@ -504,12 +525,12 @@ export const initiateAuth = internalAction({
 
     // The parent Turnkey organization is shared with other apps. Only Boop's
     // saved account link identifies a returning user; a global email search does not.
+    // New accounts get a sub-org only after the email is verified (verifyAuth).
     const account = await ctx.runQuery(internal.auth.getLoginAccount, { email: args.email });
-    const subOrgId = account?.turnkeySubOrgId ?? await createSubOrganization(args.email, credentials);
 
     // Send OTP
     console.log(`[authInternal] Sending OTP to ${args.email}...`);
-    const otpId = await initOtp(args.email, credentials);
+    const { otpId, otpEncryptionTargetBundle } = await initOtp(args.email, credentials);
     console.log(`[authInternal] OTP sent! OTP ID: ${otpId}`);
 
     // Generate session ID
@@ -518,9 +539,10 @@ export const initiateAuth = internalAction({
     return {
       sessionId,
       message: "Verification code sent to your email. Check your inbox!",
+      otpEncryptionTargetBundle,
       session: {
         email: args.email,
-        subOrgId,
+        subOrgId: account?.turnkeySubOrgId,
         otpId,
       },
     };
@@ -528,15 +550,18 @@ export const initiateAuth = internalAction({
 });
 
 /**
- * Verify OTP code and return authentication result.
+ * Verify the client's encrypted OTP bundle and return authentication result.
+ *
+ * The verification token is bound to the client's Turnkey session key; the
+ * client completes the Turnkey login itself (STAMP_LOGIN) with it.
  */
 export const verifyAuth = internalAction({
   args: {
     sessionId: v.string(),
-    code: v.string(),
+    encryptedOtpBundle: v.string(),
     session: v.object({
       email: v.string(),
-      subOrgId: v.string(),
+      subOrgId: v.optional(v.string()),
       otpId: v.string(),
       timestamp: v.number(),
       verified: v.boolean(),
@@ -546,29 +571,22 @@ export const verifyAuth = internalAction({
     verified: boolean;
     email?: string;
     subOrgId?: string;
+    verificationToken?: string;
   }> => {
     const credentials = getTurnkeyCredentials();
 
     // Recheck sessions initiated before a repair or a competing signup. Do this
     // before consuming the OTP, and never silently retarget a pending session.
     const account = await ctx.runQuery(internal.auth.getLoginAccount, { email: args.session.email });
-    if (account && account.turnkeySubOrgId !== args.session.subOrgId) {
+    if (args.session.subOrgId && account?.turnkeySubOrgId !== args.session.subOrgId) {
       throw new Error("Your account changed. Please request a new code.");
     }
 
     console.log(`[authInternal] Verifying OTP for session: ${args.sessionId}`);
 
+    let verificationToken: string;
     try {
-      // Verify OTP with Turnkey
-      await verifyOtp(args.session.otpId, args.code, credentials);
-
-      console.log(`[authInternal] OTP verified successfully!`);
-
-      return {
-        verified: true,
-        email: args.session.email,
-        subOrgId: args.session.subOrgId,
-      };
+      verificationToken = await verifyOtp(args.session.otpId, args.encryptedOtpBundle, credentials);
     } catch (error) {
       console.error(`[authInternal] OTP verification failed:`, error);
       // Turnkey answers a wrong/expired code with 400; 401/403/5xx are our config or their outage.
@@ -577,6 +595,19 @@ export const verifyAuth = internalAction({
       }
       throw error;
     }
+    console.log(`[authInternal] OTP verified successfully!`);
+
+    // The email is now verified, so a new account may get its sub-org. A
+    // competing signup that finished meanwhile is resolved by upsertUserInternal.
+    const subOrgId = args.session.subOrgId ?? account?.turnkeySubOrgId
+      ?? await createSubOrganization(args.session.email, credentials);
+
+    return {
+      verified: true,
+      email: args.session.email,
+      subOrgId,
+      verificationToken,
+    };
   },
 });
 
