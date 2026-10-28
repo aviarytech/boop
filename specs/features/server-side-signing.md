@@ -1,5 +1,9 @@
 # Feature: Server-Side Turnkey Signing
 
+> **Superseded by #286.** A parent-org key cannot sign in a user's sub-org, so
+> this never worked, and boop's backend no longer signs as a user. See
+> [docs/turnkey-custody.md](../../docs/turnkey-custody.md).
+
 ## Goal
 Move Turnkey signing operations to the server so the app can sign DID documents,
 verifiable credentials, and arbitrary data using Turnkey-managed keys.

@@ -1,0 +1,26 @@
+{
+  "$comment": "Parent-org policies for boop's Turnkey API user (#286). UNVALIDATED: none of these has been submitted to the live Turnkey API. See docs/turnkey-custody.md before applying. Replace <BOOP_API_USER_ID> with the API user's userId. Order does not matter: Turnkey denies by default, and an EFFECT_DENY overrides every allow.",
+  "policies": [
+    {
+      "policyName": "boop-api-user: allow OTP relay and sub-org creation",
+      "effect": "EFFECT_ALLOW",
+      "consensus": "approvers.any(user, user.id == '<BOOP_API_USER_ID>')",
+      "condition": "activity.type in ['ACTIVITY_TYPE_INIT_OTP_V3', 'ACTIVITY_TYPE_VERIFY_OTP_V2', 'ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V8']",
+      "notes": "The only activities convex/authInternal.ts submits. VERIFY_OTP_V2 only relays a bundle the client encrypted to the enclave; the resulting token is bound to the client's session key."
+    },
+    {
+      "policyName": "boop-api-user: deny parent-chosen-key and plaintext-code auth",
+      "effect": "EFFECT_DENY",
+      "consensus": "approvers.any(user, user.id == '<BOOP_API_USER_ID>')",
+      "condition": "activity.type in ['ACTIVITY_TYPE_EMAIL_AUTH', 'ACTIVITY_TYPE_EMAIL_AUTH_V2', 'ACTIVITY_TYPE_EMAIL_AUTH_V3', 'ACTIVITY_TYPE_INIT_USER_EMAIL_RECOVERY', 'ACTIVITY_TYPE_INIT_USER_EMAIL_RECOVERY_V2', 'ACTIVITY_TYPE_RECOVER_USER', 'ACTIVITY_TYPE_INIT_OTP', 'ACTIVITY_TYPE_INIT_OTP_V2', 'ACTIVITY_TYPE_VERIFY_OTP', 'ACTIVITY_TYPE_INIT_OTP_AUTH', 'ACTIVITY_TYPE_INIT_OTP_AUTH_V2', 'ACTIVITY_TYPE_INIT_OTP_AUTH_V3', 'ACTIVITY_TYPE_OTP_AUTH', 'ACTIVITY_TYPE_OTP_LOGIN', 'ACTIVITY_TYPE_OTP_LOGIN_V2', 'ACTIVITY_TYPE_OAUTH', 'ACTIVITY_TYPE_OAUTH_LOGIN', 'ACTIVITY_TYPE_STAMP_LOGIN', 'ACTIVITY_TYPE_CREATE_READ_WRITE_SESSION', 'ACTIVITY_TYPE_CREATE_READ_WRITE_SESSION_V2']",
+      "notes": "Each of these either lets the caller choose the key a credential is encrypted to, or carries a plaintext code, so it could hand boop's backend a session in a user's sub-org."
+    },
+    {
+      "policyName": "boop-api-user: deny credential, key and export changes",
+      "effect": "EFFECT_DENY",
+      "consensus": "approvers.any(user, user.id == '<BOOP_API_USER_ID>')",
+      "condition": "activity.resource in ['CREDENTIAL', 'PRIVATE_KEY', 'AUTHENTICATOR', 'API_KEY', 'POLICY'] || activity.action == 'EXPORT' || activity.type in ['ACTIVITY_TYPE_UPDATE_ROOT_QUORUM', 'ACTIVITY_TYPE_SET_ORGANIZATION_FEATURE', 'ACTIVITY_TYPE_CREATE_USERS', 'ACTIVITY_TYPE_CREATE_USERS_V2', 'ACTIVITY_TYPE_CREATE_USERS_V3', 'ACTIVITY_TYPE_CREATE_USERS_V4', 'ACTIVITY_TYPE_CREATE_API_ONLY_USERS', 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD', 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2', 'ACTIVITY_TYPE_SIGN_RAW_PAYLOADS', 'ACTIVITY_TYPE_SIGN_TRANSACTION', 'ACTIVITY_TYPE_SIGN_TRANSACTION_V2']",
+      "notes": "Belt and braces: the allow policy already excludes these. The resource names are the least certain part of this file; if Turnkey rejects one, drop that term, not the policy."
+    }
+  ]
+}
