@@ -105,6 +105,27 @@ test('storeDidLog: only a continuation signed by the update keys before it', asy
 
 // #300 review round 5: the client must refuse it too, or a hostile server could
 // serve an unsigned "author DID" built from the account's public keys.
+// #300 review round 6.
+test('the client checks parameters and signatures before resolving, so nothing is fetched', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  const [genesis] = authorDid.parseDidLog(author.jsonl);
+  const witnessed = JSON.stringify({ ...genesis, parameters: { ...genesis.parameters, witness: { threshold: 1, witnesses: [{ id: 'did:key:z6Mkw' }] } } });
+  const fetchBefore = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('nothing may be fetched'); };
+  try { assert.match((await authorDid.inspectAuthorDid(witnessed, author.keys)).problems.join(), /witnesses/); }
+  finally { globalThis.fetch = fetchBefore; }
+});
+
+test('the signer refuses what isn\'t plain JSON, as keySigner\'s JCS does', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  class Sneaky { constructor() { this.a = 1; } }
+  const before = turnkey.calls.length;
+  await assert.rejects(() => author.listAuthor.signer.sign({ entry: { versionId: '1-x', state: new Sneaky() }, proofOptions: {}, summary: {}, display: '' }), err => err.code === 'JCS_UNSUPPORTED_VALUE');
+  assert.equal(turnkey.calls.length, before);
+});
+
 test('the client refuses an author DID log without signatures', async () => {
   const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
   const author = await mintAuthor(turnkey, { path: PATH });

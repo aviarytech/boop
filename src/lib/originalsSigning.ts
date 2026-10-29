@@ -361,9 +361,19 @@ export function remoteKeySigner(options: RemoteKeySignerOptions): OriginalsSigne
     verificationMethod: options.verificationMethod,
     cryptosuite: ORIGINALS_CRYPTOSUITE,
     sign: async (untrusted) => {
+      // keySigner's JCS rejects anything that isn't plain JSON (class
+      // instances, functions); check before cloning turns them into plain data.
+      canonicalize(untrusted.entry);
+      canonicalize(untrusted.proofOptions);
+      canonicalize(untrusted.summary);
+      if (untrusted.parent) {
+        try { canonicalize(untrusted.parent.entry); } catch { refuse("the parent is not the entry its versionId names"); }
+      }
       // Check, show and sign one private copy: the checks await, and the
       // caller must not be able to change the entry in between.
-      const request = structuredClone(untrusted);
+      let request: SigningRequest;
+      try { request = structuredClone(untrusted); }
+      catch { throw new OriginalsSigningError("JCS_UNSUPPORTED_VALUE", "the request is not plain JSON"); }
       const derived = await checkRequest(request, options.verificationMethod);
       if (options.confirm && !(await options.confirm(describeEntry(derived), derived))) refuse("the signer declined");
       const signature = await options.signBytes(await proofHashData(request.entry, request.proofOptions));

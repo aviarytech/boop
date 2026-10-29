@@ -35,9 +35,12 @@ export function useAuthorDid(
     if (attempted.current === attempt) return;
     attempted.current = attempt;
 
+    // A result for an account that has since signed out (or switched) is dropped.
+    let current = true;
     void (async () => {
       try {
         const result = await ensureAuthorDid({ did: user?.did, turnkeySubOrgId: subOrgId }, token);
+        if (!current) return;
         if (result.status === "not-ready") {
           console.info("[authorDid] No live Turnkey session; Originals signing waits for the next login");
         } else if (result.status === "kept") {
@@ -51,6 +54,8 @@ export function useAuthorDid(
           try {
             const raw = await storageAdapter.get(AUTH_STORAGE_KEY);
             const state = raw ? JSON.parse(raw) : null;
+            // Never write one account's DID into another's cached state.
+            if (state?.user?.turnkeySubOrgId !== subOrgId) return;
             if (state?.user) {
               state.user.did = result.did;
               await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(state));
@@ -69,5 +74,6 @@ export function useAuthorDid(
         Sentry.captureException(err);
       }
     })();
+    return () => { current = false; };
   }, [user?.did, user?.turnkeySubOrgId, token]);
 }

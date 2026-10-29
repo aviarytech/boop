@@ -162,11 +162,13 @@ export async function inspectAuthorDid(jsonl: string, keys?: AuthorKeys): Promis
   problems: string[];
 }> {
   const log = parseDidLog(jsonl);
+  // The same parameter and signature checks the server makes, before
+  // resolving: didwebvh-ts accepts `proof: []`, and acts on witness rules.
+  const unsigned = await requireSignedByUpdateKeys(log).then(() => null, (error: Error) => error.message);
+  if (unsigned) return { did: String((log.at(-1) as { state?: { id?: unknown } } | undefined)?.state?.id ?? ""), versionId: "", problems: [unsigned] };
   const resolved = await resolveDIDFromLog(log, { verifier: ed25519Verifier });
   const expect = keys ? { authorKey: keys.author.multikey, assertionKey: keys.assertion.multikey } : {};
   const problems = authorLogProblems(log as never, expect);
-  // The same signature checks the server makes: didwebvh-ts accepts `proof: []`.
-  await requireSignedByUpdateKeys(log).catch((error: Error) => problems.push(error.message));
   // didwebvh-ts accepts a log whose last entries don't verify by stopping short; that isn't this DID's head.
   if (resolved.meta.versionId !== log[log.length - 1]?.versionId) problems.push("the log does not verify to its last entry");
   return { did: resolved.did, versionId: resolved.meta.versionId, problems };

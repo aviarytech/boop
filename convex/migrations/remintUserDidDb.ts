@@ -234,6 +234,9 @@ async function rewriteRow(ctx: MutationCtx, table: string, row: Row, fromDids: s
     current = { ...current, ...patch };
   }
   if (Object.keys(patch).length === 0) return false;
+  // A didLogs row moved to another DID still serves the old DID's log: it is
+  // no longer a checked author log for its new userDid (#300 review).
+  if (table === "didLogs") Object.assign(patch, { author: false, scid: undefined, versionId: undefined });
   await ctx.db.patch(row._id as never, patch as never);
   // Row-only/secondary assignment changes must invalidate offline edits.
   // Keep collision rows: their original attribution is historical evidence.

@@ -308,6 +308,15 @@ test('deleting an account mid-re-mint erases the new DID too, and the re-mint st
   assert.ok(dids?.includes(OWN) && dids.includes(old), JSON.stringify(dids));
 });
 
+test('the one-shot applyRemint drops the author flag on the log row it moves', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  ctx.rows.didLogs.push({ _id: 'D-old', userDid: old, path: 'user-owner', log: 'old log', author: true, scid: 's', versionId: 'v', updatedAt: 1 });
+  await call('migrations/remintUserDidDb', 'applyRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  const row = ctx.rows.didLogs.find(r => r._id === 'D-old');
+  assert.deepEqual([row.userDid, row.author, row.scid, row.versionId], [OWN, false, undefined, undefined]);
+});
+
 test('the one-shot applyRemint refuses while a paged re-mint is pending', async () => {
   const ctx = fixture();
   const old = ctx.rows.users[0].did;
