@@ -35,8 +35,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { createUserWebVHDid } from "../lib/webvh";
-import { useDidDomainRemint } from "./useDidDomainRemint";
+import { useAuthorDid } from "./useAuthorDid";
+import { clearCurrentAuthor } from "../lib/authorIdentity";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
 import { identifyUser, resetAnalytics } from "../lib/analytics";
@@ -203,53 +203,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setToken(parsed.token);
         await storageAdapter.set(JWT_STORAGE_KEY, parsed.token);
 
-        // If user is stuck on did:temp (or no DID), create did:webvh now
-        if (parsed.user && (!parsed.user.did || !parsed.user.did.startsWith("did:webvh:"))) {
-          try {
-            console.log("[useAuth] User has no did:webvh, creating client-side...");
-            const webvhResult = await createUserWebVHDid({
-              email: parsed.user.email,
-              subOrgId: parsed.user.turnkeySubOrgId,
-            });
-
-            const httpUrl = getConvexHttpUrl();
-            const updated = await fetch(`${httpUrl}/api/user/updateDID`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${parsed.token}`,
-              },
-              credentials: "include",
-              body: JSON.stringify({ did: webvhResult.did }),
-            });
-            // Only adopt a DID the server accepted; ownership and publishing are checked
-            // against the server's account DID. The upgrade is retried on the next restore.
-            if (!updated.ok) throw new Error(`updateDID failed: ${updated.status}`);
-
-            // Store DID log in Convex for resolution
-            await fetch(`${httpUrl}/api/did/log`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${parsed.token}`,
-              },
-              credentials: "include",
-              body: JSON.stringify({
-                userDid: webvhResult.did,
-                path: webvhResult.path,
-                log: webvhResult.didLogJsonl,
-              }),
-            });
-
-            const upgradedUser = { ...parsed.user, did: webvhResult.did };
-            setUser(upgradedUser);
-            const updatedState: PersistedAuthState = { user: upgradedUser, token: parsed.token };
-            await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(updatedState));
-            console.log("[useAuth] Upgraded DID on session restore:", webvhResult.did);
-          } catch (didErr) {
-            console.error("[useAuth] Failed to upgrade DID on restore:", didErr);
-          }
-        }
+        // An account without an author DID gets one from useAuthorDid once
+        // its Turnkey session is live (#286); nothing is minted here.
       } catch (err) {
         console.error("[useAuth] Error restoring session:", err);
         setUser(null);
@@ -387,33 +342,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
-        // Start with server-provided DID. If it is not already did:webvh,
-        // create did:webvh client-side and persist it.
-        let userDid = serverUser.did || `did:temp:${serverUser.turnkeySubOrgId}`;
-        if (!userDid.startsWith("did:webvh:")) {
-          try {
-            const webvhResult = await createUserWebVHDid({
-              email: serverUser.email,
-              subOrgId: serverUser.turnkeySubOrgId,
-            });
-            const updated = await fetch(`${httpUrl}/api/user/updateDID`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${jwtToken}`,
-              },
-              credentials: "include",
-              body: JSON.stringify({ did: webvhResult.did }),
-            });
-            // Keep the server's DID unless it accepted the new one (retried on restore).
-            if (!updated.ok) throw new Error(`updateDID failed: ${updated.status}`);
-            userDid = webvhResult.did;
-
-            console.log("[useAuth] Upgraded user DID to did:webvh:", userDid);
-          } catch (didErr) {
-            console.error("[useAuth] Failed to create/update did:webvh:", didErr);
-          }
-        }
+        // The server's DID, or did:temp for a new account until useAuthorDid
+        // mints its author DID through the Turnkey session (#286).
+        const userDid = serverUser.did || `did:temp:${serverUser.turnkeySubOrgId}`;
 
         // Create auth user object
         const authUser: AuthUser = {
@@ -473,6 +404,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setOtpFlowState({ sessionId: null, email: null, otpEncryptionTargetBundle: null });
     resetAnalytics();
 
+    clearCurrentAuthor();
     try {
       await storageAdapter.remove(AUTH_STORAGE_KEY);
       await storageAdapter.remove(JWT_STORAGE_KEY);
@@ -524,8 +456,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return startTurnkeySessionRefresh(subOrgId);
   }, [subOrgId]);
 
-  // Repairs identities minted on a domain we no longer serve. Temporary.
-  useDidDomainRemint(user, token);
+  // Moves the account onto an author DID (#286), including identities minted
+  // on a domain we no longer serve.
+  const adoptAuthorDid = useCallback((did: string) => {
+    setUser(current => {
+      if (!current) return current;
+      const next = { ...current, did };
+      if (token) void storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify({ user: next, token }));
+      return next;
+    });
+  }, [token]);
+  useAuthorDid(user, token, adoptAuthorDid);
 
   const value: AuthContextValue = {
     isAuthenticated: user !== null,
