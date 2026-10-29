@@ -111,6 +111,35 @@ test('logout wipes the local session even when revoking at Turnkey fails or hang
   assert.ok(Date.now() - started < 9_500);
 });
 
+// #299 review round 6: a removal that failed once must be retried, or a legacy
+// sub-org keeps EMAIL_AUTH (and the device an unclean audit) indefinitely.
+test('a feature removal that failed is retried at the next refresh check, before refreshing', async () => {
+  let fail = true;
+  const removed = [];
+  t.http.getOrganizationConfigs = async () => ({ configs: { features: removed.length ? [] : [{ name: 'FEATURE_NAME_EMAIL_AUTH' }], quorum: { threshold: 1, userIds: [ME] } } });
+  t.http.removeOrganizationFeature = async ({ name }) => { if (fail) throw new Error('blip'); removed.push(name); };
+  const first = await session.hardenAndAuditSubOrg('sub');
+  assert.deepEqual(first.findings, ['could not disable FEATURE_NAME_EMAIL_AUTH']);
+  fail = false;
+  const order = [];
+  t.refresh = async () => { order.push('refresh'); };
+  const origRemove = t.http.removeOrganizationFeature;
+  t.http.removeOrganizationFeature = async args => { order.push('remove'); return origRemove(args); };
+  const listeners = [];
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: { addEventListener: (_, f) => listeners.push(f), removeEventListener() {}, visibilityState: 'visible' } });
+  try {
+    const stop = session.startTurnkeySessionRefresh('sub');
+    for (let i = 0; i < 20 && !session.lastSubOrgAudit('sub')?.clean; i += 1) await new Promise(r => setTimeout(r, 5));
+    stop();
+  } finally {
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument); else delete globalThis.document;
+  }
+  assert.deepEqual(removed, ['FEATURE_NAME_EMAIL_AUTH']);
+  assert.equal(session.lastSubOrgAudit('sub').clean, true);
+  assert.equal(order[0], 'remove', 'the retry runs before any refresh');
+});
+
 test('discarding never deletes the key a stored session uses', async () => {
   await session.discardSessionKey('pub');
   assert.deepEqual(t.calls, []);

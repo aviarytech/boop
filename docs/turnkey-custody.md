@@ -58,7 +58,7 @@ the parent picks the credential's target key:
 
 | Path | Closed by |
 | --- | --- |
-| `EMAIL_AUTH` (bundle to a parent-chosen key, link template the parent controls) | sub-org feature removed (new sub-orgs: at creation; old: at the user's next login) and boop API user policy |
+| `EMAIL_AUTH` (bundle to a parent-chosen key, link template the parent controls) | sub-org feature removed (new sub-orgs: at creation; old: at the user's next OTP login, retried at each refresh check until it succeeds) and boop API user policy |
 | Email recovery | same |
 | Legacy `INIT_OTP_AUTH`/`OTP_AUTH`, `INIT_OTP`/`VERIFY_OTP` + `OTP_LOGIN` (plaintext code through the server) | boop API user policy; the client never sends a plaintext code |
 | Parent signing, creating users/keys, root-quorum changes in a sub-org | Turnkey itself: the parent cannot stamp sub-org activities |

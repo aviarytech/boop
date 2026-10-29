@@ -156,9 +156,16 @@ export async function completeTurnkeyLogin(params: {
     });
     await client.clearUnusedKeyPairs().catch(() => {});
   });
-  const audit = hardenAndAuditSubOrg(params.subOrgId);
+  void runAudit(params.subOrgId);
+}
+
+/** Harden and audit, sharing one run between every caller (login, retries). */
+function runAudit(subOrgId: string): Promise<SubOrgAudit> {
+  if (auditInFlight) return auditInFlight;
+  const audit = hardenAndAuditSubOrg(subOrgId);
   auditInFlight = audit;
-  void audit.finally(() => { if (auditInFlight === audit) auditInFlight = null; });
+  void audit.finally(() => { if (auditInFlight === audit) auditInFlight = null; }).catch(() => {});
+  return audit;
 }
 
 /** Wait for an audit this login started, then return this device's latest audit. */
@@ -185,7 +192,7 @@ export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudi
       try {
         await client.httpClient.removeOrganizationFeature({ organizationId: subOrgId, name: feature.name! });
       } catch (err) {
-        findings.push(`could not disable ${feature.name}`);
+        findings.push(`${DISABLE_FAILED} ${feature.name}`);
         console.error("[turnkeySession] Failed to disable sub-org feature:", feature.name, err);
       }
     }
@@ -271,21 +278,34 @@ async function refreshUnlocked(subOrgId: string): Promise<TurnkeySessionStatus> 
 }
 
 /** Check hourly and whenever the app returns to the foreground. */
-/** An audit this device couldn't finish (a network blip) is retried; one with findings is not. */
 const AUDIT_INCOMPLETE = "audit could not complete";
+const DISABLE_FAILED = "could not disable";
+
+/**
+ * Findings from a step that failed rather than from something found (a
+ * network blip, a feature removal that didn't go through): worth running the
+ * audit again for. Anything else stands until the next OTP login.
+ */
+function auditNeedsRetry(audit: SubOrgAudit | null): boolean {
+  return !audit || audit.findings.some(f => f === AUDIT_INCOMPLETE || f.startsWith(DISABLE_FAILED));
+}
 
 export function startTurnkeySessionRefresh(subOrgId: string): () => void {
-  const check = () => {
-    refreshTurnkeySessionIfDue(subOrgId)
-      .then(async status => {
-        const last = await subOrgAuditDone(subOrgId);
-        if (status === "active" && (!last || last.findings.includes(AUDIT_INCOMPLETE))) await hardenAndAuditSubOrg(subOrgId);
-      })
-      .catch(err => console.warn("[turnkeySession] Silent refresh failed; retrying later:", err));
+  const check = async () => {
+    try {
+      // Retry an unfinished audit before refreshing: the first-login check
+      // compares against this device's current key, which a refresh replaces.
+      if (auditNeedsRetry(await subOrgAuditDone(subOrgId)) && await turnkeySessionStatus(subOrgId) === "active") {
+        await runAudit(subOrgId);
+      }
+      await refreshTurnkeySessionIfDue(subOrgId);
+    } catch (err) {
+      console.warn("[turnkeySession] Silent refresh failed; retrying later:", err);
+    }
   };
-  check();
-  const interval = setInterval(check, REFRESH_CHECK_MS);
-  const onVisible = () => { if (document.visibilityState === "visible") check(); };
+  void check();
+  const interval = setInterval(() => void check(), REFRESH_CHECK_MS);
+  const onVisible = () => { if (document.visibilityState === "visible") void check(); };
   document.addEventListener("visibilitychange", onVisible);
   return () => {
     clearInterval(interval);
