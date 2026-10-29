@@ -377,6 +377,21 @@ test('a DID-less account can replace an author log no account holds, never one a
   assert.equal((await modules.didLogsHttp.storeDidLog._handler(held, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }))).status, 409);
 });
 
+// #300 review round 13: the holder and served-log checks happen inside the
+// writes, so a concurrent first sign-up on two devices can't split the account.
+test('replacing a served log someone adopted meanwhile is refused inside the write', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null });
+  // Device A adopts it...
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: OWN }), 'adopted');
+  // ...while device B, which read the log before that, tries to replace it.
+  await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, userDid: 'did:webvh:B:boop.ad:user-owner', expected: { userDid: OWN, log: OWN_LOG } }), /an account holds/);
+  assert.equal(ctx.rows.didLogs[0].userDid, OWN);
+  // And adoption is refused once the account holds a DID, or the DID isn't the served author log.
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: 'did:webvh:B:boop.ad:user-owner' }), 'conflict');
+});
+
 test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {
   const ctx = fixture();
   const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };

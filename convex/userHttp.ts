@@ -75,17 +75,10 @@ export const updateUserDID = httpAction(async (ctx, request) => {
 
     console.log(`[userHttp] Updating DID for ${auth.email} to ${did}`);
 
-    // Call upsertUser which handles the DID upgrade logic
-    await ctx.runMutation(internal.auth.upsertUserInternal, {
-      turnkeySubOrgId: auth.turnkeySubOrgId,
-      email: auth.email,
-      did,
-    });
-
-    // upsertUserInternal keeps an existing did:webvh rather than replace it;
-    // never report success for a DID the account didn't take.
-    const account = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
-    if (account?.did !== did) return errorResponse(request, "The account kept its existing DID", 409);
+    // The checks above are early exits; this mutation re-checks them all in
+    // the transaction that sets the DID.
+    const adopted = await ctx.runMutation(internal.didLogs.adoptServedAuthorDid, { turnkeySubOrgId: auth.turnkeySubOrgId, did });
+    if (adopted !== "adopted") return errorResponse(request, "The account can't adopt this DID", 409);
 
     console.log(`[userHttp] DID updated successfully for ${auth.email}`);
 

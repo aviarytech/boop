@@ -38,6 +38,12 @@ export const upsertDidLog = internalMutation({
     if (!unchanged) {
       throw new Error("DID log conflict: the served log changed; fetch it and retry");
     }
+    // Replacing another DID's log: only one no account holds, checked here in
+    // the write's own transaction, not before the caller's slow checks (#300 review).
+    if (existing && existing.userDid !== row.userDid) {
+      const holder = await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", existing.userDid)).first();
+      if (holder) throw new Error("DID log conflict: an account holds the served DID");
+    }
     if (existing) {
       await ctx.db.patch(existing._id, { ...row, updatedAt: Date.now() });
       return existing._id;
@@ -85,5 +91,27 @@ export const getDidLogByUserDid = internalQuery({
       .withIndex("by_user_did", (q) => q.eq("userDid", args.userDid))
       .first();
     return record ?? null;
+  },
+});
+
+/**
+ * A DID-less account adopts the author DID its path serves. Every condition
+ * is re-checked in this one transaction, so a concurrent write can't leave
+ * the account on one DID and its path serving another (#300 review).
+ */
+export const adoptServedAuthorDid = internalMutation({
+  args: { turnkeySubOrgId: v.string(), did: v.string() },
+  handler: async (ctx, args): Promise<"adopted" | "conflict"> => {
+    const user = await ctx.db.query("users").withIndex("by_turnkey_id", (q) => q.eq("turnkeySubOrgId", args.turnkeySubOrgId)).first();
+    if (!user || user.deletionRequestedAt !== undefined) return "conflict";
+    if (user.did === args.did) return "adopted";
+    if (user.did) return "conflict";
+    const served = await ctx.db.query("didLogs").withIndex("by_user_did", (q) => q.eq("userDid", args.did)).first();
+    if (!served?.author) return "conflict";
+    const claimed = await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", args.did)).first()
+      ?? await ctx.db.query("users").withIndex("by_legacy_did", (q) => q.eq("legacyDid", args.did)).first();
+    if (claimed && claimed._id !== user._id) return "conflict";
+    await ctx.db.patch(user._id, { did: args.did, lastLoginAt: Date.now() });
+    return "adopted";
   },
 });

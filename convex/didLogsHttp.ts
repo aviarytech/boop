@@ -127,7 +127,7 @@ export const storeDidLog = httpAction(async (ctx, request) => {
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
-    if (error instanceof Error && error.message.startsWith("DID log conflict")) {
+    if (error instanceof Error && error.message.includes("DID log conflict")) {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 409,
         headers: { "Content-Type": "application/json", ...corsHeaders },
