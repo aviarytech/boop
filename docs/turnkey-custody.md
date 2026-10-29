@@ -125,6 +125,17 @@ without checking each step in a test parent org first.
   **Until it exists, the custody guarantee holds only if boop's backend was
   honest when each account signed up.** Accounts created before #286 had
   their sub-orgs created with no credentials by the old code.
+- **A compromised backend can phish the code through Turnkey's own email.**
+  The allow policy permits `INIT_OTP_V3` with any parameters, and its
+  `emailCustomization` (magic-link template, template ID and variables),
+  sender and reply-to are the parent's to choose. A backend could send a real
+  Turnkey OTP email, for any existing account, with a link or wording that
+  hands the code to it; with the code it can encrypt it to its own key,
+  relay `VERIFY_OTP_V2`, and log in itself. This needs the user to act on a
+  misleading email, but is not limited to sign-up. A policy condition
+  refusing INIT_OTP_V3 with those parameters set would close it if Turnkey's
+  policy language can express it; that is unvalidated, so it isn't in the
+  policy file.
 - A second device signing in within 60 s of sign-up is flagged by the
   tripwire by mistake, and that device's finding would need clearing by hand.
 - Another tab's login, silent refresh or sign-out (logout, boop session

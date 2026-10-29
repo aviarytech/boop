@@ -79,6 +79,8 @@ const seconds = (timestamp?: { seconds?: string; nanos?: string }) =>
   Number(timestamp?.seconds ?? 0) + Number(timestamp?.nanos ?? 0) / 1e9;
 
 const auditsInFlight = new Map<string, Promise<SubOrgAudit>>();
+/** Bumped by each login: a run from before it stores nothing. */
+const auditGeneration = new Map<string, number>();
 
 let clientPromise: Promise<TurnkeyClient> | null = null;
 
@@ -165,6 +167,9 @@ export async function completeTurnkeyLogin(params: {
 }
 
 function markAuditPending(subOrgId: string): void {
+  // Supersede any run still going: it audited the previous login.
+  auditsInFlight.delete(subOrgId);
+  auditGeneration.set(subOrgId, (auditGeneration.get(subOrgId) ?? 0) + 1);
   const sticky = lastSubOrgAudit(subOrgId)?.sticky ?? [];
   const pending: SubOrgAudit = { subOrgId, checkedAt: Date.now(), clean: false, findings: [...sticky, AUDIT_INCOMPLETE], sticky };
   try { localStorage.setItem(`${AUDIT_STORAGE_PREFIX}:${subOrgId}`, JSON.stringify(pending)); } catch { /* storage unavailable */ }
@@ -176,7 +181,11 @@ function runAudit(subOrgId: string): Promise<SubOrgAudit> {
   if (running) return running;
   // Bounded: refresh waits on it, and Turnkey requests have no timeout of
   // their own. A run that hangs is dropped; the next check starts a fresh one.
-  const audit = withTimeout(hardenAndAuditSubOrg(subOrgId), AUDIT_MS, "Turnkey audit timed out");
+  let current = true;
+  const generation = auditGeneration.get(subOrgId) ?? 0;
+  const stillCurrent = () => current && (auditGeneration.get(subOrgId) ?? 0) === generation;
+  const audit = withTimeout(hardenAndAuditSubOrg(subOrgId, { stillCurrent }), AUDIT_MS, "Turnkey audit timed out");
+  void audit.catch(() => { current = false; });
   auditsInFlight.set(subOrgId, audit);
   void audit.finally(() => { if (auditsInFlight.get(subOrgId) === audit) auditsInFlight.delete(subOrgId); }).catch(() => {});
   return audit;
@@ -194,7 +203,7 @@ export async function subOrgAuditDone(subOrgId: string): Promise<SubOrgAudit | n
  * sub-org's root user can remove them, so this session does it at login.
  * Then record anything other than this user's own sessions that could act.
  */
-export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudit> {
+export async function hardenAndAuditSubOrg(subOrgId: string, options: { stillCurrent?: () => boolean } = {}): Promise<SubOrgAudit> {
   const findings: string[] = [];
   const sticky = [...(lastSubOrgAudit(subOrgId)?.sticky ?? [])];
   try {
@@ -245,8 +254,13 @@ export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudi
     console.error("[turnkeySession] Sub-org audit failed:", err);
     findings.push(AUDIT_INCOMPLETE);
   }
-  const all = [...new Set([...sticky, ...findings])];
-  const audit: SubOrgAudit = { subOrgId, checkedAt: Date.now(), clean: all.length === 0, findings: all, sticky: [...new Set(sticky)] };
+  // Sticky findings recorded by another run meanwhile are kept, never overwritten.
+  const keep = [...new Set([...(lastSubOrgAudit(subOrgId)?.sticky ?? []), ...sticky])];
+  const all = [...new Set([...keep, ...findings])];
+  const audit: SubOrgAudit = { subOrgId, checkedAt: Date.now(), clean: all.length === 0, findings: all, sticky: keep };
+  // A run that timed out and was superseded reports what it saw but stores
+  // nothing: it may be older than what is stored now (#299 review).
+  if (options.stillCurrent && !options.stillCurrent()) return audit;
   try {
     localStorage.setItem(`${AUDIT_STORAGE_PREFIX}:${subOrgId}`, JSON.stringify(audit));
   } catch { /* storage unavailable: the audit reruns at next login */ }

@@ -158,6 +158,16 @@ test('a hung audit stops holding up refresh once its time is up', { timeout: 45_
   assert.equal(refreshed, true);
 });
 
+test('a run that no longer stands stores nothing, and sticky findings are never dropped', async () => {
+  localStorage.setItem('boop-turnkey-audit:sub', JSON.stringify({ subOrgId: 'sub', checkedAt: 1, clean: false, findings: ['user user-me had 1 API keys before its first login'], sticky: ['user user-me had 1 API keys before its first login'] }));
+  const stale = await session.hardenAndAuditSubOrg('sub', { stillCurrent: () => false });
+  assert.equal(stale.clean, false);
+  assert.match(session.lastSubOrgAudit('sub').findings.join(), /before its first login/);
+  // A current run that sees nothing wrong keeps the sticky finding another run recorded.
+  assert.equal((await session.hardenAndAuditSubOrg('sub')).clean, false);
+  assert.match(session.lastSubOrgAudit('sub').sticky.join(), /before its first login/);
+});
+
 test('discarding never deletes the key a stored session uses', async () => {
   await session.discardSessionKey('pub');
   assert.deepEqual(t.calls, []);
