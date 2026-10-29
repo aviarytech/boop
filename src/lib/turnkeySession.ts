@@ -144,11 +144,15 @@ export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudi
     if (users.length !== 1 || users[0].userId !== session?.userId) {
       findings.push(`sub-org has ${users.length} users`);
     }
-    // Passkeys are allowed: only the root user can add one. Non-expiring API
-    // keys are not: boop never creates them, so one means a hijacked session.
+    // boop creates sub-orgs with no credentials and only ever adds this user's
+    // own login keys. The parent picks the root user's credentials at creation,
+    // so a passkey, OAuth provider or longer-lived API key there could be the
+    // backend's own (#299 review). Flag them all.
     for (const user of users) {
-      const permanent = user.apiKeys.filter(key => !key.expirationSeconds);
-      if (permanent.length > 0) findings.push(`user ${user.userId} has ${permanent.length} non-expiring API keys`);
+      if (user.authenticators.length > 0) findings.push(`user ${user.userId} has ${user.authenticators.length} passkeys`);
+      if (user.oauthProviders.length > 0) findings.push(`user ${user.userId} has ${user.oauthProviders.length} OAuth providers`);
+      const foreign = user.apiKeys.filter(key => !(Number(key.expirationSeconds) > 0 && Number(key.expirationSeconds) <= TURNKEY_SESSION_SECONDS));
+      if (foreign.length > 0) findings.push(`user ${user.userId} has ${foreign.length} API keys that outlive a session`);
     }
     const quorum = configs.quorum;
     if (!quorum || quorum.threshold !== 1 || quorum.userIds.length !== 1 || quorum.userIds[0] !== session?.userId) {
@@ -188,6 +192,13 @@ export async function turnkeySessionStatus(subOrgId: string): Promise<TurnkeySes
  * devices. Returns the status after any refresh.
  */
 export async function refreshTurnkeySessionIfDue(subOrgId: string): Promise<TurnkeySessionStatus> {
+  // Tabs share the session and its key pairs, and a refresh deletes unused key
+  // pairs, so two concurrent refreshes can leave the session on a deleted key.
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  return locks ? locks.request("boop-turnkey-refresh", () => refreshUnlocked(subOrgId)) : refreshUnlocked(subOrgId);
+}
+
+async function refreshUnlocked(subOrgId: string): Promise<TurnkeySessionStatus> {
   const client = await getClient();
   const session = await client.getSession();
   if (!session || session.organizationId !== subOrgId) return "none";

@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { authErrorData } from "../../convex/lib/authError";
 import { onSessionExpiry } from "../lib/sessionExpiry";
-import { withAuthTimeout } from "../lib/authTimeout";
+import { withAuthTimeout, withTimeout } from "../lib/authTimeout";
 import { useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 /**
@@ -47,6 +47,9 @@ import {
   encryptOtpForSession,
   startTurnkeySessionRefresh,
 } from "../lib/turnkeySession";
+
+/** Turnkey steps never hold up boop's own sign-in or sign-out for longer than this. */
+const TURNKEY_STEP_MS = 15_000;
 
 /**
  * Get the Convex HTTP endpoint base URL from the Convex URL.
@@ -358,11 +361,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // block sign-in; the next OTP login retries it.
         try {
           if (!turnkey?.verificationToken) throw new Error("Server returned no Turnkey verification token");
-          const audit = await completeTurnkeyLogin({
+          const audit = await withTimeout(completeTurnkeyLogin({
             verificationToken: turnkey.verificationToken,
             subOrgId: turnkey.subOrgId,
             publicKey,
-          });
+          }), TURNKEY_STEP_MS);
           if (!audit.clean) console.warn("[useAuth] Turnkey sub-org audit:", audit.findings);
         } catch (turnkeyErr) {
           console.error("[useAuth] Turnkey session login failed:", turnkeyErr);
@@ -455,7 +458,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     resetAnalytics();
 
     try {
-      await clearTurnkeySession();
       await storageAdapter.remove(AUTH_STORAGE_KEY);
       await storageAdapter.remove(JWT_STORAGE_KEY);
       const httpUrl = getConvexHttpUrl();
@@ -466,6 +468,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
     } catch (err) {
       console.error("[useAuth] Logout endpoint failed:", err);
+    }
+    try {
+      // After boop's own session is gone, and even if the endpoint failed: a
+      // slow Turnkey must not keep a signed-out device signed in.
+      await withTimeout(clearTurnkeySession(), TURNKEY_STEP_MS, "Turnkey sign-out timed out");
+    } catch (err) {
+      console.warn("[useAuth] Turnkey session not cleared:", err);
     } finally {
       authTransitionRef.current = false;
       setIsLoading(false);

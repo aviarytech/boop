@@ -33,7 +33,9 @@ Login is Turnkey's encrypted OTP flow
 5. At every login the client removes `EMAIL_AUTH`, `EMAIL_RECOVERY`,
    `ROOT_USER_EMAIL_RECOVERY` and `SMS_AUTH` from its sub-org (sub-orgs made
    before #286 have them), then audits the sub-org: one user, that user alone in
-   the root quorum, no non-expiring API keys. The result is stored per device
+   the root quorum, no passkeys or OAuth providers, and no API key that outlives
+   a 7-day session. boop creates sub-orgs with no credentials, so anything else
+   was put there by someone else, possibly the parent at creation. The result is stored per device
    (`lastSubOrgAudit`); DID updates refuse to sign without a clean audit (PR b).
 
 The server signers (`convex/didCreation.ts`, `convex/lib/turnkeySigner.ts`,
