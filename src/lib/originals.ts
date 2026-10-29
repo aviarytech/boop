@@ -2,13 +2,14 @@
  * Lists as Originals (Originals SDK 5).
  *
  * Each list is an Original: a did:vh asset log signed by its owner's
- * did:webvh. Entries are signed on the owner's device — boop never signs for
- * anyone — and saved through Convex as the shared host (convex/originalsHost.ts),
- * which appends only an entry that extends the accepted head and verifies.
+ * did:webvh. Entries are signed with the owner's Turnkey assertion key through
+ * their own Turnkey session — boop never signs for anyone — and saved through
+ * Convex as the shared host (convex/originalsHost.ts), which appends only an
+ * entry that extends the accepted head and verifies.
  *
- * The device signer and its place in the owner's DID come from
- * `setListAuthorSource`, which the device-key work (#286) provides. Until a
- * source is set, nothing can be signed: lists still work, they just have no
+ * The signer comes from `setListAuthorSource`, installed at startup with
+ * `turnkeyListAuthorSource` (src/lib/authorIdentity.ts, #286). Without a live
+ * Turnkey session there is no signer: lists still work, they just have no
  * Original yet, and `mintList` throws ListNotAuthorableError.
  *
  * Nothing written under CEL (did:cel) is read. A legacy list is re-minted from
@@ -38,7 +39,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 /** The Convex calls the host needs, with the session already applied (useOriginalsClient). */
 export type OriginalsClient = Pick<ConvexReactClient, "query" | "action">;
 
-/** Who signs a list's entries on this device: the owner's DID, the device key's VM, and that DID's history. */
+/** Who signs a list's entries: the owner's DID, its assertion key's VM, and that DID's history. */
 export interface ListAuthor {
   author: AuthorRef;
   signer: OriginalsSigner;
@@ -47,23 +48,23 @@ export interface ListAuthor {
 
 let authorSource: () => Promise<ListAuthor | null> = async () => null;
 
-/** Install where this device's signer comes from. Called once by the device-key setup. */
+/** Install where the signer comes from. Called once at startup (src/main.tsx). */
 export function setListAuthorSource(source: () => Promise<ListAuthor | null>): void {
   authorSource = source;
 }
 
-/** This device's signer for `ownerDid`'s lists, or null when it cannot sign for them. */
+/** The signer for `ownerDid`'s lists, or null when this session cannot sign for them. */
 export async function getListAuthor(ownerDid: string): Promise<ListAuthor | null> {
   const who = await authorSource();
   return who && who.author.did === ownerDid ? who : null;
 }
 
 /**
- * Thrown when this device cannot sign for a list: it is someone else's, or the
- * device has no key in the owner's DID yet. Nothing the user did is wrong.
+ * Thrown when this session cannot sign for a list: it is someone else's, or
+ * there is no live Turnkey session. Nothing the user did is wrong.
  */
 export class ListNotAuthorableError extends Error {
-  constructor(message = "This device can't sign for this list yet.") {
+  constructor(message = "You can't sign for this list right now. Sign in again to sign it.") {
     super(message);
     this.name = "ListNotAuthorableError";
   }
@@ -145,10 +146,11 @@ export interface MintInput {
 }
 
 /**
- * Mint a list's Original from its current state: the genesis entry, signed on
- * this device and accepted by the host, which then names the list by it. Also
- * the re-mint for a legacy did:cel list — a new DID with no claim to the old
- * history. If another device minted first, its Original is kept.
+ * Mint a list's Original from its current state: the genesis entry, signed
+ * through the owner's Turnkey session and accepted by the host, which then
+ * names the list by it. Also the re-mint for a legacy did:cel list — a new DID
+ * with no claim to the old history. If another device minted first, its
+ * Original is kept.
  */
 export async function mintList(client: OriginalsClient, input: MintInput): Promise<string> {
   const who = await requireAuthor(input.ownerDid);

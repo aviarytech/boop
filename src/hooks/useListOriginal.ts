@@ -1,8 +1,8 @@
 /**
  * A list's Original, as its page sees it.
  *
- * A list with no Original yet is minted silently when its owner opens it on a
- * device that can sign. A legacy did:cel list cannot be read under Originals 5,
+ * A list with no Original yet is minted silently when its owner opens it
+ * while signed in. A legacy did:cel list cannot be read under Originals 5,
  * so its owner is asked to re-mint it (RemintListModal) before going on.
  */
 
@@ -31,7 +31,7 @@ export type ListOriginalState =
   | "unminted" // no Original yet, and this viewer can't mint it now
   | "minting"
   | "legacy" // a did:cel list waiting for its owner to re-mint it
-  | "unauthorable"; // owner, but this device has no key in their DID yet
+  | "unauthorable"; // owner, but no live Turnkey session to sign with
 
 export function useListOriginal(
   list: Doc<"lists"> | null | undefined,

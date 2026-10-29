@@ -7,10 +7,8 @@
  * `signBytes` callback: the same request checks, the same refusals, and the
  * same signed bytes (`proofHashData` for eddsa-jcs-2022).
  *
- * main is still on @originals/sdk 4, so the SDK 5 types this needs are
- * declared here, shape-compatible with @originals/sdk 5.1.0 /
- * @originals/vh 0.3.0. Once SDK 5 is installed (PR e, #298) these can be
- * replaced by the SDK's own types without changing any caller. Ported from:
+ * The types are SDK 5's own. The hashing is ported, not imported, so the
+ * signed bytes are computed here rather than by the caller. Ported from:
  *   @originals/sdk/dist/originals/signer.js  (summarize, describeEntry, checkRequest, keySigner)
  *   @originals/vh/dist/crypto/index.js       (proofConfig, proofHashData)
  *   @originals/vh/dist/log/index.js          (vhHash)
@@ -25,67 +23,12 @@ export const ORIGINALS_CRYPTOSUITE = "eddsa-jcs-2022";
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
 
-/** @originals/vh `AuthorRef`: a DID, one of its verification methods, and the DID version that names it. */
-export interface AuthorRef {
-  did: string;
-  verificationMethod: string;
-  versionId: string;
-}
+export type { AuthorRef, AuthorDidEvidence, Transition } from "@originals/vh/originals";
+export type { EntrySummary, ProofOptions, SigningRequest, OriginalsSigner } from "@originals/sdk/originals";
+import type { AuthorRef, AuthorDidEvidence, Transition } from "@originals/vh/originals";
+import type { EntrySummary, OriginalsSigner, SigningRequest } from "@originals/sdk/originals";
 
-/** The part of @originals/vh `AuthorDidEvidence` boop supplies: the author's whole did:webvh log. */
-export interface AuthorDidEvidence {
-  did: string;
-  log?: string | unknown[];
-  obtainedAt?: string;
-  source?: "package" | "host" | "fetched" | "retained" | "supplied";
-}
-
-export interface Transition {
-  resource: string;
-  from: string | null;
-  to: string | null;
-}
-
-export interface EntrySummary {
-  original: string;
-  operation: "create" | "update" | "deactivate";
-  name: string;
-  author: AuthorRef;
-  signer: AuthorRef & { role: "author" | "editor" };
-  changes: Transition[];
-  nameChanged: boolean;
-  metadataChanged: boolean;
-  editorsChanged: boolean;
-  editors: Array<{ did: string; name?: boolean; metadata?: boolean; resources: string[] }>;
-  versionTime: string;
-}
-
-/** Everything in a Data Integrity proof except proofValue. */
-export interface ProofOptions {
-  type: string;
-  cryptosuite: string;
-  verificationMethod: string;
-  proofPurpose: string;
-  [member: string]: unknown;
-}
-
-/** @originals/sdk `SigningRequest`. `entry` is an unsigned VH-Log entry. */
-export interface SigningRequest {
-  entry: Record<string, unknown>;
-  proofOptions: ProofOptions;
-  summary: EntrySummary;
-  display: string;
-  parent?: { entry: Record<string, unknown>; predecessor?: string };
-}
-
-/** @originals/sdk `OriginalsSigner`. */
-export interface OriginalsSigner {
-  readonly verificationMethod: string;
-  readonly cryptosuite: "eddsa-jcs-2022" | "bip340-jcs-2025";
-  sign(request: SigningRequest): Promise<Uint8Array>;
-}
-
-/** What PR e's `setListAuthorSource` expects (src/lib/originals.ts on feat/originals-sdk-5). */
+/** What `setListAuthorSource` in src/lib/originals.ts expects. */
 export interface ListAuthor {
   author: AuthorRef;
   signer: OriginalsSigner;
@@ -299,7 +242,7 @@ async function parentState(request: SigningRequest, number: number): Promise<Ent
   if (!pid || Number(pid[1]) !== number - 1 || !(await chainsTo(request.entry, p.versionId))) refuse("the parent does not chain to this entry");
   const predecessor = Number(pid[1]) === 1 ? (isJsonObject(p.parameters) ? p.parameters.scid : undefined) : parent.predecessor;
   if (!(await chainsTo(p, predecessor))) refuse("the parent is not the entry its versionId names");
-  return p.state as EntryState;
+  return p.state as unknown as EntryState;
 }
 
 /**
@@ -318,7 +261,7 @@ async function checkRequest(request: SigningRequest, verificationMethod: string)
   if (number === 1 ? parameters.method !== ORIGINALS_METHOD : parameters.method !== undefined && parameters.method !== ORIGINALS_METHOD) {
     refuse("not an Originals entry");
   }
-  const state = entry.state as EntryState | undefined;
+  const state = entry.state as unknown as EntryState | undefined;
   const author = state?.author;
   const editor = state?.editor;
   if (typeof state?.id !== "string" || !state.id.startsWith("did:vh:") || !["create", "update", "deactivate"].includes(state.operation)) {

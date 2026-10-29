@@ -13,12 +13,18 @@ import { initNativePlatform, initKeyboardHandling } from './lib/native'
 import { initNetworkMonitoring } from './lib/network'
 import { initAnalyticsIfConsented } from './lib/analyticsConsent'
 import { initSentry } from './lib/sentry'
+import { setListAuthorSource } from './lib/originals'
+import { turnkeyListAuthorSource } from './lib/authorIdentity'
 import './index.css'
 import './pages/Landing.css'
 import App from './App.tsx'
 
 // Initialize Sentry before anything else (no-op if VITE_SENTRY_DSN is not set)
 initSentry();
+
+// Lists' Originals are signed with the owner's Turnkey assertion key, through
+// their own Turnkey session (#286); boop's server never signs.
+setListAuthorSource(turnkeyListAuthorSource);
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string)
 

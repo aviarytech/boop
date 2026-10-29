@@ -64,8 +64,7 @@ export function RemintListModal({
         </p>
         {unauthorable && (
           <p className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300">
-            This device can't sign for you yet, so it can't re-mint the {kind}. Open it on a device
-            that can.
+            You need to sign in again before you can re-mint this {kind}.
           </p>
         )}
         {error && (

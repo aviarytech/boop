@@ -43,7 +43,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Published, but this device could not sign the entry recording it.
+  // Published, but the entry recording it could not be signed.
   const [unrecorded, setUnrecorded] = useState(false);
 
   const isPublished = publicationStatus?.status === "active";
@@ -67,8 +67,8 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
 
       // Record the published state in the list's Original first, so the
       // publication row and the log cannot disagree about what went public.
-      // A list this device can't sign for (no Original yet, or no device key
-      // in the owner's DID) still publishes, and we say it went unrecorded.
+      // A list that can't be signed now (no Original yet, or no live Turnkey
+      // session) still publishes, and we say it went unrecorded.
       setUnrecorded(false);
 
       if (list.assetDid?.startsWith("did:vh:")) {
@@ -346,8 +346,8 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
 
         {unrecorded && (
           <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm">
-            Published, but this device can't sign for the list yet, so the
-            publish isn't in the list's signed history.
+            Published, but you weren't able to sign it, so the publish isn't in
+            the list's signed history. Sign in again to sign future publishes.
           </div>
         )}
 

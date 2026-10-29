@@ -22,24 +22,25 @@ Check that list for what needs to be built. Mark items done when you ship them.
 
 Each list and note is an Original under `@originals/sdk` 5: a `did:vh` asset
 log signed by its owner's `did:webvh`, with the list's state (or a note's body)
-as its resource. Entries are signed on the owner's device, never by boop.
+as its resource. Entries are signed with the owner's Turnkey assertion key
+through their own Turnkey session, never by boop.
 Convex is the shared host (`convex/originalsHost.ts`): it appends an entry only
 when it extends the accepted head and verifies against the owner's DID history,
 so two devices racing get one append and a stale-parent answer, not a fork.
 
-A list gets its Original when its owner first opens it on a device that can
-sign (`src/hooks/useListOriginal.ts`); `lists.assetDid` is set then. The device
-signer comes from `setListAuthorSource` in `src/lib/originals.ts`, provided by
-the device-key work in #286. Originals 5 needs the signing key to be in the
-owner DID's `assertionMethod`, to not be one of its update keys, and each
-verification method's `controller` to be the DID itself.
+A list gets its Original when its owner first opens it while signed in
+(`src/hooks/useListOriginal.ts`); `lists.assetDid` is set then. The signer is
+`turnkeyListAuthorSource` (`src/lib/authorIdentity.ts`), installed in
+`src/main.tsx`. Originals 5 needs the signing key to be in the owner DID's
+`assertionMethod`, to not be one of its update keys, and each verification
+method's `controller` to be the DID itself; #286 PR b mints author DIDs that way.
 
 Nothing written under CEL (`did:cel`) is read. A list made before Originals 5
 is re-minted from its current state when its owner opens it (a blocking
 prompt); its old history is not carried over, and its `listEnvelopes` row is
 kept, unread, until that data is dropped.
 
-Focused verification: `node --test scripts/originals-v5.test.mjs`.
+Focused verification: `node --test scripts/originals-v5.test.mjs scripts/originals-turnkey-lists.test.mjs`.
 
 ## Sites
 

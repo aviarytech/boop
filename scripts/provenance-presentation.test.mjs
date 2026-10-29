@@ -165,7 +165,7 @@ test('a legacy did:cel list says it is re-minted on open, never that its history
 test('a list with no Original yet says when it will be minted, and shows no asset DID', () => {
   serve({ 'originalsHost:getAccepted': null });
   const { container } = openList({ _id: 'L', name: 'List', ownerDid: 'did:owner', createdAt: 1 });
-  assert.match(container.textContent, /Not an Original yet\. It's minted when its owner opens it on a device that can sign\./);
+  assert.match(container.textContent, /Not an Original yet\. It's minted when its owner next opens it\./);
   assert.doesNotMatch(container.textContent, /List DID \(Original\)/);
 });
 
