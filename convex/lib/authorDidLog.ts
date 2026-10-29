@@ -25,7 +25,7 @@ import { resolveDIDFromLog } from "didwebvh-ts";
 import type { DIDLog } from "didwebvh-ts";
 import { verifyAsync } from "@noble/ed25519";
 import { authorLogProblems } from "../../shared/authorDid";
-import { DidLogRejectedError, requireSignedByUpdateKeys } from "../../shared/didLogSignatures";
+import { DidLogRejectedError, parseCanonicalDidLog, requireSignedByUpdateKeys } from "../../shared/didLogSignatures";
 
 export { DidLogRejectedError };
 
@@ -43,15 +43,7 @@ const verifier = {
     verifyAsync(signature, message, publicKey.length === 33 ? publicKey.slice(1) : publicKey),
 };
 
-function parse(jsonl: string, what: string): DIDLog {
-  const lines = jsonl.split("\n").filter(line => line.trim());
-  if (lines.length === 0) throw new DidLogRejectedError(`${what} is empty`);
-  try {
-    return lines.map(line => JSON.parse(line));
-  } catch {
-    throw new DidLogRejectedError(`${what} is not JSON Lines`);
-  }
-}
+const parse = (jsonl: string, what: string): DIDLog => parseCanonicalDidLog(jsonl, what);
 
 const scidOf = (log: DIDLog) => String((log[0] as { parameters?: { scid?: unknown } }).parameters?.scid ?? "");
 
@@ -108,10 +100,11 @@ export async function checkDidLogWrite(stored: string | null, next: string, opti
     throw new DidLogRejectedError("A new SCID is a new DID, not an update to this one");
   }
   if (after.length < before.length) throw new DidLogRejectedError("The DID log drops entries that are already served");
-  for (let i = 0; i < before.length; i += 1) {
-    if (JSON.stringify(before[i]) !== JSON.stringify(after[i])) {
-      throw new DidLogRejectedError(`The DID log rewrites served entry ${i + 1}`);
-    }
+  // Byte for byte: served bytes are what readers hold, and they must not change.
+  const servedBytes = stored.endsWith("\n") ? stored.slice(0, -1) : stored;
+  const nextBytes = next.endsWith("\n") ? next.slice(0, -1) : next;
+  if (nextBytes !== servedBytes && !nextBytes.startsWith(`${servedBytes}\n`)) {
+    throw new DidLogRejectedError("The DID log rewrites entries that are already served");
   }
   return checked;
 }

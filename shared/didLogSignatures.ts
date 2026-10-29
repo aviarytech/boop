@@ -18,6 +18,24 @@ export class DidLogRejectedError extends Error {
   }
 }
 
+/**
+ * Parse a did.jsonl that must be canonical: one JSON.stringify'd entry per
+ * line, `\n`-separated, no blank lines, no `\r`, no duplicate keys or extra
+ * whitespace (each line equals JSON.stringify(JSON.parse(line))). Anything
+ * else can parse the same here yet differently, or not at all, elsewhere:
+ * Originals 5 refuses blank lines and duplicate keys (#300 review).
+ */
+export function parseCanonicalDidLog(jsonl: string, what = "The DID log"): DIDLog {
+  const body = jsonl.endsWith("\n") ? jsonl.slice(0, -1) : jsonl;
+  if (body.length === 0) throw new DidLogRejectedError(`${what} is empty`);
+  return body.split("\n").map((line, index) => {
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { throw new DidLogRejectedError(`${what} is not JSON Lines (line ${index + 1})`); }
+    if (JSON.stringify(entry) !== line) throw new DidLogRejectedError(`${what} line ${index + 1} is not canonical JSON`);
+    return entry;
+  }) as DIDLog;
+}
+
 const ED25519_MULTIKEY_PREFIX = [0xed, 0x01];
 
 type Entry = { versionId?: string; parameters?: Record<string, unknown>; proof?: unknown };

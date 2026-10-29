@@ -24,7 +24,7 @@ import {
   authorDidProblems,
   authorLogProblems,
 } from "../../shared/authorDid";
-import { requireSignedByUpdateKeys } from "../../shared/didLogSignatures";
+import { parseCanonicalDidLog, requireSignedByUpdateKeys } from "../../shared/didLogSignatures";
 import { remoteKeySigner, type EntrySummary, type ListAuthor } from "./originalsSigning";
 
 export interface TurnkeyEd25519Account {
@@ -161,7 +161,11 @@ export async function inspectAuthorDid(jsonl: string, keys?: AuthorKeys): Promis
   versionId: string;
   problems: string[];
 }> {
-  const log = parseDidLog(jsonl);
+  // Canonical bytes, as the server requires: anything else may verify here
+  // and fail in Originals 5 (#300 review).
+  let log: DIDLog;
+  try { log = parseCanonicalDidLog(jsonl); }
+  catch (error) { return { did: "", versionId: "", problems: [(error as Error).message] }; }
   // The same parameter and signature checks the server makes, before
   // resolving: didwebvh-ts accepts `proof: []`, and acts on witness rules.
   const unsigned = await requireSignedByUpdateKeys(log).then(() => null, (error: Error) => error.message);

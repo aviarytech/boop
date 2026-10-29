@@ -105,6 +105,26 @@ test('storeDidLog: only a continuation signed by the update keys before it', asy
 
 // #300 review round 5: the client must refuse it too, or a hostile server could
 // serve an unsigned "author DID" built from the account's public keys.
+// #300 review round 7: served bytes may not be rewritten, even to something
+// that parses the same, or Originals 5 rejects the log for good.
+test('a served log can only be extended byte for byte, with canonical lines', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  const updated = await updateAuthor(turnkey, author);
+  assert.equal((await authorDidLog.checkDidLogWrite(author.jsonl, updated, pinned(author.keys))).entries, 2);
+  assert.equal((await authorDidLog.checkDidLogWrite(author.jsonl, `${author.jsonl}\n`, pinned(author.keys))).entries, 1, 'one trailing newline is fine');
+  const [line1] = author.jsonl.split('\n');
+  for (const [what, jsonl] of [
+    ['a blank line', `${author.jsonl}\n\n`],
+    ['CRLF', author.jsonl.replace(/\n/g, '\r\n') + '\r'],
+    ['a duplicate key', line1.replace('{"versionId":', '{"versionId":"1-x","versionId":')],
+    ['re-serialised whitespace', JSON.stringify(JSON.parse(line1), null, 1).replace(/\n/g, '')],
+  ]) {
+    await assert.rejects(() => authorDidLog.checkDidLogWrite(author.jsonl, jsonl, pinned(author.keys)), /canonical|JSON Lines|rewrites/, what);
+    assert.ok((await authorDid.inspectAuthorDid(jsonl, author.keys)).problems.length > 0, `the client refuses ${what}`);
+  }
+});
+
 // #300 review round 6.
 test('the client checks parameters and signatures before resolving, so nothing is fetched', async () => {
   const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
