@@ -281,9 +281,10 @@ const VERSION_ID = /^(\d+)-(.+)$/;
 async function chainsTo(entry: Record<string, unknown> | undefined, predecessor: unknown): Promise<boolean> {
   const id = VERSION_ID.exec(String(entry?.versionId));
   if (!id || typeof predecessor !== "string" || !entry) return false;
-  const { proof: _proof, ...unsigned } = entry;
+  const unsigned: Record<string, unknown> = { ...entry, versionId: predecessor };
+  delete unsigned.proof;
   try {
-    return (await vhHash({ ...unsigned, versionId: predecessor })) === id[2];
+    return (await vhHash(unsigned)) === id[2];
   } catch {
     return false;
   }

@@ -442,5 +442,6 @@ export async function authorSigningReady(subOrgId: string): Promise<boolean> {
   } catch {
     return false;
   }
-  return lastSubOrgAudit(subOrgId)?.clean === true;
+  // A login just now starts the audit in the background; wait for it.
+  return (await subOrgAuditDone(subOrgId))?.clean === true;
 }

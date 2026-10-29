@@ -22,7 +22,7 @@ export function useAuthorDid(
   // through a new login, which brings a new token.
   const attempted = useRef<string | null>(null);
   const onAdoptedRef = useRef(onAdopted);
-  onAdoptedRef.current = onAdopted;
+  useEffect(() => { onAdoptedRef.current = onAdopted; }, [onAdopted]);
 
   useEffect(() => {
     const subOrgId = user?.turnkeySubOrgId;
@@ -40,6 +40,8 @@ export function useAuthorDid(
         const result = await ensureAuthorDid({ did: user?.did, turnkeySubOrgId: subOrgId }, token);
         if (result.status === "not-ready") {
           console.info("[authorDid] No live Turnkey session; Originals signing waits for the next login");
+        } else if (result.status === "kept") {
+          console.warn("[authorDid] The server kept this account's DID; this device can't confirm it as an author DID");
         } else if (result.status === "adopted") {
           onAdoptedRef.current(result.did);
         } else if (result.status === "reminted" || result.status === "moved") {

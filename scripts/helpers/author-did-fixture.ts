@@ -125,7 +125,8 @@ export async function resignLastEntry(jsonl: string, from: string, secret: Uint8
   const log = authorDid.parseDidLog(jsonl);
   const entry = log[log.length - 1] as unknown as Record<string, unknown> & { proof: Array<Record<string, unknown>> };
   const { proof, ...document } = entry;
-  const { proofValue: _old, ...options } = proof[0];
+  const options = { ...proof[0] };
+  delete options.proofValue;
   const forged = { ...options, verificationMethod: String(options.verificationMethod).split(from).join(multikey) };
   const payload = await prepareDataForSigning(document, forged as never);
   entry.proof = [{ ...forged, proofValue: multibaseEncode(await signAsync(payload, secret), MultibaseEncoding.BASE58_BTC) }];
@@ -151,5 +152,28 @@ export function withProof(jsonl: string, index: number, proof: unknown) {
 export async function deactivateAuthor(turnkey: MockTurnkey, minted: { jsonl: string; keys: authorDid.AuthorKeys }) {
   const signer = authorDid.authorUpdateSigner(turnkey, "sub-org", minted.keys.author);
   const result = await deactivateDID({ log: authorDid.parseDidLog(minted.jsonl), signer, verifier: signer });
+  return authorDid.serializeDidLog(result.log);
+}
+
+/**
+ * The #300 round-2 attack: a genesis under the attacker's own author key,
+ * then an update, legitimately signed by it, that hands the DID to the
+ * victim's public keys, optionally keeping an extra assertion key of the
+ * attacker's. Needs no access to the victim's Turnkey.
+ */
+export async function handOver(attacker: Awaited<ReturnType<typeof mintAuthor>>, attackerTurnkey: MockTurnkey, victim: authorDid.AuthorKeys, options: { extraKey?: string } = {}) {
+  const signer = authorDid.authorUpdateSigner(attackerTurnkey, "sub-org", attacker.keys.author);
+  const did = attacker.did;
+  const result = await updateDID({
+    log: authorDid.parseDidLog(attacker.jsonl), signer, verifier: signer,
+    updateKeys: [victim.author.multikey],
+    verificationMethods: [
+      { id: "#key-0", type: "Multikey", controller: did, publicKeyMultibase: victim.author.multikey },
+      { id: "#orig-1", type: "Multikey", controller: did, publicKeyMultibase: victim.assertion.multikey },
+      ...(options.extraKey ? [{ id: "#evil", type: "Multikey", controller: did, publicKeyMultibase: options.extraKey }] : []),
+    ],
+    authentication: ["#key-0"],
+    assertionMethod: ["#orig-1", ...(options.extraKey ? ["#evil"] : [])],
+  });
   return authorDid.serializeDidLog(result.log);
 }

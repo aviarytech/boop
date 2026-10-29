@@ -75,7 +75,11 @@ It is per account, not per device, so there is no per-device revocation.
 - `src/lib/authorDid.ts`: key lookup, the didwebvh-ts signer, genesis.
 - `src/lib/authorIdentity.ts`: after sign-in, keeps an author DID or moves the
   account to a new one (re-genesis through `/api/user/remintDid`, rows moved by
-  `applyRemint`, no continuity link). `turnkeyListAuthorSource` is the
+  paged `beginRemint` / `remintPage` / `finishRemint`, so it fits Convex's
+  per-mutation limits; no continuity link). The account and its served log
+  move together at the end, and only for the re-mint that claimed the move.
+  Rows written under the old DID by another device during a re-mint are not
+  moved. `turnkeyListAuthorSource` is the
   `ListAuthor` source for Originals 5 (#298).
 - `src/lib/originalsSigning.ts`: `keySigner` from `@originals/sdk/originals`
   with the key replaced by Turnkey: same checks and refusals, same signed bytes.
@@ -85,6 +89,12 @@ It is per account, not per device, so there is no per-device revocation.
   checked by boop as well as by didwebvh-ts, which accepts `proof: []`). Logs
   with witnesses, pre-rotation, deactivation, or a domain other than
   `WEBVH_DOMAIN` are refused.
+- An author DID is one where **every version**, genesis included, has exactly
+  the two keys (`#key-0` the only update key and only `authentication`,
+  `#orig-1` the only `assertionMethod`, nothing else) and both are the
+  sub-org's own. Checking only the latest version would let a genesis under
+  someone else's key hand over to the victim's public keys while keeping an
+  assertion key of its own. Log parameters are an allowlist.
 - The server adopts or re-genesises an account only onto an author DID whose
   two keys are that sub-org's own Turnkey accounts. It reads them with the
   parent's read-only access (`list_wallets`, `list_wallet_accounts`;

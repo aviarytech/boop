@@ -31,7 +31,9 @@ async function loadSdk5() {
 }
 
 const loaded = await loadSdk5();
-const skip = loaded ? false : "needs @originals/sdk 5 (set ORIGINALS_SDK5_DIR, or rebase onto #298)";
+// Chosen up front, not with `{ skip }`: bun's node:test runs skipped tests anyway.
+const sdk5Test = loaded ? test : test.skip;
+if (!loaded) console.log("originals-author-sdk5: skipped, needs @originals/sdk 5 (set ORIGINALS_SDK5_DIR, or rebase onto #298)");
 
 const outdir = "tmp/originals-author-sdk5-test";
 await mkdir(outdir, { recursive: true });
@@ -72,7 +74,7 @@ async function createAndEdit(author) {
   return { did, created, edited, loaded: await reader.load(zip) };
 }
 
-test("SDK 5 verifies a create and an edit signed by the re-genesised DID's Turnkey assertion key", { skip }, async () => {
+sdk5Test("SDK 5 verifies a create and an edit signed by the re-genesised DID's Turnkey assertion key", async () => {
   const turnkey = await mockTurnkey();
   // Re-genesis: the account starts on a pre-#286 DID and gets a new one.
   const legacy = await mintLegacyDid("boop.ad", "user-author");
@@ -100,7 +102,7 @@ test("SDK 5 verifies a create and an edit signed by the re-genesised DID's Turnk
   assert.equal(signs.filter(c => c.address === assertionAddress).length, 2, "the assertion key signed both Originals entries");
 });
 
-test("the signer signs exactly the bytes SDK 5 keySigner signs, and refuses what keySigner refuses", { skip }, async () => {
+sdk5Test("the signer signs exactly the bytes SDK 5 keySigner signs, and refuses what keySigner refuses", async () => {
   const turnkey = await mockTurnkey();
   const author = await mintAuthor(turnkey);
   const reference = loaded.sdk.keySigner({
@@ -134,7 +136,7 @@ test("the signer signs exactly the bytes SDK 5 keySigner signs, and refuses what
   assert.equal(turnkey.calls.length, before, "a refused request never reaches Turnkey");
 });
 
-test("SDK 5 refuses an author DID whose assertion key is also its update key", { skip }, async () => {
+sdk5Test("SDK 5 refuses an author DID whose assertion key is also its update key", async () => {
   const turnkey = await mockTurnkey();
   const shared = await mintAuthor(turnkey, { shareUpdateKey: true });
   assert.ok((await authorDidLog.checkDidLog(shared.jsonl, pinned(shared.keys))).authorProblems.some(p => /also an update key/.test(p)), "the server's check refuses it too");
@@ -145,7 +147,7 @@ test("SDK 5 refuses an author DID whose assertion key is also its update key", {
   }), err => /update key/i.test(err.message) || /AUTHOR_VM/.test(err.code ?? ""));
 });
 
-test("SDK 5 refuses to sign with a pre-#286 DID (controller \"\", one key in every role)", { skip }, async () => {
+sdk5Test("SDK 5 refuses to sign with a pre-#286 DID (controller \"\", one key in every role)", async () => {
   const legacy = await mintLegacyDid();
   const verificationMethod = `${legacy.did}#key-1`;
   const signer = loaded.sdk.keySigner({ keyType: "Ed25519", secretKey: legacy.secret, verificationMethod });
@@ -157,7 +159,7 @@ test("SDK 5 refuses to sign with a pre-#286 DID (controller \"\", one key in eve
   }), err => /controller|update key/i.test(err.message) || /AUTHOR_VM/.test(err.code ?? ""));
 });
 
-test("the signer's proofHashData matches SDK 5's for every captured request", { skip }, async () => {
+sdk5Test("the signer's proofHashData matches SDK 5's for every captured request", async () => {
   const turnkey = await mockTurnkey();
   const author = await mintAuthor(turnkey);
   const vh = await import(pathToFileURL(join(process.env.ORIGINALS_SDK5_DIR ?? process.cwd(), "node_modules/@originals/vh/dist/crypto/index.js")).href);

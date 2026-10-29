@@ -31,7 +31,13 @@ export interface DidDocumentLike {
   verificationMethod?: VerificationMethodLike[];
   assertionMethod?: Array<string | VerificationMethodLike>;
   authentication?: Array<string | VerificationMethodLike>;
+  capabilityInvocation?: unknown[];
+  capabilityDelegation?: unknown[];
+  keyAgreement?: unknown[];
 }
+
+/** Parameters a boop DID log may carry. Anything else (witnesses, pre-rotation, watchers...) is refused. */
+export const ALLOWED_LOG_PARAMETERS = new Set(["method", "scid", "updateKeys", "portable", "deactivated", "ttl", "nextKeyHashes", "witness", "watchers"]);
 
 const absolute = (did: string, ref: string) => (ref.startsWith("#") ? `${did}${ref}` : ref);
 
@@ -68,5 +74,41 @@ export function authorDidProblems(
   if (expect.assertionKey && assertion?.publicKeyMultibase !== expect.assertionKey) {
     problems.push(`#${ASSERTION_VM_FRAGMENT} is not this account's assertion key`);
   }
+
+  // Exactly the two keys, each in its one relationship: no other key anyone
+  // could sign with as this author (#300 review).
+  const authorId = `${did}#${AUTHOR_VM_FRAGMENT}`;
+  const ids = [...byId.keys()].sort();
+  if (ids.length !== 2 || ids[0] !== authorId || ids[1] !== assertionId) {
+    problems.push(`verification methods must be exactly #${AUTHOR_VM_FRAGMENT} and #${ASSERTION_VM_FRAGMENT}`);
+  }
+  if (expect.authorKey && byId.get(authorId)?.publicKeyMultibase !== expect.authorKey) problems.push(`#${AUTHOR_VM_FRAGMENT} is not this account's author key`);
+  if (assertionRefs.length !== 1) problems.push(`assertionMethod must be exactly #${ASSERTION_VM_FRAGMENT}`);
+  const authRefs = (doc.authentication ?? []).map(ref => absolute(did, typeof ref === "string" ? ref : ref.id ?? ""));
+  if (authRefs.length !== 1 || authRefs[0] !== authorId) problems.push(`authentication must be exactly #${AUTHOR_VM_FRAGMENT}`);
+  for (const relationship of ["capabilityInvocation", "capabilityDelegation", "keyAgreement"] as const) {
+    if ((doc[relationship] ?? []).length > 0) problems.push(`${relationship} must be empty`);
+  }
   return problems;
+}
+
+interface LogEntryLike {
+  versionId?: string;
+  parameters?: Record<string, unknown>;
+  state?: DidDocumentLike;
+}
+
+/**
+ * Everything that keeps a whole log from being an author DID log: every
+ * version, genesis included, must be an author DID with the same pinned keys.
+ * A DID whose history ever had another key could have signed as the author.
+ */
+export function authorLogProblems(entries: LogEntryLike[], expect: { authorKey?: string; assertionKey?: string } = {}): string[] {
+  let updateKeys: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    if (Array.isArray(entry.parameters?.updateKeys)) updateKeys = entry.parameters.updateKeys as string[];
+    const problems = authorDidProblems(entry.state ?? {}, updateKeys, expect);
+    if (problems.length > 0) return problems.map(problem => `version ${index + 1}: ${problem}`);
+  }
+  return [];
 }

@@ -14,6 +14,7 @@ import {
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
 import { assertDidLogOwnership, didLogPathForSubOrg, DidLogOwnershipError } from "./lib/didLogAuth";
 import { checkAccountDidLog, KeyLookupError } from "./didLogsHttp";
+import { REMINT_TABLES } from "./migrations/remintUserDidDb";
 
 /** The domain encoded in a did:webvh, percent-decoded. Null if not a did:webvh. */
 function didWebvhDomain(did: string): string | null {
@@ -168,9 +169,9 @@ export const remintUserDID = httpAction(async (ctx, request) => {
     }
 
 
-    // Checked before applyRemint, whether or not a log is supplied: the new DID
+    // Checked before any row moves, whether or not a log is supplied: the new DID
     // must be minted at this sub-org's own path, so it cannot name another
-    // account. storeDidLog patches the didLogs row matching `path`, so an
+    // account. finishRemint patches the didLogs row matching `path`, so an
     // unchecked path could also point another account's serving path at this
     // caller's log. Rejecting afterwards would leave rows already moved.
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: newDid, path: path ?? didLogPathForSubOrg(auth.turnkeySubOrgId) });
@@ -182,18 +183,27 @@ export const remintUserDID = httpAction(async (ctx, request) => {
     if (checked.did !== newDid) return errorResponse(request, "didLog is for another DID", 422);
     if (!checked.author) return errorResponse(request, `Not this account's author DID: ${checked.authorProblems.join("; ")}`, 422);
 
-    const { rewritten } = await ctx.runMutation(
-      internal.migrations.remintUserDidDb.applyRemint,
-      { userId: user._id, oldDid: user.did, newDid }
-    );
-
-    await ctx.runMutation(internal.migrations.remintUserDidDb.storeDidLog, {
-      userDid: newDid,
-      path,
-      log: didLog,
-      scid: checked.scid,
-      versionId: checked.versionId,
-      author: checked.author,
+    // Paged, so it fits Convex's per-mutation limits however large the tables
+    // are; the account and its served log move together at the end.
+    const remint = internal.migrations.remintUserDidDb;
+    const move = { userId: user._id, oldDid: user.did, newDid };
+    const begun = await ctx.runMutation(remint.beginRemint, move);
+    if (begun.skipped) {
+      // Another re-mint moved the account first. Store nothing: its log is the one served.
+      return jsonResponse(request, { success: true, newDid: begun.did, rewritten: 0, skipped: "moved by another re-mint" });
+    }
+    let rewritten = 0;
+    for (const table of REMINT_TABLES) {
+      let cursor: string | null = null;
+      for (;;) {
+        const page: { rewritten: number; isDone: boolean; cursor: string } = await ctx.runMutation(remint.remintPage, { ...move, table, cursor });
+        rewritten += page.rewritten;
+        if (page.isDone) break;
+        cursor = page.cursor;
+      }
+    }
+    await ctx.runMutation(remint.finishRemint, {
+      ...move, path, log: didLog, scid: checked.scid, versionId: checked.versionId, author: checked.author,
     });
 
     console.log(

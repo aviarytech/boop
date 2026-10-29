@@ -63,6 +63,10 @@ function fixture() {
       collect: async () => (rows[table] ?? []).filter(r => predicates.every(p => p(r))),
       take: async n => (await q.collect()).slice(0, n),
       first: async () => (await q.collect())[0] ?? null,
+      paginate: async ({ numItems, cursor }) => {
+        const all = await q.collect(); const start = Number(cursor ?? 0);
+        return { page: all.slice(start, start + numItems), isDone: start + numItems >= all.length, continueCursor: String(start + numItems) };
+      },
       unique: async () => (await q.collect())[0] ?? null,
     };
     return q;
@@ -219,6 +223,40 @@ test('Turnkey being unreadable fails a DID write closed (503), storing nothing',
   const response = await modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }));
   assert.equal(response.status, 503);
   assert.equal(ctx.rows.didLogs.length, 0);
+});
+
+// #300 review round 2: the re-mint is paged so it fits Convex's limits, and a
+// re-mint that lost a race stores nothing.
+test('a paged re-mint moves every row across many pages, then the account and its log together', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  for (let i = 0; i < 450; i += 1) ctx.rows.items.push({ _id: `IX${i}`, listId: 'L1', name: `n${i}`, checked: false, createdAt: 1, createdByDid: i % 3 ? old : VICTIM });
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(ctx.rows.items.filter(r => r.createdByDid === old).length, 0);
+  assert.equal(ctx.rows.items.filter(r => r.createdByDid === OWN).length, 300);
+  assert.equal(ctx.rows.items.filter(r => r.createdByDid === VICTIM).length, 150);
+  assert.equal(ctx.rows.users[0].did, OWN);
+  assert.equal(ctx.rows.users[0].pendingRemint, undefined);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').userDid, OWN);
+});
+
+test('a re-mint that lost the race stores nothing, and two can\'t run at once', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  // Other keys: the same keys minting in the same second would give the very same DID.
+  const other = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await assert.rejects(() => call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: other.did }), /Another device/);
+  await call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+  // The loser: the account already moved, so it is told where, and nothing of its own is stored.
+  assert.deepEqual(await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: other.did }), { skipped: true, did: OWN });
+  await assert.rejects(() => call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: other.did, path: 'user-owner', log: other.jsonl, scid: 's', versionId: 'v', author: true }), /no longer/);
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: other.did, didLog: other.jsonl, path: 'user-owner' }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).newDid, OWN);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').log, OWN_LOG, 'the winner\'s log is still the one served');
 });
 
 test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {

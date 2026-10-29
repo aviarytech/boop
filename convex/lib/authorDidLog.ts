@@ -24,7 +24,7 @@
 import { multibaseDecode, parseDidKeyVerificationMethod, prepareDataForSigning, resolveDIDFromLog } from "didwebvh-ts";
 import type { DIDLog } from "didwebvh-ts";
 import { verifyAsync } from "@noble/ed25519";
-import { authorDidProblems } from "../../shared/authorDid";
+import { ALLOWED_LOG_PARAMETERS, authorLogProblems } from "../../shared/authorDid";
 
 export class DidLogRejectedError extends Error {
   constructor(message: string) {
@@ -73,8 +73,17 @@ async function requireSignedByUpdateKeys(log: DIDLog): Promise<void> {
   for (const [index, raw] of (log as Entry[]).entries()) {
     const what = `Entry ${index + 1}`;
     const parameters = raw.parameters ?? {};
-    const witness = parameters.witness as { witnesses?: unknown[] } | null | undefined;
-    if (witness && Array.isArray(witness.witnesses) && witness.witnesses.length > 0) throw new DidLogRejectedError(`${what} uses witnesses, which boop DIDs don't`);
+    // An allowlist, so a parameter didwebvh-ts acts on (e.g. the legacy
+    // `witnesses`, which makes it fetch from the DID's domain) can't slip by.
+    for (const name of Object.keys(parameters)) {
+      if (!ALLOWED_LOG_PARAMETERS.has(name)) throw new DidLogRejectedError(`${what} sets ${name}, which boop DIDs don't use`);
+    }
+    // didwebvh-ts writes `witness: {}` for none; anything with members is a witness rule.
+    const witness = parameters.witness;
+    if (witness !== undefined && witness !== null && (typeof witness !== "object" || Object.keys(witness).length > 0)) {
+      throw new DidLogRejectedError(`${what} uses witnesses, which boop DIDs don't`);
+    }
+    if (Array.isArray(parameters.watchers) && parameters.watchers.length > 0) throw new DidLogRejectedError(`${what} names watchers, which boop DIDs don't use`);
     if (Array.isArray(parameters.nextKeyHashes) && parameters.nextKeyHashes.length > 0) throw new DidLogRejectedError(`${what} uses pre-rotation, which boop DIDs don't`);
     const authorized = index === 0 ? parameters.updateKeys : updateKeys;
     if (!Array.isArray(authorized) || authorized.length === 0) throw new DidLogRejectedError(`${what} has no update keys to be signed by`);
@@ -111,6 +120,13 @@ export interface CheckOptions {
 /** Resolve `jsonl` in full, or throw. */
 export async function checkDidLog(jsonl: string, options: CheckOptions = {}): Promise<CheckedDidLog> {
   const log = parse(jsonl, "The DID log");
+  // Before anything resolves (or fetches): every version names a DID on our domain.
+  if (options.domain) {
+    for (const [index, entry] of (log as Array<{ state?: { id?: unknown } }>).entries()) {
+      const domain = decodeURIComponent(String(entry.state?.id ?? "").split(":")[3] ?? "");
+      if (domain !== options.domain) throw new DidLogRejectedError(`Entry ${index + 1} names ${domain || "no DID"}, not ${options.domain}`);
+    }
+  }
   await requireSignedByUpdateKeys(log);
   let resolved;
   try {
@@ -123,12 +139,9 @@ export async function checkDidLog(jsonl: string, options: CheckOptions = {}): Pr
     throw new DidLogRejectedError(`The DID log only verifies up to ${resolved.meta.versionId}`);
   }
   if (resolved.meta.deactivated || !resolved.doc) throw new DidLogRejectedError("The DID is deactivated");
-  if (options.domain) {
-    const domain = decodeURIComponent(resolved.did.split(":")[3] ?? "");
-    if (domain !== options.domain) throw new DidLogRejectedError(`The DID names ${domain}, not ${options.domain}`);
-  }
   const keys = options.keys;
-  const authorProblems = authorDidProblems(resolved.doc, resolved.meta.updateKeys, keys ?? {});
+  // Every version, not just the latest: a key in any version could have signed as the author.
+  const authorProblems = authorLogProblems(log as never, keys ?? {});
   // Without both keys pinned, nothing counts as this account's author DID.
   if (!keys?.authorKey || !keys.assertionKey) authorProblems.push("this account's Turnkey keys are unknown");
   return { did: resolved.did, scid: scidOf(log), versionId: resolved.meta.versionId, entries: log.length, authorProblems };

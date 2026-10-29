@@ -17,7 +17,7 @@ const load = async (entry, name, plugins = []) => {
   return import(`${pathToFileURL(`${process.cwd()}/${outdir}/${name}.mjs`).href}?t=${Date.now()}`);
 };
 const fixture = await load('scripts/helpers/author-did-fixture.ts', 'fixture');
-const { mockTurnkey, mintAuthor, mintLegacyDid, updateAuthor, resignLastEntry, withProof, deactivateAuthor, pinned, authorDid, authorDidLog, shared } = fixture;
+const { mockTurnkey, mintAuthor, mintLegacyDid, updateAuthor, resignLastEntry, withProof, deactivateAuthor, handOver, pinned, authorDid, authorDidLog, shared } = fixture;
 
 // authorIdentity with its Turnkey session and Convex URL replaced by the test's.
 const t = globalThis.__authorIdentityTest = { ready: true, backend: null };
@@ -114,14 +114,49 @@ test('an entry without a signature is refused, at genesis or after', async () =>
   }
 });
 
+// #300 review round 2: pinning only the latest version let an attacker's own
+// genesis (and an extra assertion key) through, with no Turnkey access.
+test('a DID handed over to the victim\'s public keys is not their author DID, in any version', async () => {
+  const victimTurnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const victim = await authorDid.resolveAuthorKeys(victimTurnkey, SUB_ORG);
+  const attackerTurnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const attacker = await mintAuthor(attackerTurnkey, { path: PATH });
+  for (const extraKey of [undefined, attacker.keys.assertion.multikey]) {
+    const log = await handOver(attacker, attackerTurnkey, victim, { extraKey });
+    const checked = await authorDidLog.checkDidLog(log, pinned(victim));
+    assert.notDeepEqual(checked.authorProblems, [], `extra key: ${Boolean(extraKey)}`);
+    assert.match(checked.authorProblems[0], /^version 1:/, 'refused for its history, not just its head');
+    assert.ok((await authorDid.inspectAuthorDid(log, victim)).problems.length > 0, 'the client refuses it too');
+  }
+});
+
+test('only #key-0 and #orig-1, each in its one relationship', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  const [genesis] = authorDid.parseDidLog(author.jsonl);
+  const tamper = state => shared.authorDidProblems({ ...genesis.state, ...state }, genesis.parameters.updateKeys, pinned(author.keys).keys);
+  assert.deepEqual(tamper({}), []);
+  assert.ok(tamper({ capabilityInvocation: ['#key-0'] }).length > 0);
+  assert.ok(tamper({ authentication: ['#key-0', '#orig-1'] }).length > 0);
+  assert.ok(tamper({ assertionMethod: ['#orig-1', '#key-0'] }).length > 0);
+  assert.ok(tamper({ verificationMethod: [...genesis.state.verificationMethod, { id: '#x', type: 'Multikey', controller: author.did, publicKeyMultibase: author.keys.assertion.multikey }] }).length > 0);
+});
+
 test('witnesses, pre-rotation, deactivation and other domains are refused', async () => {
   const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
   const author = await mintAuthor(turnkey, { path: PATH });
   const [genesis] = authorDid.parseDidLog(author.jsonl);
-  for (const parameters of [{ witness: { threshold: 1, witnesses: [{ id: 'did:key:z6Mkw' }] } }, { nextKeyHashes: ['Qm'] }]) {
+  for (const parameters of [{ witness: { threshold: 1, witnesses: [{ id: 'did:key:z6Mkw' }] } }, { nextKeyHashes: ['Qm'] },
+    { witnesses: ['did:key:z6Mkw'], witnessThreshold: 1 }, { watchers: ['https://evil.example'] }]) {
     const tampered = JSON.stringify({ ...genesis, parameters: { ...genesis.parameters, ...parameters } });
-    await assert.rejects(() => authorDidLog.checkDidLog(tampered), /witnesses|pre-rotation/);
+    await assert.rejects(() => authorDidLog.checkDidLog(tampered), /witnesses|pre-rotation|watchers|doesn't use|don't use/, JSON.stringify(parameters));
   }
+  // The domain is checked before anything resolves, so nothing is fetched from it.
+  const elsewhere = await mintAuthor(turnkey, { domain: 'evil.example', path: PATH });
+  const fetchBefore = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('nothing may be fetched'); };
+  try { await assert.rejects(() => authorDidLog.checkDidLog(elsewhere.jsonl, { domain: 'boop.ad' }), /names evil.example, not boop.ad/); }
+  finally { globalThis.fetch = fetchBefore; }
   const deactivated = await deactivateAuthor(turnkey, author);
   await assert.rejects(() => authorDidLog.checkDidLogWrite(author.jsonl, deactivated), /deactivated/);
   await assert.rejects(() => authorDidLog.checkDidLog(author.jsonl, { domain: 'evil.example' }), /names boop.ad, not evil.example/);
@@ -237,6 +272,20 @@ test('a sign-up whose updateDID failed adopts the author DID it already stored',
   const api = server({ log: author.jsonl });
   assert.deepEqual(await ensure({ did: 'did:temp:sub-org' }, api, turnkey), { status: 'adopted', did: author.did });
   assert.deepEqual(api.state.calls.filter(c => c[0] === 'POST').map(c => [c[1], c[2].did]), [['/api/user/updateDID', author.did]]);
+});
+
+test('when the server keeps the account\'s DID, the client reports it kept and does not reload', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const legacy = await mintLegacyDid('boop.ad', PATH);
+  const api = server({ log: legacy.jsonl, did: legacy.did });
+  const fetchKept = async (url, options) => new URL(url).pathname === '/api/user/remintDid'
+    ? Response.json({ success: true, newDid: legacy.did, rewritten: 0, skipped: 'already an author DID on the current domain' })
+    : api.fetch(url, options);
+  t.backend = turnkey;
+  const result = await identity.ensureAuthorDid({ turnkeySubOrgId: SUB_ORG, did: legacy.did }, 'jwt', {
+    backend: turnkey, ready: async () => true, fetch: fetchKept, httpUrl: 'https://convex.test', domain: 'boop.ad',
+  });
+  assert.deepEqual(result, { status: 'kept', did: legacy.did });
 });
 
 test('an author DID whose served log names other keys is re-genesised (the server decides whether to move it)', async () => {

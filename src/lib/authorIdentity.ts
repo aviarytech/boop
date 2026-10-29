@@ -87,6 +87,8 @@ export type EnsureAuthorDidResult =
   | { status: "reminted"; did: string; previousDid: string }
   /** The account is already on `did` (another device moved it); this device had `previousDid` cached. */
   | { status: "moved"; did: string; previousDid: string }
+  /** The server kept the account on `did`, which this device couldn't confirm as an author DID. */
+  | { status: "kept"; did: string }
   /** A first did:webvh for an account that had none. */
   | { status: "adopted"; did: string };
 
@@ -138,9 +140,11 @@ export async function ensureAuthorDid(
 
   const minted = await mintAuthorDid({ backend: deps.backend, subOrgId, keys, domain: deps.domain, path });
   if (did) {
-    const result = await post(deps, token, "/api/user/remintDid", { did: minted.did, didLog: minted.jsonl, path }) as { newDid: string };
+    const result = await post(deps, token, "/api/user/remintDid", { did: minted.did, didLog: minted.jsonl, path }) as { newDid: string | null };
     if (result.newDid !== minted.did) {
-      // The server kept the account on another author DID; pick it up from the path next load.
+      // The server kept the account where it is: nothing changed, so no reload (#300 review).
+      if (!result.newDid || result.newDid === did) return { status: "kept", did };
+      // Another re-mint moved the account first; its DID is the one served.
       return { status: "moved", did: result.newDid, previousDid: did };
     }
     current = { subOrgId, did: minted.did, log: minted.jsonl, versionId: minted.versionId, keys };

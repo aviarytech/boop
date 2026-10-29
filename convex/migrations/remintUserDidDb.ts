@@ -153,25 +153,6 @@ export const getDidLogFor = internalQuery({
   },
 });
 
-/** Serve a re-genesised DID's log at the account's path. The caller checked it (didLogValidation.checkWrite). */
-export const storeDidLog = internalMutation({
-  args: {
-    userDid: v.string(), path: v.string(), log: v.string(),
-    scid: v.string(), versionId: v.string(), author: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("didLogs")
-      .withIndex("by_path", (q) => q.eq("path", args.path))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, { ...args, updatedAt: Date.now() });
-      return;
-    }
-    await ctx.db.insert("didLogs", { ...args, updatedAt: Date.now() });
-  },
-});
-
 /** Users whose DID sits on a domain other than the one we mint on today. */
 export const listUsersOnDomain = internalQuery({
   args: { domain: v.string() },
@@ -217,6 +198,49 @@ export const previewRemint = internalQuery({
   },
 });
 
+/** Every table a re-mint rewrites, in the order it rewrites them. */
+export const REMINT_TABLES = [...new Set([...Object.keys(EXACT_MATCH_FIELDS), ...Object.keys(PREFIX_MATCH_FIELDS)])];
+
+/** The account, or "skipped" when it has already moved off `oldDid`. Throws if it may not move to `newDid`. */
+async function remintable(ctx: MutationCtx, userId: Id<"users">, oldDid: string, newDid: string) {
+  const user = await ctx.db.get(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+  if (user.deletionRequestedAt !== undefined) throw new Error("Account deletion is in progress");
+  // Someone already re-minted this user; don't rewrite a second time.
+  if (user.did !== oldDid) return "skipped" as const;
+  // Never move an account onto an identity another account holds: ownership is
+  // DID-based, so that would hand over the other account's lists and keys.
+  const holder = await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", newDid)).first()
+    ?? await ctx.db.query("users").withIndex("by_legacy_did", (q) => q.eq("legacyDid", newDid)).first();
+  if (holder && holder._id !== user._id) throw new Error("DID is already in use by another account");
+  return user;
+}
+
+/** Move one row off `oldDid`. Returns whether it changed. */
+async function rewriteRow(ctx: MutationCtx, table: string, row: Row, oldDid: string, newDid: string): Promise<boolean> {
+  const patch: Record<string, unknown> = {};
+  for (const field of EXACT_MATCH_FIELDS[table] ?? []) {
+    if (row[field] === oldDid) patch[field] = newDid;
+  }
+  const nested = rewriteNested(table, row, oldDid, newDid);
+  if (nested) Object.assign(patch, nested);
+  for (const field of PREFIX_MATCH_FIELDS[table] ?? []) {
+    const value = row[field];
+    // Whole-DID prefix only: `{oldDid}/...`, never a longer DID sharing its characters.
+    if (typeof value === "string" && value.startsWith(`${oldDid}/`)) patch[field] = newDid + value.slice(oldDid.length);
+  }
+  if (Object.keys(patch).length === 0) return false;
+  await ctx.db.patch(row._id as never, patch as never);
+  // Row-only/secondary assignment changes must invalidate offline edits.
+  // Keep collision rows: their original attribution is historical evidence.
+  if (table === "itemAssignees" && patch.assigneeDid) {
+    const item = await ctx.db.get(row.itemId as Id<"items">);
+    if (item) await ctx.db.patch(item._id, { updatedAt: Math.max(Date.now(), (item.updatedAt ?? 0) + 1), ...(item.assignmentsVersion !== undefined ? { assignmentsVersion: item.assignmentsVersion + 1 } : {}) });
+  }
+  return true;
+}
+
+/** The whole re-mint in one mutation. For small deployments and operators; /api/user/remintDid pages through it. */
 export const applyRemint = internalMutation({
   args: {
     userId: v.id("users"),
@@ -224,65 +248,74 @@ export const applyRemint = internalMutation({
     newDid: v.string(),
   },
   handler: async (ctx: MutationCtx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) throw new Error(`User ${args.userId} not found`);
-    if (user.deletionRequestedAt !== undefined) throw new Error("Account deletion is in progress");
-    if (user.did !== args.oldDid) {
-      // Someone already re-minted this user; don't rewrite a second time.
-      return { rewritten: 0, skipped: true };
-    }
-    // Never move an account onto an identity another account holds: ownership is
-    // DID-based, so that would hand over the other account's lists and keys.
-    const holder = await ctx.db.query("users").withIndex("by_did", (q) => q.eq("did", args.newDid)).first()
-      ?? await ctx.db.query("users").withIndex("by_legacy_did", (q) => q.eq("legacyDid", args.newDid)).first();
-    if (holder && holder._id !== user._id) throw new Error("DID is already in use by another account");
-
+    const user = await remintable(ctx, args.userId, args.oldDid, args.newDid);
+    if (user === "skipped") return { rewritten: 0, skipped: true };
     let rewritten = 0;
-
-    for (const [table, fields] of Object.entries(EXACT_MATCH_FIELDS)) {
+    for (const table of REMINT_TABLES) {
       const rows = (await ctx.db.query(table as never).collect()) as unknown as Row[];
-      for (const row of rows) {
-        const patch: Record<string, unknown> = {};
-        for (const field of fields) {
-          if (row[field] === args.oldDid) patch[field] = args.newDid;
-        }
-        const nested = rewriteNested(table, row, args.oldDid, args.newDid);
-        if (nested) Object.assign(patch, nested);
-        if (Object.keys(patch).length > 0) {
-          await ctx.db.patch(row._id as never, patch as never);
-          // Row-only/secondary assignment changes must invalidate offline edits.
-          // Keep collision rows: their original attribution is historical evidence.
-          if (table === "itemAssignees" && patch.assigneeDid) {
-            const item = await ctx.db.get(row.itemId as Id<"items">);
-            if (item) await ctx.db.patch(item._id, { updatedAt: Math.max(Date.now(), (item.updatedAt ?? 0) + 1), ...(item.assignmentsVersion !== undefined ? { assignmentsVersion: item.assignmentsVersion + 1 } : {}) });
-          }
-          rewritten += 1;
-        }
-      }
+      for (const row of rows) if (await rewriteRow(ctx, table, row, args.oldDid, args.newDid)) rewritten += 1;
     }
-
-    for (const [table, fields] of Object.entries(PREFIX_MATCH_FIELDS)) {
-      const rows = (await ctx.db.query(table as never).collect()) as unknown as Row[];
-      for (const row of rows) {
-        const patch: Record<string, unknown> = {};
-        for (const field of fields) {
-          const value = row[field];
-          // Whole-DID prefix only: `{oldDid}/...`, never a longer DID sharing its characters.
-          if (typeof value === "string" && value.startsWith(`${args.oldDid}/`)) {
-            patch[field] = args.newDid + value.slice(args.oldDid.length);
-          }
-        }
-        if (Object.keys(patch).length > 0) {
-          await ctx.db.patch(row._id as never, patch as never);
-          rewritten += 1;
-        }
-      }
-    }
-
     // The identity row moves last: if anything above throws, `did` still points
     // at the old value and the whole run is safe to retry.
     await ctx.db.patch(args.userId, { did: args.newDid });
-
     return { rewritten, skipped: false };
+  },
+});
+
+// --- Paged re-mint (#286 PR b) -------------------------------------------------
+// Every pre-#286 account re-mints at its first sign-in with a Turnkey session,
+// so the rewrite can't be one mutation scanning every table: past Convex's
+// per-mutation read limits it would fail for everyone. beginRemint claims the
+// move, remintPage rewrites one page of one table, finishRemint moves the
+// account and serves the new log together. Rows written under the old DID
+// between a table's pass and finishRemint are not moved.
+
+const REMINT_PAGE_SIZE = 200;
+const REMINT_CLAIM_MS = 5 * 60 * 1000;
+
+export const beginRemint = internalMutation({
+  args: { userId: v.id("users"), oldDid: v.string(), newDid: v.string() },
+  handler: async (ctx, args): Promise<{ skipped: true; did: string | null } | { skipped: false }> => {
+    const user = await remintable(ctx, args.userId, args.oldDid, args.newDid);
+    if (user === "skipped") return { skipped: true, did: (await ctx.db.get(args.userId))?.did ?? null };
+    const pending = user.pendingRemint;
+    if (pending && pending.newDid !== args.newDid && Date.now() - pending.startedAt < REMINT_CLAIM_MS) {
+      throw new Error("Another device is moving this account. Try again shortly.");
+    }
+    await ctx.db.patch(user._id, { pendingRemint: { oldDid: args.oldDid, newDid: args.newDid, startedAt: Date.now() } });
+    return { skipped: false };
+  },
+});
+
+export const remintPage = internalMutation({
+  args: { userId: v.id("users"), oldDid: v.string(), newDid: v.string(), table: v.string(), cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (user?.pendingRemint?.newDid !== args.newDid || user.did !== args.oldDid) throw new Error("This re-mint is no longer the account's pending one");
+    if (!REMINT_TABLES.includes(args.table)) throw new Error(`Not a re-mint table: ${args.table}`);
+    const page = await ctx.db.query(args.table as never).paginate({ numItems: REMINT_PAGE_SIZE, cursor: args.cursor });
+    let rewritten = 0;
+    for (const row of page.page as unknown as Row[]) if (await rewriteRow(ctx, args.table, row, args.oldDid, args.newDid)) rewritten += 1;
+    return { rewritten, isDone: page.isDone, cursor: page.continueCursor };
+  },
+});
+
+export const finishRemint = internalMutation({
+  args: {
+    userId: v.id("users"), oldDid: v.string(), newDid: v.string(),
+    path: v.string(), log: v.string(), scid: v.string(), versionId: v.string(), author: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (user?.pendingRemint?.newDid !== args.newDid || user.did !== args.oldDid) throw new Error("This re-mint is no longer the account's pending one");
+    // The identity row and the served log move together, last.
+    await ctx.db.patch(args.userId, { did: args.newDid, pendingRemint: undefined });
+    const row = {
+      userDid: args.newDid, path: args.path, log: args.log, scid: args.scid,
+      versionId: args.versionId, author: args.author, updatedAt: Date.now(),
+    };
+    const existing = await ctx.db.query("didLogs").withIndex("by_path", (q) => q.eq("path", args.path)).first();
+    if (existing) await ctx.db.patch(existing._id, row);
+    else await ctx.db.insert("didLogs", row);
   },
 });
