@@ -81,8 +81,16 @@ It is per account, not per device, so there is no per-device revocation.
   with the key replaced by Turnkey: same checks and refusals, same signed bytes.
 - `convex/lib/authorDidLog.ts`: the server accepts a DID log only as a valid
   continuation of the one it serves (same SCID, served entries unchanged, every
-  entry signed by the update keys before it), and adopts or re-genesises only to
-  an author DID.
+  entry carrying at least one Ed25519 signature by the update keys before it,
+  checked by boop as well as by didwebvh-ts, which accepts `proof: []`). Logs
+  with witnesses, pre-rotation, deactivation, or a domain other than
+  `WEBVH_DOMAIN` are refused.
+- The server adopts or re-genesises an account only onto an author DID whose
+  two keys are that sub-org's own Turnkey accounts. It reads them with the
+  parent's read-only access (`list_wallets`, `list_wallet_accounts`;
+  `authInternal.listSubOrgEd25519Accounts`), so a JWT holder's own keys never
+  make an author DID, and the real owner can always move away from one. If
+  Turnkey can't be read, the write fails closed with 503.
 
 ## What Turnkey has to enforce
 
@@ -126,6 +134,11 @@ without checking each step in a test parent org first.
    see how many are left, list sub-org features (read-only) for boop's accounts.
 
 ### Unvalidated
+- That the parent API key can read a sub-org's wallets and accounts
+  (`/public/v1/query/list_wallets`, `list_wallet_accounts` with the sub-org's
+  `organizationId`). Turnkey documents read-only parent access, and boop's
+  deleted server signer read sub-org wallets this way before failing at
+  signing, but this exact call is untested against the live API.
 
 - Every policy expression in `boop-api-user-policies.json`.
 - Whether removing sub-org features through the user's own session succeeds for

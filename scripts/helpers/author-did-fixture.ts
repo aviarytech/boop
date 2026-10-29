@@ -5,7 +5,7 @@
 // it is given (as Turnkey's signRawPayload with HASH_FUNCTION_NOT_APPLICABLE
 // does). Nothing here talks to Turnkey.
 import { getPublicKeyAsync, signAsync, utils, verifyAsync } from "@noble/ed25519";
-import { createDID, updateDID, prepareDataForSigning, MultibaseEncoding, multibaseEncode } from "didwebvh-ts";
+import { createDID, updateDID, deactivateDID, prepareDataForSigning, MultibaseEncoding, multibaseEncode } from "didwebvh-ts";
 import type { SigningInput } from "didwebvh-ts";
 import * as authorDid from "../../src/lib/authorDid";
 import * as originalsSigning from "../../src/lib/originalsSigning";
@@ -130,4 +130,26 @@ export async function resignLastEntry(jsonl: string, from: string, secret: Uint8
   const payload = await prepareDataForSigning(document, forged as never);
   entry.proof = [{ ...forged, proofValue: multibaseEncode(await signAsync(payload, secret), MultibaseEncoding.BASE58_BTC) }];
   return authorDid.serializeDidLog(log);
+}
+
+/** The pinned keys the server derives from the sub-org's Turnkey accounts. */
+export const pinned = (keys: authorDid.AuthorKeys) => ({ keys: { authorKey: keys.author.multikey, assertionKey: keys.assertion.multikey } });
+
+/** What authInternal.listSubOrgEd25519Accounts returns for this mock sub-org. */
+export async function accountsOf(turnkey: MockTurnkey) {
+  return (await turnkey.ed25519Accounts("sub-org")).map(({ path, address }) => ({ path, address }));
+}
+
+/** Replace the last entry's proof, keeping it otherwise valid: the shape didwebvh-ts 2.8 accepts without a signature. */
+export function withProof(jsonl: string, index: number, proof: unknown) {
+  const log = authorDid.parseDidLog(jsonl) as unknown as Array<Record<string, unknown>>;
+  log[index] = { ...log[index], proof };
+  return log.map(entry => JSON.stringify(entry)).join("\n");
+}
+
+/** A deactivating entry signed by the author key. */
+export async function deactivateAuthor(turnkey: MockTurnkey, minted: { jsonl: string; keys: authorDid.AuthorKeys }) {
+  const signer = authorDid.authorUpdateSigner(turnkey, "sub-org", minted.keys.author);
+  const result = await deactivateDID({ log: authorDid.parseDidLog(minted.jsonl), signer, verifier: signer });
+  return authorDid.serializeDidLog(result.log);
 }

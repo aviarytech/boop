@@ -359,7 +359,10 @@ export function remoteKeySigner(options: RemoteKeySignerOptions): OriginalsSigne
   return {
     verificationMethod: options.verificationMethod,
     cryptosuite: ORIGINALS_CRYPTOSUITE,
-    sign: async (request) => {
+    sign: async (untrusted) => {
+      // Check, show and sign one private copy: the checks await, and the
+      // caller must not be able to change the entry in between.
+      const request = structuredClone(untrusted);
       const derived = await checkRequest(request, options.verificationMethod);
       if (options.confirm && !(await options.confirm(describeEntry(derived), derived))) refuse("the signer declined");
       const signature = await options.signBytes(await proofHashData(request.entry, request.proofOptions));

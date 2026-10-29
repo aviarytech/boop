@@ -85,6 +85,8 @@ export type EnsureAuthorDidResult =
   | { status: "current"; did: string }
   /** The account moved to `did`; rows keyed to the old DID moved with it (remint). */
   | { status: "reminted"; did: string; previousDid: string }
+  /** The account is already on `did` (another device moved it); this device had `previousDid` cached. */
+  | { status: "moved"; did: string; previousDid: string }
   /** A first did:webvh for an account that had none. */
   | { status: "adopted"; did: string };
 
@@ -117,24 +119,29 @@ export async function ensureAuthorDid(
   const path = userDidPath(subOrgId);
   const did = user.did?.startsWith("did:webvh:") ? user.did : null;
 
-  // A DID on a domain we no longer serve is unresolvable, so it is re-genesised too.
-  if (did && domainFromDidSafe(did) === deps.domain) {
-    const log = await servedLog(deps, path);
-    if (log) {
-      const inspected = await inspectAuthorDid(log, keys).catch(() => null);
-      if (inspected && inspected.did === did && inspected.problems.length === 0) {
-        current = { subOrgId, did, log, versionId: inspected.versionId, keys };
-        return { status: "current", did };
-      }
+  // What the path serves already, if it is this account's author DID on the
+  // current domain. A DID on a domain we no longer serve is unresolvable, so
+  // it is re-genesised like any pre-#286 DID.
+  const log = await servedLog(deps, path);
+  const inspected = log ? await inspectAuthorDid(log, keys).catch(() => null) : null;
+  if (log && inspected && inspected.problems.length === 0 && domainFromDidSafe(inspected.did) === deps.domain) {
+    current = { subOrgId, did: inspected.did, log, versionId: inspected.versionId, keys };
+    if (inspected.did === did) return { status: "current", did };
+    if (!did) {
+      // A sign-up whose updateDID failed after its log was stored: adopt that DID, don't mint another.
+      await post(deps, token, "/api/user/updateDID", { did: inspected.did });
+      return { status: "adopted", did: inspected.did };
     }
+    // Another device already moved the account (its rows moved with it); this one had the old DID cached.
+    return { status: "moved", did: inspected.did, previousDid: did };
   }
 
   const minted = await mintAuthorDid({ backend: deps.backend, subOrgId, keys, domain: deps.domain, path });
   if (did) {
     const result = await post(deps, token, "/api/user/remintDid", { did: minted.did, didLog: minted.jsonl, path }) as { newDid: string };
     if (result.newDid !== minted.did) {
-      // The server kept the account's DID (already an author DID); use that one next time.
-      return { status: "current", did: result.newDid };
+      // The server kept the account on another author DID; pick it up from the path next load.
+      return { status: "moved", did: result.newDid, previousDid: did };
     }
     current = { subOrgId, did: minted.did, log: minted.jsonl, versionId: minted.versionId, keys };
     forgetLegacyDidKey(subOrgId);

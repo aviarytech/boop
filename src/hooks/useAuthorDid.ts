@@ -42,7 +42,7 @@ export function useAuthorDid(
           console.info("[authorDid] No live Turnkey session; Originals signing waits for the next login");
         } else if (result.status === "adopted") {
           onAdoptedRef.current(result.did);
-        } else if (result.status === "reminted") {
+        } else if (result.status === "reminted" || result.status === "moved") {
           console.info(`[authorDid] ${result.previousDid} -> ${result.did}`);
           // Restored auth state isn't re-read from the server, so update it,
           // then reload: the whole app is keyed by DID and its rows just moved.

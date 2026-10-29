@@ -13,6 +13,7 @@ import {
 } from "./lib/auth";
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
 import { assertDidLogOwnership, didLogPathForSubOrg, DidLogOwnershipError } from "./lib/didLogAuth";
+import { checkAccountDidLog, KeyLookupError } from "./didLogsHttp";
 
 /** The domain encoded in a did:webvh, percent-decoded. Null if not a did:webvh. */
 function didWebvhDomain(did: string): string | null {
@@ -73,6 +74,11 @@ export const updateUserDID = httpAction(async (ctx, request) => {
       email: auth.email,
       did,
     });
+
+    // upsertUserInternal keeps an existing did:webvh rather than replace it;
+    // never report success for a DID the account didn't take.
+    const account = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
+    if (account?.did !== did) return errorResponse(request, "The account kept its existing DID", 409);
 
     console.log(`[userHttp] DID updated successfully for ${auth.email}`);
 
@@ -171,10 +177,10 @@ export const remintUserDID = httpAction(async (ctx, request) => {
 
     // The new DID's log must verify from genesis and be an author DID.
     if (!didLog || !path) return errorResponse(request, "didLog and path are required");
-    const checked = await ctx.runAction(internal.didLogValidation.checkWrite, { stored: null, next: didLog });
+    const checked = await checkAccountDidLog(ctx, auth.turnkeySubOrgId, null, didLog);
     if (!checked.ok) return errorResponse(request, checked.error, 422);
     if (checked.did !== newDid) return errorResponse(request, "didLog is for another DID", 422);
-    if (!checked.author) return errorResponse(request, `Not an author DID: ${checked.authorProblems.join("; ")}`, 422);
+    if (!checked.author) return errorResponse(request, `Not this account's author DID: ${checked.authorProblems.join("; ")}`, 422);
 
     const { rewritten } = await ctx.runMutation(
       internal.migrations.remintUserDidDb.applyRemint,
@@ -201,6 +207,7 @@ export const remintUserDID = httpAction(async (ctx, request) => {
     if (err instanceof DidLogOwnershipError) {
       return errorResponse(request, err.message, 403);
     }
+    if (err instanceof KeyLookupError) return errorResponse(request, err.message, 503);
     console.error("[userHttp] Re-mint error:", err);
     return errorResponse(
       request,

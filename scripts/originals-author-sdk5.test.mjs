@@ -40,7 +40,7 @@ await build({
   bundle: true, platform: "node", format: "esm", target: "node20", logLevel: "silent",
 });
 const fixture = await import(`${pathToFileURL(`${process.cwd()}/${outdir}/fixture.mjs`).href}?t=${Date.now()}`);
-const { mockTurnkey, mintAuthor, mintLegacyDid, originalsSigning, authorDidLog } = fixture;
+const { mockTurnkey, mintAuthor, mintLegacyDid, originalsSigning, authorDidLog, pinned } = fixture;
 
 const bytes = text => new TextEncoder().encode(text);
 
@@ -78,7 +78,7 @@ test("SDK 5 verifies a create and an edit signed by the re-genesised DID's Turnk
   const legacy = await mintLegacyDid("boop.ad", "user-author");
   const author = await mintAuthor(turnkey, { path: "user-author" });
   assert.notEqual(author.did, legacy.did);
-  const stored = await authorDidLog.checkDidLog(author.jsonl);
+  const stored = await authorDidLog.checkDidLog(author.jsonl, pinned(author.keys));
   assert.deepEqual(stored.authorProblems, [], "the new DID is an author DID by the server's own check");
 
   const { did, edited, loaded: view } = await createAndEdit(author);
@@ -137,7 +137,7 @@ test("the signer signs exactly the bytes SDK 5 keySigner signs, and refuses what
 test("SDK 5 refuses an author DID whose assertion key is also its update key", { skip }, async () => {
   const turnkey = await mockTurnkey();
   const shared = await mintAuthor(turnkey, { shareUpdateKey: true });
-  assert.ok((await authorDidLog.checkDidLog(shared.jsonl)).authorProblems.some(p => /also an update key/.test(p)), "the server's check refuses it too");
+  assert.ok((await authorDidLog.checkDidLog(shared.jsonl, pinned(shared.keys))).authorProblems.some(p => /also an update key/.test(p)), "the server's check refuses it too");
   const sdk = sdkFor(shared.listAuthor.evidence);
   await assert.rejects(() => sdk.create({
     name: "Shared", resources: [{ id: "a", mediaType: "text/plain", bytes: bytes("a") }],

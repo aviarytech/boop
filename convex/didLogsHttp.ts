@@ -5,7 +5,7 @@
  * GET /api/did/log?path={path} - Get a DID log by path (public)
  */
 
-import { httpAction } from "./_generated/server";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireAuth, AuthError } from "./lib/auth";
 import { assertDidLogOwnership, DidLogOwnershipError } from "./lib/didLogAuth";
@@ -18,6 +18,27 @@ function getCorsHeaders(request: Request): Record<string, string> {
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Credentials": "true",
   };
+}
+
+/** Turnkey could not be read, so the write can't be checked. Retry later. */
+export class KeyLookupError extends Error {}
+
+/**
+ * Check a DID log for this account: a valid continuation of `stored`, on the
+ * current domain, and an author DID only with this sub-org's own Turnkey keys
+ * (read with the parent's read-only access).
+ */
+export async function checkAccountDidLog(ctx: Pick<ActionCtx, "runAction">, subOrgId: string, stored: string | null, next: string) {
+  let accounts;
+  try {
+    accounts = await ctx.runAction(internal.authInternal.listSubOrgEd25519Accounts, { subOrgId });
+  } catch (error) {
+    console.error("[didLogsHttp] Turnkey account lookup failed:", error);
+    throw new KeyLookupError("Could not check this account's keys. Try again shortly.");
+  }
+  return ctx.runAction(internal.didLogValidation.checkWrite, {
+    stored, next, accounts, ...(process.env.WEBVH_DOMAIN ? { domain: process.env.WEBVH_DOMAIN } : {}),
+  });
 }
 
 /**
@@ -45,35 +66,33 @@ export const storeDidLog = httpAction(async (ctx, request) => {
 
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid, path });
 
-    // #286: only a valid continuation of what is served at this path, or a
-    // first log for an account with no did:webvh yet. A new DID at a path
-    // already serving another one is a re-genesis: /api/user/remintDid.
+    // #286: only a valid continuation of the DID served at this path. A new
+    // DID goes here only for an account with no did:webvh yet, only if it is
+    // this account's author DID, and never over a served author DID. Anything
+    // else is a re-genesis: /api/user/remintDid.
+    const json = (status: number, payload: unknown) => new Response(JSON.stringify(payload), {
+      status, headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
     const served = await ctx.runQuery(internal.didLogs.getDidLogRecordByPath, { path });
-    if (served && served.userDid !== userDid) {
-      return new Response(JSON.stringify({ error: "This path serves another DID. Re-mint through /api/user/remintDid." }), {
-        status: 409,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
-    }
-    if (!served) {
+    const continuing = served?.userDid === userDid;
+    if (!continuing) {
       const account = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
-      if (account?.did?.startsWith("did:webvh:") && account.did !== userDid) {
-        return new Response(JSON.stringify({ error: "This account already has a DID. Re-mint through /api/user/remintDid." }), {
-          status: 409,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        });
+      if (account?.did?.startsWith("did:webvh:") || served?.author) {
+        return json(409, { error: "This account already has a DID. Re-mint through /api/user/remintDid." });
       }
     }
-    const checked = await ctx.runAction(internal.didLogValidation.checkWrite, { stored: served?.log ?? null, next: log });
+    const checked = await checkAccountDidLog(ctx, auth.turnkeySubOrgId, continuing ? served.log : null, log);
     if (!checked.ok || checked.did !== userDid) {
-      return new Response(JSON.stringify({ error: checked.ok ? "The log is for another DID" : checked.error }), {
-        status: 422,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
+      return json(422, { error: checked.ok ? "The log is for another DID" : checked.error });
+    }
+    if (!continuing && !checked.author) {
+      return json(422, { error: `Not this account's author DID: ${checked.authorProblems.join("; ")}` });
     }
 
+    // Compare-and-swap: a concurrent write to this path since `served` was read loses.
     await ctx.runMutation(internal.didLogs.upsertDidLog, {
       userDid, path, log, scid: checked.scid, versionId: checked.versionId, author: checked.author,
+      expected: served ? { userDid: served.userDid, log: served.log } : null,
     });
 
     return new Response(JSON.stringify({ ok: true }), {
@@ -90,6 +109,18 @@ export const storeDidLog = httpAction(async (ctx, request) => {
     if (error instanceof DidLogOwnershipError) {
       return new Response(JSON.stringify({ error: error.message }), {
         status: 403,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    if (error instanceof KeyLookupError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    if (error instanceof Error && error.message.startsWith("DID log conflict")) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 409,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }

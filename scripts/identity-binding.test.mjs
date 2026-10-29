@@ -28,7 +28,9 @@ const [ownerToken, editorToken] = await Promise.all([token('owner'), token('edit
 // Turnkey is mocked with local keys (scripts/helpers/author-did-fixture.ts).
 await build({ entryPoints: ['scripts/helpers/author-did-fixture.ts'], outfile: `${outdir}/author-fixture.mjs`, bundle: true, platform: 'node', format: 'esm', logLevel: 'error' });
 const authorFixture = await import(pathToFileURL(`${process.cwd()}/${outdir}/author-fixture.mjs`));
-const ownAuthor = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+const ownTurnkey = await authorFixture.mockTurnkey();
+const ownAuthor = await authorFixture.mintAuthor(ownTurnkey, { path: 'user-owner' });
+const OWN_ACCOUNTS = await authorFixture.accountsOf(ownTurnkey);
 const OWN = ownAuthor.did;
 const OWN_LOG = ownAuthor.jsonl;
 const VICTIM = 'did:webvh:V:boop.ad:user-victimsuborg000';
@@ -71,7 +73,13 @@ function fixture() {
     patch: async (id, patch) => { Object.assign(find(id), patch); },
     delete: async id => { for (const t of Object.values(rows)) { const i = t.findIndex(r => r._id === id); if (i >= 0) t.splice(i, 1); } },
   }, scheduler: { runAfter: async () => {}, runAt: async () => {} } };
-  ctx.runQuery = ctx.runMutation = ctx.runAction = async (ref, args) => { const [m, f] = getFunctionName(ref).split(':'); return call(m, f, ctx, args); };
+  // The sub-org's Turnkey accounts (read-only, parent API key) come from the mock wallet.
+  ctx.accounts = OWN_ACCOUNTS;
+  ctx.runQuery = ctx.runMutation = ctx.runAction = async (ref, args) => {
+    const [m, f] = getFunctionName(ref).split(':');
+    if (m === 'authInternal' && f === 'listSubOrgEd25519Accounts') return ctx.accounts;
+    return call(m, f, ctx, args);
+  };
   return ctx;
 }
 const post = (path, body, authToken = ownerToken) => new Request(`https://test${path}`, {
@@ -165,6 +173,7 @@ test('DID log writes: only a continuation of the served DID, never another DID a
   const store = (ctx, body) => modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', body));
 
   const ctx = fixture(); ctx.rows.users[0].did = 'did:temp:owner';
+  ctx.accounts = await authorFixture.accountsOf(turnkey);
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 200);
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: forged })).status, 422, 'signed by a key that is not an update key');
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: OWN_LOG })).status, 422, 'another DID\'s log');
@@ -175,8 +184,55 @@ test('DID log writes: only a continuation of the served DID, never another DID a
 
   // An account that already has a did:webvh cannot start serving a second one.
   const other = fixture();
+  other.accounts = ctx.accounts;
   assert.equal((await store(other, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 409);
   assert.equal(other.rows.didLogs.length, 0);
+
+  // A new account's first log must be its own author DID: no unsigned, foreign-key or junk log can claim its path.
+  const fresh = fixture(); fresh.rows.users[0].did = 'did:temp:owner';
+  const stranger = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+  assert.equal((await store(fresh, { userDid: stranger.did, path: 'user-owner', log: stranger.jsonl })).status, 422);
+  const unsigned = authorFixture.withProof(OWN_LOG, 0, []);
+  assert.equal((await store(fresh, { userDid: OWN, path: 'user-owner', log: unsigned })).status, 422);
+  assert.equal(fresh.rows.didLogs.length, 0);
+});
+
+// #300 review: a JWT holder's own keys never make an account's author DID, so
+// the real owner can always re-genesise away from one.
+test('re-mint onto an author DID with keys other than the sub-org\'s is refused, and such a DID never blocks recovery', async () => {
+  const stranger = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+  const ctx = fixture();
+  const refused = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: stranger.did, didLog: stranger.jsonl, path: 'user-owner' }));
+  assert.equal(refused.status, 422);
+  assert.match(await refused.text(), /not this account's author key|assertion key/);
+  // Planted before the check existed: served, but not an author DID, so the owner can still move.
+  ctx.rows.users[0].did = stranger.did;
+  ctx.rows.didLogs.push({ _id: 'D1', userDid: stranger.did, path: 'user-owner', log: stranger.jsonl, author: false, updatedAt: 1 });
+  const recovered = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+  assert.equal(recovered.status, 200, await recovered.clone().text());
+  assert.equal(ctx.rows.users[0].did, OWN);
+});
+
+test('Turnkey being unreadable fails a DID write closed (503), storing nothing', async () => {
+  const ctx = fixture(); ctx.rows.users[0].did = 'did:temp:owner';
+  ctx.runAction = async ref => { if (getFunctionName(ref) === 'authInternal:listSubOrgEd25519Accounts') throw new Error('turnkey down'); throw new Error('unexpected'); };
+  const response = await modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }));
+  assert.equal(response.status, 503);
+  assert.equal(ctx.rows.didLogs.length, 0);
+});
+
+test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {
+  const ctx = fixture();
+  const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null });
+  await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null }), /conflict/, 'a second first write loses');
+  await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, expected: { userDid: OWN, log: 'stale' } }), /conflict/);
+  assert.equal(ctx.rows.didLogs.length, 1);
+
+  // The account already holds a did:webvh: upsertUserInternal keeps it, so updateDID must not say yes.
+  const kept = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
+  assert.equal(kept.status, 409);
+  assert.equal(ctx.rows.users[0].did, 'did:webvh:OLD:trypoo.app:user-owner');
 });
 
 test('publication DIDs name the publisher, and the resolver fallback requires the list owner as controller', async () => {

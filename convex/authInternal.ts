@@ -641,3 +641,30 @@ export const getLogoutCookie = internalAction({
     return { cookieValue: buildLogoutCookieValue() };
   },
 });
+
+/**
+ * The Ed25519 accounts in a user's sub-org: `{ path, address }`, where a
+ * Solana-format address is the base58 public key (#286 PR b).
+ *
+ * Read-only. The parent org can read its sub-orgs but cannot stamp activities
+ * in them, so this lets the server check that an author DID's keys are the
+ * account's own Turnkey keys without being able to use them. Queries are not
+ * activities, so no policy governs them.
+ */
+export const listSubOrgEd25519Accounts = internalAction({
+  args: { subOrgId: v.string() },
+  handler: async (_ctx, args): Promise<Array<{ path: string; address: string }>> => {
+    const credentials = getTurnkeyCredentials();
+    const { wallets } = await turnkeyRequest<{ wallets: Array<{ walletId: string }> }>(
+      "/public/v1/query/list_wallets", { organizationId: args.subOrgId }, credentials);
+    const accounts: Array<{ path: string; address: string }> = [];
+    for (const wallet of wallets ?? []) {
+      const response = await turnkeyRequest<{ accounts: Array<{ curve: string; path: string; address: string }> }>(
+        "/public/v1/query/list_wallet_accounts", { organizationId: args.subOrgId, walletId: wallet.walletId }, credentials);
+      for (const account of response.accounts ?? []) {
+        if (account.curve === "CURVE_ED25519") accounts.push({ path: account.path, address: account.address });
+      }
+    }
+    return accounts;
+  },
+});

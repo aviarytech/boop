@@ -12,8 +12,9 @@ import { internalMutation, internalQuery } from "./_generated/server";
  * Store or update a user's DID log.
  *
  * Internal: it writes whatever `userDid` it is handed, so the caller owns the
- * ownership check and the continuation check (didLogValidation.checkWrite). As a public mutation this was directly callable by anyone
- * with the deployment URL. Go through didLogsHttp.storeDidLog.
+ * ownership and continuation checks (didLogsHttp.checkAccountDidLog). As a
+ * public mutation this was directly callable by anyone with the deployment
+ * URL. Go through didLogsHttp.storeDidLog.
  */
 export const upsertDidLog = internalMutation({
   args: {
@@ -23,19 +24,25 @@ export const upsertDidLog = internalMutation({
     scid: v.string(),
     versionId: v.string(),
     author: v.boolean(),
+    /** What the caller checked against: the row served at `path` then, or null for none. */
+    expected: v.union(v.object({ userDid: v.string(), log: v.string() }), v.null()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { expected, ...row }) => {
     const existing = await ctx.db
       .query("didLogs")
-      .withIndex("by_user_did", (q) => q.eq("userDid", args.userDid))
+      .withIndex("by_path", (q) => q.eq("path", row.path))
       .first();
-
+    const unchanged = existing
+      ? expected !== null && existing.userDid === expected.userDid && existing.log === expected.log
+      : expected === null;
+    if (!unchanged) {
+      throw new Error("DID log conflict: the served log changed; fetch it and retry");
+    }
     if (existing) {
-      await ctx.db.patch(existing._id, { ...args, updatedAt: Date.now() });
+      await ctx.db.patch(existing._id, { ...row, updatedAt: Date.now() });
       return existing._id;
     }
-
-    return await ctx.db.insert("didLogs", { ...args, updatedAt: Date.now() });
+    return await ctx.db.insert("didLogs", { ...row, updatedAt: Date.now() });
   },
 });
 
