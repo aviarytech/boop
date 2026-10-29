@@ -126,6 +126,15 @@ test('OTP cannot persist or expose a token when session establishment fails',asy
   await act(async()=>assert.rejects(()=>result.current.verifyOtp('123456'),/session rejected/));
   assert.equal(result.current.token,null);assert.equal(result.current.isAuthenticated,false);assert.equal(state.storage.size,0);
 });
+test('a boop sign-in that fails after the Turnkey login leaves no Turnkey session behind', async () => {
+  globalThis.fetch = async url => Response.json(url.endsWith('/auth/initiate') ? { sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' } : { user, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  state.establish = async () => { throw new Error('session rejected'); };
+  await act(async () => assert.rejects(() => result.current.verifyOtp('123456'), /session rejected/));
+  assert.ok(turnkeyCalls.some(c => c[0] === 'login'));
+  assert.ok(turnkeyCalls.some(c => c[0] === 'clear'), 'the Turnkey session is cleared');
+});
 test('logout drops credentials immediately and serializes the next login until its response settles',async()=>{
   seed();const pending=deferred();let logoutRequest;
   globalThis.fetch=async(url,options)=>{logoutRequest={url,options};return pending.promise;};

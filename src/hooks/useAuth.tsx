@@ -437,6 +437,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
         if (sessionPublicKey) await discardSessionKey(sessionPublicKey);
+        // boop sign-in failed after the Turnkey login (or one may still land):
+        // don't leave a Turnkey session behind on a device that isn't signed in.
+        else void clearTurnkeySession();
         setUser(null);
         setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);

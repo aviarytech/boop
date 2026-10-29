@@ -36,10 +36,10 @@ Login is Turnkey's encrypted OTP flow
    the root quorum, no passkeys, OAuth providers or phone number, and no API
    key that outlives a 7-day session. boop creates sub-orgs with no
    credentials, so anything else was put there by someone else, possibly the
-   parent at creation. A session-length key planted at creation could renew
-   itself indefinitely and later look like any login, so the sign-up device's
-   first login (its key created within 60 s of the sub-org) also flags any key
-   older than its own, and keeps that finding for good. The result is stored per device
+   parent at creation. As a tripwire only, the sign-up device's first login
+   (its key created within 60 s of the sub-org) also flags any key older than
+   its own, and keeps that finding. **This does not stop a compromised
+   backend**: see "Residual risk". The result is stored per device
    (`lastSubOrgAudit`); DID updates refuse to sign without a clean audit (PR b).
 
 The server signers (`convex/didCreation.ts`, `convex/lib/turnkeySigner.ts`,
@@ -111,9 +111,23 @@ without checking each step in a test parent org first.
   parent root credential can change policies.
 - The client audit runs at login. Something added to the sub-org afterwards is
   found at the next login, not before.
-- A key planted at sub-org creation is caught only on the sign-up device, at
-  its first login. A device that signs in later can't tell a planted key that
-  has renewed itself from the user's own sessions. Checking each key's
-  STAMP_LOGIN chain in the sub-org's activity history would; it isn't built.
-  A second device signing in within 60 s of sign-up would be flagged by
-  mistake, and that device's flag would need clearing by hand.
+- **A compromised backend can plant a root credential at sign-up, and the
+  client does not reliably detect it.** The parent creates the sub-org and
+  chooses its root user's credentials, and Turnkey policies can't constrain
+  those parameters. A planted session-length API key passes the audit,
+  can renew itself (STAMP_LOGIN), and can delete itself after minting a
+  successor. The 60 s first-login tripwire is evaded by answering
+  `/auth/verify` late or by rotating the key before the audit reads users.
+  The robust check is to trace every API key in the sub-org to a STAMP_LOGIN
+  chain that starts at one of the user's own OTP logins, from the sub-org's
+  activity history. It isn't built: it depends on how Turnkey records
+  attested logins and their stampers, which needs the live API to confirm.
+  **Until it exists, the custody guarantee holds only if boop's backend was
+  honest when each account signed up.** Accounts created before #286 had
+  their sub-orgs created with no credentials by the old code.
+- A second device signing in within 60 s of sign-up is flagged by the
+  tripwire by mistake, and that device's finding would need clearing by hand.
+- A login in another tab during this tab's `/auth/verify` round trip can
+  delete this tab's pending session key (unused key pairs are cleared on
+  every session write). Sign-in still succeeds, without a Turnkey session
+  until the next login.

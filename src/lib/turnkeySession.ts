@@ -225,7 +225,7 @@ export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudi
   try {
     localStorage.setItem(`${AUDIT_STORAGE_PREFIX}:${subOrgId}`, JSON.stringify(audit));
   } catch { /* storage unavailable: the audit reruns at next login */ }
-  if (!audit.clean) console.warn("[turnkeySession] Sub-org audit findings:", findings);
+  if (!audit.clean) console.warn("[turnkeySession] Sub-org audit findings:", audit.findings);
   return audit;
 }
 
@@ -282,29 +282,37 @@ export function startTurnkeySessionRefresh(subOrgId: string): () => void {
   };
 }
 
+const REVOKE_MS = 8_000;
+
 /**
  * Logout: revoke this device's session key at Turnkey, then forget it locally.
- * The local wipe always runs, even when revoking fails or Turnkey is
- * unreachable, so the next person on this browser gets no session.
+ * Under the session lock, so it can't race a refresh or a login still landing.
+ * The revoke is time-boxed and the local wipe always runs after it, inside the
+ * lock, so a slow Turnkey can neither leave the session on this device nor
+ * wipe a later sign-in's session when it finally answers (#299 review).
  */
 export async function clearTurnkeySession(): Promise<void> {
-  let client: TurnkeyClient | null = null;
-  try {
-    client = await getClient();
-    const session = await client.getSession();
-    if (session?.publicKey && session.expiry * 1000 > Date.now()) {
-      const { users } = await client.httpClient.getUsers({ organizationId: session.organizationId });
-      const keyIds = users.flatMap(user => user.apiKeys)
-        .filter(key => key.credential.publicKey === session.publicKey).map(key => key.apiKeyId);
-      if (keyIds.length > 0) {
-        await client.httpClient.deleteApiKeys({
-          organizationId: session.organizationId, userId: session.userId, apiKeyIds: keyIds,
-        });
-      }
+  await withSessionLock(async () => {
+    const client = await getClient();
+    try {
+      await withTimeout((async () => {
+        const session = await client.getSession();
+        if (!session?.publicKey || session.expiry * 1000 <= Date.now()) return;
+        const { users } = await client.httpClient.getUsers({ organizationId: session.organizationId });
+        const keyIds = users.flatMap(user => user.apiKeys)
+          .filter(key => key.credential.publicKey === session.publicKey).map(key => key.apiKeyId);
+        if (keyIds.length > 0) {
+          await client.httpClient.deleteApiKeys({ organizationId: session.organizationId, userId: session.userId, apiKeyIds: keyIds });
+        }
+      })(), REVOKE_MS, "Turnkey revoke timed out");
+    } catch (err) {
+      console.warn("[turnkeySession] Could not revoke the Turnkey session key:", err);
     }
-  } catch (err) {
-    console.warn("[turnkeySession] Could not revoke the Turnkey session key:", err);
-  } finally {
-    await client?.clearAllSessions().catch(err => console.warn("[turnkeySession] Could not clear the local Turnkey session:", err));
-  }
+    // boop only uses the default session key. clearAllSessions doesn't await
+    // its own wipe, so clear the session directly, then any stray key pairs.
+    if (await client.getSession()) {
+      await client.clearSession().catch(err => console.warn("[turnkeySession] Could not clear the local Turnkey session:", err));
+    }
+    await client.clearUnusedKeyPairs().catch(() => {});
+  }).catch(err => console.warn("[turnkeySession] Turnkey sign-out did not finish:", err));
 }

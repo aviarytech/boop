@@ -20,7 +20,7 @@ await build({
           loginWithOtp(p) { globalThis.__turnkeyTest.calls.push(['login', p]); }
           refreshSession(p) { return globalThis.__turnkeyTest.refresh(p); }
           async clearUnusedKeyPairs() {} async deleteApiKeyPair(p) { globalThis.__turnkeyTest.calls.push(['delete', p.publicKey]); }
-          async clearAllSessions() { globalThis.__turnkeyTest.calls.push(['wipe']); } }
+          async clearSession() { globalThis.__turnkeyTest.calls.push(['wipe']); } }
         export const decodeVerificationToken = token => JSON.parse(token);`
       : 'export const encryptOtpCodeToBundle = async () => "sealed";' }));
   } }],
@@ -95,13 +95,20 @@ test('a later login on another device with older keys around is not a finding', 
   assert.equal((await session.hardenAndAuditSubOrg('sub')).clean, true);
 });
 
-test('logout wipes the local session even when revoking at Turnkey fails', async () => {
+test('logout wipes the local session even when revoking at Turnkey fails or hangs', { timeout: 20_000 }, async () => {
   t.http.getUsers = async () => { throw new Error('offline'); };
   await session.clearTurnkeySession();
   assert.deepEqual(t.calls, [['wipe']]);
   subOrg();
   await session.clearTurnkeySession();
   assert.deepEqual(t.calls, [['revoke'], ['wipe']]);
+  // A revoke that never answers is abandoned after its bound; the wipe still runs.
+  subOrg();
+  t.http.getUsers = () => new Promise(() => {});
+  const started = Date.now();
+  await session.clearTurnkeySession();
+  assert.deepEqual(t.calls, [['wipe']]);
+  assert.ok(Date.now() - started < 9_500);
 });
 
 test('a verification token bound to another key is refused before any login', async () => {
