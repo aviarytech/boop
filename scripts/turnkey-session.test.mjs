@@ -111,6 +111,13 @@ test('logout wipes the local session even when revoking at Turnkey fails or hang
   assert.ok(Date.now() - started < 9_500);
 });
 
+test('discarding never deletes the key a stored session uses', async () => {
+  await session.discardSessionKey('pub');
+  assert.deepEqual(t.calls, []);
+  await session.discardSessionKey('stray');
+  assert.deepEqual(t.calls, [['delete', 'stray']]);
+});
+
 test('a verification token bound to another key is refused before any login', async () => {
   await assert.rejects(() => session.completeTurnkeyLogin({ verificationToken: JSON.stringify({ public_key: 'server-key' }), subOrgId: 'sub', publicKey: 'mine' }), /not bound/);
   assert.deepEqual(t.calls, [['delete', 'mine']]);

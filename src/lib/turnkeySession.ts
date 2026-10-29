@@ -121,7 +121,11 @@ export async function encryptOtpForSession(code: string, otpEncryptionTargetBund
 /** Remove a key pair that never became a session (wrong code, server error). */
 export async function discardSessionKey(publicKey: string): Promise<void> {
   try {
-    await (await getClient()).deleteApiKeyPair({ publicKey });
+    const client = await getClient();
+    // A login can fail after storing its session (core's key-pair cleanup runs
+    // in a finally): never delete the key a live session uses.
+    if ((await client.getSession())?.publicKey === publicKey) return;
+    await client.deleteApiKeyPair({ publicKey });
   } catch (err) {
     console.warn("[turnkeySession] Could not discard unused session key:", err);
   }
@@ -218,7 +222,7 @@ export async function hardenAndAuditSubOrg(subOrgId: string): Promise<SubOrgAudi
     }
   } catch (err) {
     console.error("[turnkeySession] Sub-org audit failed:", err);
-    findings.push("audit could not complete");
+    findings.push(AUDIT_INCOMPLETE);
   }
   const all = [...new Set([...sticky, ...findings])];
   const audit: SubOrgAudit = { subOrgId, checkedAt: Date.now(), clean: all.length === 0, findings: all, sticky: [...new Set(sticky)] };
@@ -267,10 +271,17 @@ async function refreshUnlocked(subOrgId: string): Promise<TurnkeySessionStatus> 
 }
 
 /** Check hourly and whenever the app returns to the foreground. */
+/** An audit this device couldn't finish (a network blip) is retried; one with findings is not. */
+const AUDIT_INCOMPLETE = "audit could not complete";
+
 export function startTurnkeySessionRefresh(subOrgId: string): () => void {
   const check = () => {
-    refreshTurnkeySessionIfDue(subOrgId).catch(err =>
-      console.warn("[turnkeySession] Silent refresh failed; retrying later:", err));
+    refreshTurnkeySessionIfDue(subOrgId)
+      .then(async status => {
+        const last = await subOrgAuditDone(subOrgId);
+        if (status === "active" && (!last || last.findings.includes(AUDIT_INCOMPLETE))) await hardenAndAuditSubOrg(subOrgId);
+      })
+      .catch(err => console.warn("[turnkeySession] Silent refresh failed; retrying later:", err));
   };
   check();
   const interval = setInterval(check, REFRESH_CHECK_MS);

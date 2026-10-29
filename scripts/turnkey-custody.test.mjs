@@ -35,7 +35,14 @@ test('the backend holds no Turnkey signing path', () => {
   assert.match(server, /disableEmailRecovery: true/);
 });
 
-test('the production CSP lets the client reach Turnkey directly', () => {
+// Production runs `bun server.ts` (railway.json), which sets no CSP today;
+// public/serve.json is the CSP for `npm start`. Whichever sets one must allow Turnkey.
+test('production sets no CSP that would block the client reaching Turnkey', () => {
+  const server = readFileSync('server.ts', 'utf8');
+  if (/Content-Security-Policy/i.test(server)) assert.match(server, /api\.turnkey\.com/);
+});
+
+test('the static-server CSP (public/serve.json) lets the client reach Turnkey directly', () => {
   const csp = JSON.parse(readFileSync('public/serve.json', 'utf8')).headers
     .flatMap(h => h.headers).find(h => h.key === 'Content-Security-Policy').value;
   assert.match(csp, /connect-src [^;]*https:\/\/api\.turnkey\.com/);
