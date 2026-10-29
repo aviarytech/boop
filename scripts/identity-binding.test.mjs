@@ -388,8 +388,20 @@ test('replacing a served log someone adopted meanwhile is refused inside the wri
   // ...while device B, which read the log before that, tries to replace it.
   await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, userDid: 'did:webvh:B:boop.ad:user-owner', expected: { userDid: OWN, log: OWN_LOG } }), /an account holds/);
   assert.equal(ctx.rows.didLogs[0].userDid, OWN);
-  // And adoption is refused once the account holds a DID, or the DID isn't the served author log.
+  // And adoption is refused once the account holds a DID.
   assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: 'did:webvh:B:boop.ad:user-owner' }), 'conflict');
+});
+
+test('the other order: a replacement that lands first makes the stale adopt a conflict', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null });
+  const B = 'did:webvh:B:boop.ad:user-owner';
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, userDid: B, expected: { userDid: OWN, log: OWN_LOG } });
+  // Device A adopts the DID it stored, which is no longer served: refused.
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: OWN }), 'conflict');
+  assert.equal(ctx.rows.users[0].did, undefined);
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: B }), 'adopted');
 });
 
 test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {
