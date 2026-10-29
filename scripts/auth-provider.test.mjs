@@ -126,6 +126,24 @@ test('OTP cannot persist or expose a token when session establishment fails',asy
   await act(async()=>assert.rejects(()=>result.current.verifyOtp('123456'),/session rejected/));
   assert.equal(result.current.token,null);assert.equal(result.current.isAuthenticated,false);assert.equal(state.storage.size,0);
 });
+test('a failed sign-in whose Turnkey login also failed leaves the device\'s other Turnkey session alone', async () => {
+  state.turnkey.complete = async () => { throw new Error('turnkey rejected'); };
+  globalThis.fetch = async url => Response.json(url.endsWith('/auth/initiate') ? { sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' } : { user, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  state.establish = async () => { throw new Error('session rejected'); };
+  await act(async () => assert.rejects(() => result.current.verifyOtp('123456'), /session rejected/));
+  assert.ok(!turnkeyCalls.some(c => c[0] === 'clear'), 'another tab\'s session is not revoked');
+});
+
+test('a stored token found expired at restore clears the Turnkey session too', async () => {
+  const expired = `header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 }))}.signature`;
+  state.storage.set('lisa-auth-state', JSON.stringify({ user, token: expired })); state.storage.set('lisa-jwt-token', expired);
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  assert.equal(result.current.isAuthenticated, false);
+  assert.ok(turnkeyCalls.some(c => c[0] === 'clear'));
+});
+
 test('a boop sign-in that fails after the Turnkey login leaves no Turnkey session behind', async () => {
   globalThis.fetch = async url => Response.json(url.endsWith('/auth/initiate') ? { sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' } : { user, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
   const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();

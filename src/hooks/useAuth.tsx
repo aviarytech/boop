@@ -175,6 +175,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             console.log("[useAuth] Stored token expired, clearing session");
             await storageAdapter.remove(AUTH_STORAGE_KEY);
             await storageAdapter.remove(JWT_STORAGE_KEY);
+            // Signed out of boop, so out of Turnkey too.
+            void clearTurnkeySession();
             if (isMountedRef.current) setIsLoading(false);
             return;
           }
@@ -331,6 +333,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       authTransitionRef.current = true;
       setIsLoading(true);
       let sessionPublicKey: string | null = null;
+      // Set once this sign-in's Turnkey login succeeded or timed out (it may still land).
+      let turnkeyLoginMayHaveLanded = false;
       try {
         console.log("[useAuth] Verifying OTP via server...");
 
@@ -372,10 +376,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
             subOrgId: turnkey.subOrgId,
             publicKey,
           }), TURNKEY_STEP_MS, "Turnkey login timed out");
+          turnkeyLoginMayHaveLanded = true;
         } catch (turnkeyErr) {
           console.error("[useAuth] Turnkey session login failed:", turnkeyErr);
           // After a timeout the login may still land and use this key; keep it.
-          if (!(turnkeyErr instanceof TimeoutError)) await discardSessionKey(publicKey);
+          if (turnkeyErr instanceof TimeoutError) turnkeyLoginMayHaveLanded = true;
+          else await discardSessionKey(publicKey);
         }
         sessionPublicKey = null;
 
@@ -437,9 +443,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
         if (sessionPublicKey) await discardSessionKey(sessionPublicKey);
-        // boop sign-in failed after the Turnkey login (or one may still land):
-        // don't leave a Turnkey session behind on a device that isn't signed in.
-        else void clearTurnkeySession();
+        // boop sign-in failed after this sign-in's Turnkey login (or one that
+        // may still land): don't leave it behind. Never clear a session this
+        // sign-in didn't create, e.g. another tab's.
+        else if (turnkeyLoginMayHaveLanded) void clearTurnkeySession();
         setUser(null);
         setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);
