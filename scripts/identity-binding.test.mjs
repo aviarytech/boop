@@ -259,6 +259,40 @@ test('a re-mint that lost the race stores nothing, and two can\'t run at once', 
   assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').log, OWN_LOG, 'the winner\'s log is still the one served');
 });
 
+// #300 review round 3: a re-mint that died part-way left rows on its own new
+// DID. The next claim resumes it, so nothing is stranded.
+test('a stalled re-mint is resumed by the next one, which also moves the rows it had moved', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  const abandoned = (await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' })).did;
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: abandoned });
+  // It moved the lists, then died.
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: abandoned, table: 'lists', cursor: null });
+  assert.equal(ctx.rows.lists[0].ownerDid, abandoned);
+  // Still live (heartbeat): another device can't take over yet.
+  await assert.rejects(() => modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' })).then(async r => { if (!r.ok) throw new Error(await r.text()); }), /Another device/);
+  // Stalled past the claim: the next attempt (a fresh DID, as the client mints) takes over.
+  ctx.rows.users[0].pendingRemint.startedAt -= 6 * 60 * 1000;
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(ctx.rows.users[0].did, OWN);
+  assert.equal(ctx.rows.lists[0].ownerDid, OWN, 'the abandoned re-mint\'s rows moved too');
+  assert.equal(ctx.rows.lists.filter(l => l.ownerDid === abandoned).length, 0);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').userDid, OWN);
+});
+
+test('finishRemint sweeps indexed rows written under the old DID after their table\'s pass', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  ctx.rows.lists.push({ _id: 'L-late', ownerDid: old, name: 'Made during the re-mint', createdAt: 2 });
+  await call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+  assert.equal(ctx.rows.lists.find(l => l._id === 'L-late').ownerDid, OWN);
+});
+
 test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {
   const ctx = fixture();
   const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };

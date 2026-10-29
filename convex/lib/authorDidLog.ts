@@ -123,7 +123,9 @@ export async function checkDidLog(jsonl: string, options: CheckOptions = {}): Pr
   // Before anything resolves (or fetches): every version names a DID on our domain.
   if (options.domain) {
     for (const [index, entry] of (log as Array<{ state?: { id?: unknown } }>).entries()) {
-      const domain = decodeURIComponent(String(entry.state?.id ?? "").split(":")[3] ?? "");
+      let domain: string;
+      try { domain = decodeURIComponent(String(entry.state?.id ?? "").split(":")[3] ?? ""); }
+      catch { throw new DidLogRejectedError(`Entry ${index + 1} names a malformed domain`); }
       if (domain !== options.domain) throw new DidLogRejectedError(`Entry ${index + 1} names ${domain || "no DID"}, not ${options.domain}`);
     }
   }

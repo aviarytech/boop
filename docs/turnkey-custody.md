@@ -78,8 +78,14 @@ It is per account, not per device, so there is no per-device revocation.
   paged `beginRemint` / `remintPage` / `finishRemint`, so it fits Convex's
   per-mutation limits; no continuity link). The account and its served log
   move together at the end, and only for the re-mint that claimed the move.
-  Rows written under the old DID by another device during a re-mint are not
-  moved. `turnkeyListAuthorSource` is the
+  A re-mint that dies part-way is resumed by the next attempt, which also
+  moves the rows it had already moved. Rows written under the old DID during
+  a re-mint are swept at the end for indexed fields (list ownership among
+  them); unindexed attribution fields such as `items.createdByDid` written in
+  that window keep the old DID.
+- Cost: each pre-#286 account's re-mint reads every row of the 17 tables once
+  (`items`, the largest, has no index on its DID fields, and nested proofs
+  can't be indexed). `previewRemint` counts what would move for one account. `turnkeyListAuthorSource` is the
   `ListAuthor` source for Originals 5 (#298).
 - `src/lib/originalsSigning.ts`: `keySigner` from `@originals/sdk/originals`
   with the key replaced by Turnkey: same checks and refusals, same signed bytes.

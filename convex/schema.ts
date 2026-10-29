@@ -123,7 +123,7 @@ export default defineSchema({
     // Referral Pro: timestamp (ms) when referral-based Pro expires
     referralProUntil: v.optional(v.number()),
     // A re-mint in progress (convex/migrations/remintUserDidDb.ts beginRemint).
-    pendingRemint: v.optional(v.object({ oldDid: v.string(), newDid: v.string(), startedAt: v.number() })),
+    pendingRemint: v.optional(v.object({ oldDid: v.string(), newDid: v.string(), startedAt: v.number(), from: v.optional(v.array(v.string())) })),
   })
     .index("by_did", ["did"])
     .index("by_turnkey_id", ["turnkeySubOrgId"])

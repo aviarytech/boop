@@ -216,18 +216,22 @@ async function remintable(ctx: MutationCtx, userId: Id<"users">, oldDid: string,
   return user;
 }
 
-/** Move one row off `oldDid`. Returns whether it changed. */
-async function rewriteRow(ctx: MutationCtx, table: string, row: Row, oldDid: string, newDid: string): Promise<boolean> {
+/** Move one row off any of `fromDids` onto `newDid`. Returns whether it changed. */
+async function rewriteRow(ctx: MutationCtx, table: string, row: Row, fromDids: string[], newDid: string): Promise<boolean> {
   const patch: Record<string, unknown> = {};
-  for (const field of EXACT_MATCH_FIELDS[table] ?? []) {
-    if (row[field] === oldDid) patch[field] = newDid;
-  }
-  const nested = rewriteNested(table, row, oldDid, newDid);
-  if (nested) Object.assign(patch, nested);
-  for (const field of PREFIX_MATCH_FIELDS[table] ?? []) {
-    const value = row[field];
-    // Whole-DID prefix only: `{oldDid}/...`, never a longer DID sharing its characters.
-    if (typeof value === "string" && value.startsWith(`${oldDid}/`)) patch[field] = newDid + value.slice(oldDid.length);
+  let current: Row = row;
+  for (const oldDid of fromDids) {
+    for (const field of EXACT_MATCH_FIELDS[table] ?? []) {
+      if (current[field] === oldDid) patch[field] = newDid;
+    }
+    const nested = rewriteNested(table, current, oldDid, newDid);
+    if (nested) Object.assign(patch, nested);
+    for (const field of PREFIX_MATCH_FIELDS[table] ?? []) {
+      const value = current[field];
+      // Whole-DID prefix only: `{oldDid}/...`, never a longer DID sharing its characters.
+      if (typeof value === "string" && value.startsWith(`${oldDid}/`)) patch[field] = newDid + value.slice(oldDid.length);
+    }
+    current = { ...current, ...patch };
   }
   if (Object.keys(patch).length === 0) return false;
   await ctx.db.patch(row._id as never, patch as never);
@@ -253,7 +257,7 @@ export const applyRemint = internalMutation({
     let rewritten = 0;
     for (const table of REMINT_TABLES) {
       const rows = (await ctx.db.query(table as never).collect()) as unknown as Row[];
-      for (const row of rows) if (await rewriteRow(ctx, table, row, args.oldDid, args.newDid)) rewritten += 1;
+      for (const row of rows) if (await rewriteRow(ctx, table, row, [args.oldDid], args.newDid)) rewritten += 1;
     }
     // The identity row moves last: if anything above throws, `did` still points
     // at the old value and the whole run is safe to retry.
@@ -266,23 +270,65 @@ export const applyRemint = internalMutation({
 // Every pre-#286 account re-mints at its first sign-in with a Turnkey session,
 // so the rewrite can't be one mutation scanning every table: past Convex's
 // per-mutation read limits it would fail for everyone. beginRemint claims the
-// move, remintPage rewrites one page of one table, finishRemint moves the
-// account and serves the new log together. Rows written under the old DID
-// between a table's pass and finishRemint are not moved.
+// move, remintPage rewrites one page of one table, finishRemint sweeps the
+// indexed fields once more and moves the account and its served log together.
+//
+// A claim is resumed, never discarded: a re-mint that died part-way left rows
+// on its own new DID, so the next claim (a fresh DID: the client mints one per
+// attempt) moves rows off the old DID and off every abandoned one (#300
+// review). A live claim heartbeats, so only one stalled for REMINT_CLAIM_MS is
+// taken over. didLogs is not paged: finishRemint rewrites the path's row.
+//
+// Rows written mid-re-mint under the old DID are caught by finishRemint's sweep
+// for indexed fields (list ownership among them). Unindexed attribution fields
+// (items.createdByDid, for one) written during the run are not.
 
 const REMINT_PAGE_SIZE = 200;
 const REMINT_CLAIM_MS = 5 * 60 * 1000;
+const REMINT_SWEEP_LIMIT = 100;
+
+/** The tables /api/user/remintDid pages through. */
+export const REMINT_PAGED_TABLES = REMINT_TABLES.filter((table) => table !== "didLogs");
+
+/** (table, field, index) for the DID fields with an index that leads with them: cheap to sweep at finish. */
+const INDEXED_FIELDS: Array<[table: string, field: string, index: string]> = [
+  ["agentApiKeys", "ownerDid", "by_owner"],
+  ["categories", "ownerDid", "by_owner_name"],
+  ["bookmarks", "userDid", "by_user_list"],
+  ["lists", "ownerDid", "by_owner"],
+  ["itemAssignees", "assigneeDid", "by_assignee"],
+  ["activities", "actorDid", "by_actor"],
+  ["listTemplates", "ownerDid", "by_owner"],
+  ["pushSubscriptions", "userDid", "by_user"],
+  ["pushTokens", "userDid", "by_user"],
+  ["sites", "ownerDid", "by_owner"],
+  ["comments", "userDid", "by_user"],
+];
+
+type PendingRemint = { oldDid: string; newDid: string; startedAt: number; from?: string[] };
+const fromDids = (pending: PendingRemint) => pending.from ?? [pending.oldDid];
+
+async function pendingFor(ctx: MutationCtx, userId: Id<"users">, oldDid: string, newDid: string) {
+  const user = await ctx.db.get(userId);
+  const pending = user?.pendingRemint as PendingRemint | undefined;
+  if (!user || pending?.newDid !== newDid || user.did !== oldDid) throw new Error("This re-mint is no longer the account's pending one");
+  return { user, pending };
+}
 
 export const beginRemint = internalMutation({
   args: { userId: v.id("users"), oldDid: v.string(), newDid: v.string() },
   handler: async (ctx, args): Promise<{ skipped: true; did: string | null } | { skipped: false }> => {
     const user = await remintable(ctx, args.userId, args.oldDid, args.newDid);
     if (user === "skipped") return { skipped: true, did: (await ctx.db.get(args.userId))?.did ?? null };
-    const pending = user.pendingRemint;
-    if (pending && pending.newDid !== args.newDid && Date.now() - pending.startedAt < REMINT_CLAIM_MS) {
-      throw new Error("Another device is moving this account. Try again shortly.");
+    const pending = user.pendingRemint as PendingRemint | undefined;
+    let from = [args.oldDid];
+    if (pending && pending.oldDid === args.oldDid) {
+      if (pending.newDid === args.newDid) return { skipped: false };
+      if (Date.now() - pending.startedAt < REMINT_CLAIM_MS) throw new Error("Another device is moving this account. Try again shortly.");
+      // Take over a stalled claim, and with it the rows it already moved.
+      from = [...new Set([...fromDids(pending), pending.newDid])];
     }
-    await ctx.db.patch(user._id, { pendingRemint: { oldDid: args.oldDid, newDid: args.newDid, startedAt: Date.now() } });
+    await ctx.db.patch(user._id, { pendingRemint: { oldDid: args.oldDid, newDid: args.newDid, startedAt: Date.now(), from } });
     return { skipped: false };
   },
 });
@@ -290,15 +336,19 @@ export const beginRemint = internalMutation({
 export const remintPage = internalMutation({
   args: { userId: v.id("users"), oldDid: v.string(), newDid: v.string(), table: v.string(), cursor: v.union(v.string(), v.null()) },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (user?.pendingRemint?.newDid !== args.newDid || user.did !== args.oldDid) throw new Error("This re-mint is no longer the account's pending one");
-    if (!REMINT_TABLES.includes(args.table)) throw new Error(`Not a re-mint table: ${args.table}`);
+    const { user, pending } = await pendingFor(ctx, args.userId, args.oldDid, args.newDid);
+    if (!REMINT_PAGED_TABLES.includes(args.table)) throw new Error(`Not a re-mint table: ${args.table}`);
     const page = await ctx.db.query(args.table as never).paginate({ numItems: REMINT_PAGE_SIZE, cursor: args.cursor });
     let rewritten = 0;
-    for (const row of page.page as unknown as Row[]) if (await rewriteRow(ctx, args.table, row, args.oldDid, args.newDid)) rewritten += 1;
+    for (const row of page.page as unknown as Row[]) if (await rewriteRow(ctx, args.table, row, fromDids(pending), args.newDid)) rewritten += 1;
+    // Heartbeat: a claim still making progress is never taken over.
+    await ctx.db.patch(user._id, { pendingRemint: { ...pending, startedAt: Date.now() } });
     return { rewritten, isDone: page.isDone, cursor: page.continueCursor };
   },
 });
+
+/** Thrown when finishRemint's sweep found more stragglers than fit: run the pages again. */
+export const REMINT_SWEEP_INCOMPLETE = "REMINT_SWEEP_INCOMPLETE";
 
 export const finishRemint = internalMutation({
   args: {
@@ -306,8 +356,15 @@ export const finishRemint = internalMutation({
     path: v.string(), log: v.string(), scid: v.string(), versionId: v.string(), author: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (user?.pendingRemint?.newDid !== args.newDid || user.did !== args.oldDid) throw new Error("This re-mint is no longer the account's pending one");
+    const { pending } = await pendingFor(ctx, args.userId, args.oldDid, args.newDid);
+    // Sweep rows written under the old (or an abandoned) DID since their table's pass.
+    for (const oldDid of fromDids(pending)) {
+      for (const [table, field, index] of INDEXED_FIELDS) {
+        const rows = (await ctx.db.query(table as never).withIndex(index as never, (q: { eq(field: string, value: string): unknown }) => q.eq(field, oldDid) as never).take(REMINT_SWEEP_LIMIT + 1)) as unknown as Row[];
+        if (rows.length > REMINT_SWEEP_LIMIT) throw new Error(REMINT_SWEEP_INCOMPLETE);
+        for (const row of rows) await rewriteRow(ctx, table, row, fromDids(pending), args.newDid);
+      }
+    }
     // The identity row and the served log move together, last.
     await ctx.db.patch(args.userId, { did: args.newDid, pendingRemint: undefined });
     const row = {

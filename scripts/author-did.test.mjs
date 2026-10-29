@@ -140,6 +140,11 @@ test('only #key-0 and #orig-1, each in its one relationship', async () => {
   assert.ok(tamper({ authentication: ['#key-0', '#orig-1'] }).length > 0);
   assert.ok(tamper({ assertionMethod: ['#orig-1', '#key-0'] }).length > 0);
   assert.ok(tamper({ verificationMethod: [...genesis.state.verificationMethod, { id: '#x', type: 'Multikey', controller: author.did, publicKeyMultibase: author.keys.assertion.multikey }] }).length > 0);
+  // #300 review round 3: a duplicate id — a verifier may bind the first, a Map keeps the last.
+  const [key0, orig1] = genesis.state.verificationMethod;
+  const evil = { ...orig1, publicKeyMultibase: (await authorDid.resolveAuthorKeys(await mockTurnkey(), SUB_ORG)).assertion.multikey };
+  assert.match(tamper({ verificationMethod: [key0, evil, orig1] }).join(), /share an id/);
+  assert.match(tamper({ verificationMethod: [key0, { ...orig1, publicKeyJwk: { kty: 'OKP' } }] }).join(), /carries publicKeyJwk/);
 });
 
 test('witnesses, pre-rotation, deactivation and other domains are refused', async () => {
@@ -151,6 +156,8 @@ test('witnesses, pre-rotation, deactivation and other domains are refused', asyn
     const tampered = JSON.stringify({ ...genesis, parameters: { ...genesis.parameters, ...parameters } });
     await assert.rejects(() => authorDidLog.checkDidLog(tampered), /witnesses|pre-rotation|watchers|doesn't use|don't use/, JSON.stringify(parameters));
   }
+  const malformed = JSON.stringify({ ...genesis, state: { ...genesis.state, id: 'did:webvh:x:%E0%A4%A:user' } });
+  await assert.rejects(() => authorDidLog.checkDidLog(malformed, { domain: 'boop.ad' }), /malformed domain/);
   // The domain is checked before anything resolves, so nothing is fetched from it.
   const elsewhere = await mintAuthor(turnkey, { domain: 'evil.example', path: PATH });
   const fetchBefore = globalThis.fetch;

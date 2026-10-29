@@ -36,6 +36,9 @@ export interface DidDocumentLike {
   keyAgreement?: unknown[];
 }
 
+/** All a boop verification method carries: anything else (publicKeyJwk...) is a second key description. */
+const VERIFICATION_METHOD_MEMBERS = new Set(["id", "type", "controller", "publicKeyMultibase"]);
+
 /** Parameters a boop DID log may carry. Anything else (witnesses, pre-rotation, watchers...) is refused. */
 export const ALLOWED_LOG_PARAMETERS = new Set(["method", "scid", "updateKeys", "portable", "deactivated", "ttl", "nextKeyHashes", "witness", "watchers"]);
 
@@ -59,6 +62,12 @@ export function authorDidProblems(
     if (vm.controller !== did) problems.push(`${vm.id ?? "a verification method"} is not controlled by the DID`);
   }
   const byId = new Map(methods.map(vm => [absolute(did, vm.id ?? ""), vm]));
+  // A Map keeps the last of duplicate ids, but a verifier may bind the first (#300 review).
+  if (byId.size !== methods.length) problems.push("two verification methods share an id");
+  for (const vm of methods) {
+    const extra = Object.keys(vm).filter(member => !VERIFICATION_METHOD_MEMBERS.has(member));
+    if (extra.length > 0) problems.push(`${vm.id ?? "a verification method"} carries ${extra.join(", ")}`);
+  }
   const assertionId = `${did}#${ASSERTION_VM_FRAGMENT}`;
   const assertionRefs = (doc.assertionMethod ?? []).map(ref => absolute(did, typeof ref === "string" ? ref : ref.id ?? ""));
   const assertion = byId.get(assertionId);

@@ -14,7 +14,7 @@ import {
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
 import { assertDidLogOwnership, didLogPathForSubOrg, DidLogOwnershipError } from "./lib/didLogAuth";
 import { checkAccountDidLog, KeyLookupError } from "./didLogsHttp";
-import { REMINT_TABLES } from "./migrations/remintUserDidDb";
+import { REMINT_PAGED_TABLES, REMINT_SWEEP_INCOMPLETE } from "./migrations/remintUserDidDb";
 
 /** The domain encoded in a did:webvh, percent-decoded. Null if not a did:webvh. */
 function didWebvhDomain(did: string): string | null {
@@ -193,18 +193,27 @@ export const remintUserDID = httpAction(async (ctx, request) => {
       return jsonResponse(request, { success: true, newDid: begun.did, rewritten: 0, skipped: "moved by another re-mint" });
     }
     let rewritten = 0;
-    for (const table of REMINT_TABLES) {
-      let cursor: string | null = null;
-      for (;;) {
-        const page: { rewritten: number; isDone: boolean; cursor: string } = await ctx.runMutation(remint.remintPage, { ...move, table, cursor });
-        rewritten += page.rewritten;
-        if (page.isDone) break;
-        cursor = page.cursor;
+    for (let attempt = 0; ; attempt += 1) {
+      for (const table of REMINT_PAGED_TABLES) {
+        let cursor: string | null = null;
+        for (;;) {
+          const page: { rewritten: number; isDone: boolean; cursor: string } = await ctx.runMutation(remint.remintPage, { ...move, table, cursor });
+          rewritten += page.rewritten;
+          if (page.isDone) break;
+          cursor = page.cursor;
+        }
+      }
+      try {
+        await ctx.runMutation(remint.finishRemint, {
+          ...move, path, log: didLog, scid: checked.scid, versionId: checked.versionId, author: checked.author,
+        });
+        break;
+      } catch (err) {
+        // More rows arrived under the old DID than the final sweep takes: page again.
+        if (attempt < 2 && err instanceof Error && err.message.includes(REMINT_SWEEP_INCOMPLETE)) continue;
+        throw err;
       }
     }
-    await ctx.runMutation(remint.finishRemint, {
-      ...move, path, log: didLog, scid: checked.scid, versionId: checked.versionId, author: checked.author,
-    });
 
     console.log(
       `[userHttp] Re-minted ${auth.email}: ${user.did} -> ${newDid} (${rewritten} rows)`
