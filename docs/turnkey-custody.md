@@ -50,6 +50,40 @@ could never have signed: a parent-org key cannot stamp sub-org activities
 A Turnkey login failure does not block boop sign-in. It only blocks DID updates
 until the next OTP login succeeds.
 
+## The author DID (PR b)
+
+Each account has two Turnkey Ed25519 keys in its sub-org's default wallet,
+both used only through the client-side session above:
+
+| Key | Path | In the did:webvh | Signs |
+| --- | --- | --- | --- |
+| Author key | `m/44'/501'/0'/0'` | the only update key; `#key-0` in `authentication` | DID updates (genesis included) |
+| Assertion key | `m/44'/501'/1'/0'` | `#orig-1` in `assertionMethod`, not an update key | Originals 5 entries (`eddsa-jcs-2022`) |
+
+Every verification method's `controller` is the DID (written with the
+`{SCID}` placeholder at genesis), as Originals 5 requires. Sub-orgs created by
+boop already hold an Ed25519 account at the assertion path; one that lacks it
+gets it from the user's session (`CREATE_WALLET_ACCOUNTS` in the sub-org).
+Both keys sign through `SIGN_RAW_PAYLOAD_V2` with `HASH_FUNCTION_NOT_APPLICABLE`,
+stamped by the session key, and the client checks every returned signature
+against the expected public key before using it.
+
+Signing is **online-only**: it needs a live Turnkey session and a clean sub-org
+audit. With the session expired, Originals signing waits for the next login.
+It is per account, not per device, so there is no per-device revocation.
+
+- `src/lib/authorDid.ts`: key lookup, the didwebvh-ts signer, genesis.
+- `src/lib/authorIdentity.ts`: after sign-in, keeps an author DID or moves the
+  account to a new one (re-genesis through `/api/user/remintDid`, rows moved by
+  `applyRemint`, no continuity link). `turnkeyListAuthorSource` is the
+  `ListAuthor` source for Originals 5 (#298).
+- `src/lib/originalsSigning.ts`: `keySigner` from `@originals/sdk/originals`
+  with the key replaced by Turnkey: same checks and refusals, same signed bytes.
+- `convex/lib/authorDidLog.ts`: the server accepts a DID log only as a valid
+  continuation of the one it serves (same SCID, served entries unchanged, every
+  entry signed by the update keys before it), and adopts or re-genesises only to
+  an author DID.
+
 ## What Turnkey has to enforce
 
 The root quorum bypasses policies. So the remaining power that matters is the
@@ -61,7 +95,7 @@ the parent picks the credential's target key:
 | `EMAIL_AUTH` (bundle to a parent-chosen key, link template the parent controls) | sub-org feature removed (new sub-orgs: at creation; old: at the user's next OTP login, retried at each refresh check until it succeeds) and boop API user policy |
 | Email recovery | same |
 | Legacy `INIT_OTP_AUTH`/`OTP_AUTH`, `INIT_OTP`/`VERIFY_OTP` + `OTP_LOGIN` (plaintext code through the server) | boop API user policy; the client never sends a plaintext code |
-| Parent signing, creating users/keys, root-quorum changes in a sub-org | Turnkey itself: the parent cannot stamp sub-org activities |
+| Parent signing with either author key, exporting them, creating users/keys/wallet accounts, root-quorum changes in a sub-org | Turnkey itself: the parent cannot stamp sub-org activities; the boop API user policy denies them as well |
 
 ## Operator runbook (not yet done)
 
@@ -96,6 +130,12 @@ without checking each step in a test parent org first.
 - Every policy expression in `boop-api-user-policies.json`.
 - Whether removing sub-org features through the user's own session succeeds for
   every pre-#286 sub-org (the client records a finding if it does not).
+- Signing with either author key through the session (`SIGN_RAW_PAYLOAD_V2`,
+  Ed25519, `HASH_FUNCTION_NOT_APPLICABLE`) and creating the assertion account
+  (`CREATE_WALLET_ACCOUNTS`) have run only against a mock that signs with
+  local keys, never against Turnkey. That `r || s` from Turnkey is the 64-byte
+  Ed25519 signature is assumed; the client verifies it, so a wrong assumption
+  fails closed (nothing is published), but it would fail.
 - `VERIFY_OTP_V2` → `loginWithOtp` into a sub-org from a parent-org OTP has been
   tested only against mocks (`scripts/login-account.test.mjs`,
   `scripts/auth-provider.test.mjs`, the E2E fixture), never against Turnkey.
@@ -103,8 +143,8 @@ without checking each step in a test parent org first.
 ## Residual risk
 
 - **Whoever serves the JS can subvert the client.** A malicious build could send
-  the plaintext code, or sign whatever it likes with the session. Device keys in
-  PR b have the same limit. This is inherent to a web client.
+  the plaintext code, or sign whatever it likes with the session, including
+  DID updates and Originals entries. This is inherent to a web client.
 - **The parent org is shared with other apps** (`docs/login-account-recovery.md`).
   Their API users are not covered by boop's policies. The sub-org feature
   removals cover them for `EMAIL_AUTH` and recovery; any of them holding a
