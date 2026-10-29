@@ -33,9 +33,13 @@ Login is Turnkey's encrypted OTP flow
 5. At every login the client removes `EMAIL_AUTH`, `EMAIL_RECOVERY`,
    `ROOT_USER_EMAIL_RECOVERY` and `SMS_AUTH` from its sub-org (sub-orgs made
    before #286 have them), then audits the sub-org: one user, that user alone in
-   the root quorum, no passkeys or OAuth providers, and no API key that outlives
-   a 7-day session. boop creates sub-orgs with no credentials, so anything else
-   was put there by someone else, possibly the parent at creation. The result is stored per device
+   the root quorum, no passkeys, OAuth providers or phone number, and no API
+   key that outlives a 7-day session. boop creates sub-orgs with no
+   credentials, so anything else was put there by someone else, possibly the
+   parent at creation. A session-length key planted at creation could renew
+   itself indefinitely and later look like any login, so the sign-up device's
+   first login (its key created within 60 s of the sub-org) also flags any key
+   older than its own, and keeps that finding for good. The result is stored per device
    (`lastSubOrgAudit`); DID updates refuse to sign without a clean audit (PR b).
 
 The server signers (`convex/didCreation.ts`, `convex/lib/turnkeySigner.ts`,
@@ -107,3 +111,9 @@ without checking each step in a test parent org first.
   parent root credential can change policies.
 - The client audit runs at login. Something added to the sub-org afterwards is
   found at the next login, not before.
+- A key planted at sub-org creation is caught only on the sign-up device, at
+  its first login. A device that signs in later can't tell a planted key that
+  has renewed itself from the user's own sessions. Checking each key's
+  STAMP_LOGIN chain in the sub-org's activity history would; it isn't built.
+  A second device signing in within 60 s of sign-up would be flagged by
+  mistake, and that device's flag would need clearing by hand.

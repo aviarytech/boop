@@ -14,7 +14,7 @@ state.convex = { mutation: (...args) => state.establish(...args) };
 await build({entryPoints:['src/hooks/useAuth.tsx'],outfile:'tmp/auth-provider-test.mjs',bundle:true,jsx:'automatic',platform:'node',format:'esm',external:['react','react/jsx-runtime','convex/server','convex/values'],plugins:[{
   name:'auth-provider-fixtures', setup(b) {
     b.onResolve({filter:/^(@capacitor\/core|convex\/react|\.\.?\/.*(storageAdapter|webvh|useDidDomainRemint|convexUrls|analytics|turnkeySession))$/}, args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));
-    b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({contents:({
+    b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({resolveDir:`${process.cwd()}/src/lib`,contents:({
       core:'export const Capacitor={getPlatform:()=>globalThis.__authProviderTest.platform,isNativePlatform:()=>globalThis.__authProviderTest.platform!=="web"};',
       react:'export function useConvex(){return globalThis.__authProviderTest.convex;}',
       storageAdapter:'export const storageAdapter={get:async k=>globalThis.__authProviderTest.storage.get(k)??null,set:async(k,v)=>globalThis.__authProviderTest.storage.set(k,v),remove:async k=>globalThis.__authProviderTest.storage.delete(k)};',
@@ -22,7 +22,7 @@ await build({entryPoints:['src/hooks/useAuth.tsx'],outfile:'tmp/auth-provider-te
       useDidDomainRemint:'export const useDidDomainRemint=()=>{};',
       convexUrls:'export const getConvexHttpUrl=()=>"https://auth.example.test";',
       analytics:'export const identifyUser=()=>{};export const resetAnalytics=()=>{};',
-      turnkeySession:`const t=()=>globalThis.__authProviderTest;
+      turnkeySession:`import { TimeoutError } from "./authTimeout"; globalThis.__authProviderTest.TimeoutError = TimeoutError; const t=()=>globalThis.__authProviderTest;
         export const encryptOtpForSession=async(code,bundle)=>{t().turnkeyCalls.push(['encrypt',code,bundle]);return {encryptedOtpBundle:'sealed:'+bundle,publicKey:'session-pub'};};
         export const discardSessionKey=async k=>{t().turnkeyCalls.push(['discard',k]);};
         export const completeTurnkeyLogin=async p=>{t().turnkeyCalls.push(['login',p]);return t().turnkey.complete(p);};
@@ -291,6 +291,27 @@ test('a rejected code discards the session key it was bound to', async () => {
   await act(async () => assert.rejects(() => result.current.verifyOtp('000000'), /didn't work/));
   assert.deepEqual(turnkeyCalls.filter(c => c[0] === 'discard'), [['discard', 'session-pub']]);
   assert.ok(!turnkeyCalls.some(c => c[0] === 'login'));
+});
+
+test('a Turnkey login that times out keeps its session key: the login may still land', async () => {
+  state.turnkey.complete = async () => { throw new state.TimeoutError('Turnkey login timed out'); };
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ user, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => result.current.verifyOtp('123456'));
+  assert.equal(result.current.isAuthenticated, true);
+  assert.deepEqual(turnkeyCalls.filter(c => c[0] === 'discard'), []);
+});
+
+test('logout clears boop first and Turnkey even when the logout endpoint fails', async () => {
+  seed();
+  globalThis.fetch = async () => { throw new Error('offline'); };
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.logout());
+  assert.equal(state.storage.size, 0);
+  assert.ok(turnkeyCalls.some(c => c[0] === 'clear'));
 });
 
 test('logout clears the Turnkey session', async () => {

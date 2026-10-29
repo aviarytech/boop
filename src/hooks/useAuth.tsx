@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { authErrorData } from "../../convex/lib/authError";
 import { onSessionExpiry } from "../lib/sessionExpiry";
-import { withAuthTimeout, withTimeout } from "../lib/authTimeout";
+import { TimeoutError, withAuthTimeout, withTimeout } from "../lib/authTimeout";
 import { useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 /**
@@ -254,6 +254,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);
         await storageAdapter.remove(JWT_STORAGE_KEY);
+        // Signed out of boop, so out of Turnkey too.
+        void clearTurnkeySession();
       } finally {
         if (!cancelled && !retrying) {
           authTransitionRef.current = false;
@@ -332,7 +334,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         console.log("[useAuth] Verifying OTP via server...");
 
-        const { encryptedOtpBundle, publicKey } = await encryptOtpForSession(code, otpFlowState.otpEncryptionTargetBundle);
+        // No plaintext fallback: the server refuses codes it could read.
+        const { encryptedOtpBundle, publicKey } = await withTimeout(
+          encryptOtpForSession(code, otpFlowState.otpEncryptionTargetBundle),
+          TURNKEY_STEP_MS, "Couldn't prepare a secure sign-in on this device. Reload and try again.");
         sessionPublicKey = publicKey;
 
         const httpUrl = getConvexHttpUrl();
@@ -361,15 +366,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // block sign-in; the next OTP login retries it.
         try {
           if (!turnkey?.verificationToken) throw new Error("Server returned no Turnkey verification token");
-          const audit = await withTimeout(completeTurnkeyLogin({
+          // Only the login itself is awaited; the audit runs on in the background.
+          await withTimeout(completeTurnkeyLogin({
             verificationToken: turnkey.verificationToken,
             subOrgId: turnkey.subOrgId,
             publicKey,
-          }), TURNKEY_STEP_MS);
-          if (!audit.clean) console.warn("[useAuth] Turnkey sub-org audit:", audit.findings);
+          }), TURNKEY_STEP_MS, "Turnkey login timed out");
         } catch (turnkeyErr) {
           console.error("[useAuth] Turnkey session login failed:", turnkeyErr);
-          await discardSessionKey(publicKey);
+          // After a timeout the login may still land and use this key; keep it.
+          if (!(turnkeyErr instanceof TimeoutError)) await discardSessionKey(publicKey);
         }
         sessionPublicKey = null;
 
@@ -461,11 +467,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await storageAdapter.remove(AUTH_STORAGE_KEY);
       await storageAdapter.remove(JWT_STORAGE_KEY);
       const httpUrl = getConvexHttpUrl();
-      await fetch(`${httpUrl}/auth/logout`, {
+      await withTimeout(fetch(`${httpUrl}/auth/logout`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",
-      });
+      }), TURNKEY_STEP_MS, "Logout endpoint timed out");
     } catch (err) {
       console.error("[useAuth] Logout endpoint failed:", err);
     }
@@ -497,6 +503,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       void storageAdapter.remove(AUTH_STORAGE_KEY);
       void storageAdapter.remove(JWT_STORAGE_KEY);
+      void clearTurnkeySession();
     });
   }, [token]);
 

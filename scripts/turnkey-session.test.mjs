@@ -1,6 +1,6 @@
 // #286 (a): the client's Turnkey session. @turnkey/core is replaced by a stub
 // that records calls, so these test boop's own checks, not Turnkey.
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -19,23 +19,38 @@ await build({
           getSession() { return globalThis.__turnkeyTest.session(); }
           loginWithOtp(p) { globalThis.__turnkeyTest.calls.push(['login', p]); }
           refreshSession(p) { return globalThis.__turnkeyTest.refresh(p); }
-          async clearUnusedKeyPairs() {} async deleteApiKeyPair(p) { globalThis.__turnkeyTest.calls.push(['delete', p.publicKey]); } }
+          async clearUnusedKeyPairs() {} async deleteApiKeyPair(p) { globalThis.__turnkeyTest.calls.push(['delete', p.publicKey]); }
+          async clearAllSessions() { globalThis.__turnkeyTest.calls.push(['wipe']); } }
         export const decodeVerificationToken = token => JSON.parse(token);`
       : 'export const encryptOtpCodeToBundle = async () => "sealed";' }));
   } }],
 });
-globalThis.localStorage = { store: new Map(), getItem(k) { return this.store.get(k) ?? null; }, setItem(k, v) { this.store.set(k, v); } };
+// defineProperty, not assignment: bun's happy-dom preload makes localStorage
+// readonly. bun runs every test file in one process, so restore it after.
+const store = new Map();
+const savedLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+after(() => {
+  if (savedLocalStorage) Object.defineProperty(globalThis, 'localStorage', savedLocalStorage);
+  else delete globalThis.localStorage;
+  delete globalThis.__turnkeyTest;
+});
+Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: {
+  getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k), clear: () => store.clear(),
+} });
 const session = await import(pathToFileURL(`${process.cwd()}/${outdir}/session.mjs`).href);
 
 const ME = 'user-me';
-const ownKey = { apiKeyId: 'k1', expirationSeconds: String(session.TURNKEY_SESSION_SECONDS), credential: { publicKey: 'pub' } };
+const at = s => ({ seconds: String(s), nanos: '0' });
+const ownKey = { apiKeyId: 'k1', expirationSeconds: String(session.TURNKEY_SESSION_SECONDS), credential: { publicKey: 'pub' }, createdAt: at(5000) };
 function subOrg(user = {}) {
+  store.clear();
   t.calls = [];
   t.session = () => ({ userId: ME, organizationId: 'sub', expiry: Date.now() / 1000 + 86400, publicKey: 'pub' });
   t.http = {
     getOrganizationConfigs: async () => ({ configs: { features: [], quorum: { threshold: 1, userIds: [ME] } } }),
     removeOrganizationFeature: async () => {},
-    getUsers: async () => ({ users: [{ userId: ME, apiKeys: [ownKey], authenticators: [], oauthProviders: [], ...user }] }),
+    getUsers: async () => ({ users: [{ userId: ME, createdAt: at(1000), apiKeys: [ownKey], authenticators: [], oauthProviders: [], ...user }] }),
+    deleteApiKeys: async () => { t.calls.push(['revoke']); },
   };
 }
 beforeEach(() => subOrg());
@@ -51,6 +66,7 @@ test('a passkey, OAuth provider or longer-lived API key planted at creation is a
     [{ oauthProviders: [{ providerId: 'o' }] }, /OAuth/],
     [{ apiKeys: [ownKey, { ...ownKey, apiKeyId: 'k2', expirationSeconds: String(10 * 365 * 86400) }] }, /outlive a session/],
     [{ apiKeys: [{ ...ownKey, expirationSeconds: undefined }] }, /outlive a session/],
+    [{ userPhoneNumber: '+15555550100' }, /phone number/],
   ]) {
     subOrg(user);
     const audit = await session.hardenAndAuditSubOrg('sub');
@@ -58,6 +74,34 @@ test('a passkey, OAuth provider or longer-lived API key planted at creation is a
     assert.match(audit.findings.join('; '), finding);
     assert.equal(session.lastSubOrgAudit('sub').clean, false, 'the finding is stored for DID updates to refuse');
   }
+});
+
+// #299 review round 2: a session-length key planted at creation can renew
+// itself forever. Only the sign-up device's first login can tell it apart.
+test('at the sign-up device\'s first login, any key older than its own is a sticky finding', async () => {
+  const planted = { ...ownKey, apiKeyId: 'planted', credential: { publicKey: 'backend' }, createdAt: at(1000) };
+  subOrg({ createdAt: at(1000), apiKeys: [planted, { ...ownKey, createdAt: at(1003) }] });
+  const first = await session.hardenAndAuditSubOrg('sub');
+  assert.equal(first.clean, false);
+  assert.match(first.findings.join(), /before its first login/);
+  // Days later the planted key has renewed into a fresh one; the finding stays on this device.
+  t.http.getUsers = async () => ({ users: [{ userId: ME, createdAt: at(1000), apiKeys: [{ ...ownKey, createdAt: at(900000) }, { ...planted, createdAt: at(800000) }], authenticators: [], oauthProviders: [] }] });
+  t.session = () => ({ userId: ME, organizationId: 'sub', expiry: Date.now() / 1000 + 86400, publicKey: 'pub' });
+  assert.equal((await session.hardenAndAuditSubOrg('sub')).clean, false, 'sticky');
+});
+
+test('a later login on another device with older keys around is not a finding', async () => {
+  subOrg({ createdAt: at(1000), apiKeys: [{ ...ownKey, apiKeyId: 'phone', credential: { publicKey: 'phone' }, createdAt: at(1002) }, { ...ownKey, createdAt: at(1000 + 3600) }] });
+  assert.equal((await session.hardenAndAuditSubOrg('sub')).clean, true);
+});
+
+test('logout wipes the local session even when revoking at Turnkey fails', async () => {
+  t.http.getUsers = async () => { throw new Error('offline'); };
+  await session.clearTurnkeySession();
+  assert.deepEqual(t.calls, [['wipe']]);
+  subOrg();
+  await session.clearTurnkeySession();
+  assert.deepEqual(t.calls, [['revoke'], ['wipe']]);
 });
 
 test('a verification token bound to another key is refused before any login', async () => {
