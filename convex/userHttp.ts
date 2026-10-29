@@ -60,6 +60,12 @@ export const updateUserDID = httpAction(async (ctx, request) => {
     // The account identity comes from the token; the DID must be minted at this
     // sub-org's own path. did:key is derived server-side at login, never accepted here.
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: did, path: didLogPathForSubOrg(auth.turnkeySubOrgId) });
+    // #286: only a DID-less account adopts a DID. One with any DID (a legacy
+    // did:key or did:temp included) owns rows keyed to it: that is a re-mint.
+    const holder = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
+    if (holder?.did && holder.did !== did) {
+      return errorResponse(request, "This account already has a DID. Re-mint through /api/user/remintDid.", 409);
+    }
     // #286: only a DID whose checked log is already served (POST /api/did/log)
     // and is an author DID, so no account adopts a DID the world can't resolve.
     const served = await ctx.runQuery(internal.didLogs.getDidLogByUserDid, { userDid: did });

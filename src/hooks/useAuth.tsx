@@ -218,9 +218,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // that session is dropped. A did:key or did:temp the server does hold
         // is kept; useAuthorDid re-mints it.
         if (!parsed.user?.did?.startsWith("did:webvh:")) {
-          const account = await withAuthTimeout(convex.query(api.auth.getUserByTurnkeyId, {
-            turnkeySubOrgId: parsed.user.turnkeySubOrgId, authToken: parsed.token,
-          })) as { did?: string } | null;
+          let account: { did?: string } | null;
+          try {
+            account = await withAuthTimeout(convex.query(api.auth.getUserByTurnkeyId, {
+              turnkeySubOrgId: parsed.user.turnkeySubOrgId, authToken: parsed.token,
+            })) as { did?: string } | null;
+          } catch (err) {
+            const code = authErrorData(err)?.code;
+            // As for establish: on native, keep the session through a transient failure.
+            if (Capacitor.isNativePlatform() && code !== "INVALID_TOKEN" && code !== "UNAUTHORIZED") {
+              retrying = true;
+              if (!cancelled) retryTimer = setTimeout(() => void restoreSession(), 5000);
+              return;
+            }
+            throw err;
+          }
+          // Only the server answering that it holds no DID drops the session.
           if (!account?.did) {
             void revokeServerSession(parsed.token);
             throw new Error("Stored session has no DID; sign in again");

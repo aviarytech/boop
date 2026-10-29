@@ -77,7 +77,9 @@ export const storeDidLog = httpAction(async (ctx, request) => {
     const continuing = served?.userDid === userDid;
     if (!continuing) {
       const account = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
-      if (account?.did?.startsWith("did:webvh:") || served?.author) {
+      // Any DID the account holds owns rows: moving off it is a re-mint
+      // (rows move), never a new log here (#300 review).
+      if (account?.did || served?.author) {
         return json(409, { error: "This account already has a DID. Re-mint through /api/user/remintDid." });
       }
     }

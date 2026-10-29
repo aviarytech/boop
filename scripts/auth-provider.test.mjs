@@ -293,6 +293,17 @@ test('a stored legacy DID the server holds (did:key) is kept at restore, from th
   assert.equal(JSON.parse(state.storage.get('lisa-auth-state')).user.did, 'did:key:z6MkLegacy');
 });
 
+test('native: a transient failure asking the server for the DID keeps the session', async () => {
+  state.platform = 'ios';
+  const legacy = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
+  state.query = async () => { throw new Error('network'); };
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.ok(state.storage.has('lisa-auth-state'), 'not signed out');
+  assert.ok(!turnkeyCalls.some(c => c[0] === 'clear'));
+});
+
 test('OTP sign-in on a legacy did:key needs no author DID first', async () => {
   state.ensureAuthorDid = async () => { throw new Error('must not be called'); };
   globalThis.fetch = async url => url.endsWith('/auth/initiate')
