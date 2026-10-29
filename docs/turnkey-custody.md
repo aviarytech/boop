@@ -122,9 +122,19 @@ without checking each step in a test parent org first.
   chain that starts at one of the user's own OTP logins, from the sub-org's
   activity history. It isn't built: it depends on how Turnkey records
   attested logins and their stampers, which needs the live API to confirm.
-  **Until it exists, the custody guarantee holds only if boop's backend was
-  honest when each account signed up.** Accounts created before #286 had
-  their sub-orgs created with no credentials by the old code.
+  **Until it exists, the custody guarantee holds only if boop's backend is
+  honest, not just at sign-up.** The backend also maps an email to its
+  sub-org and returns that sub-org ID from `/auth/verify`, and the client logs
+  into whatever sub-org it is given. So at any later login a compromised
+  backend can create a fresh sub-org for the user's email with a planted key,
+  create it early enough that the 60 s tripwire never fires, and point the
+  login at it. An account that already has an author DID is partly protected:
+  that DID's keys are pinned, so the swapped sub-org can't sign as it (updates
+  and Originals entries fail rather than hand over control). An account with
+  no author DID yet, which includes every pre-#286 account at its first login
+  with this code, would get one minted from the backend's sub-org. Closing
+  this needs the client to know its sub-org from something the backend
+  doesn't control.
 - **A compromised backend can phish the code through Turnkey's own email.**
   The allow policy permits `INIT_OTP_V3` with any parameters, and its
   `emailCustomization` (magic-link template, template ID and variables),
