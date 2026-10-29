@@ -47,8 +47,15 @@ The server signers (`convex/didCreation.ts`, `convex/lib/turnkeySigner.ts`,
 could never have signed: a parent-org key cannot stamp sub-org activities
 (production logged `organization mismatch`, `7bbba38`).
 
-A Turnkey login failure does not block boop sign-in. It only blocks DID updates
-until the next OTP login succeeds.
+A Turnkey login failure does not block sign-in to an existing account. It
+only blocks DID updates and Originals signing until the next login that
+succeeds. A **new** account is different: the server refuses every call from
+an account without a DID, and its author DID can only be minted through the
+Turnkey session, so sign-up finishes only once that DID exists. If the
+Turnkey login or the sub-org audit fails at sign-up, sign-up fails and the
+user requests a new code. Sign-up already depends on Turnkey to send the
+code, so this adds no new outage. A device with a sticky audit finding can't
+finish a sign-up at all.
 
 ## The author DID (PR b)
 

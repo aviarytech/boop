@@ -36,7 +36,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuthorDid } from "./useAuthorDid";
-import { clearCurrentAuthor } from "../lib/authorIdentity";
+import { clearCurrentAuthor, ensureAuthorDid } from "../lib/authorIdentity";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
 import { identifyUser, resetAnalytics } from "../lib/analytics";
@@ -50,6 +50,8 @@ import {
 
 /** Turnkey steps never hold up boop's own sign-in or sign-out for longer than this. */
 const TURNKEY_STEP_MS = 15_000;
+/** A new account's author DID: the audit (up to 30 s), the mint and two writes. */
+const AUTHOR_DID_SETUP_MS = 60_000;
 
 /**
  * Get the Convex HTTP endpoint base URL from the Convex URL.
@@ -342,9 +344,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
-        // The server's DID, or did:temp for a new account until useAuthorDid
-        // mints its author DID through the Turnkey session (#286).
-        const userDid = serverUser.did || `did:temp:${serverUser.turnkeySubOrgId}`;
+        // A new account has no DID, and the server refuses every call from an
+        // account without one. Its author DID can only be minted through this
+        // Turnkey session (#286), so sign-up finishes only once it exists: a
+        // failure here fails sign-in, to be retried, rather than leaving an
+        // account that can do nothing. Existing accounts keep their DID, and
+        // useAuthorDid moves them onto an author DID when it can.
+        let userDid: string = serverUser.did;
+        if (!userDid?.startsWith("did:webvh:")) {
+          const authored = await withTimeout(
+            ensureAuthorDid({ did: serverUser.did, turnkeySubOrgId: serverUser.turnkeySubOrgId }, jwtToken),
+            AUTHOR_DID_SETUP_MS, "Setting up your account timed out");
+          if (authored.status === "not-ready" || authored.status === "kept") {
+            throw new Error("We couldn't finish setting up your account. Please request a new code and try again.");
+          }
+          userDid = authored.did;
+        }
 
         // Create auth user object
         const authUser: AuthUser = {
