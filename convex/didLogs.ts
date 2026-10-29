@@ -12,7 +12,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
  * Store or update a user's DID log.
  *
  * Internal: it writes whatever `userDid` it is handed, so the caller owns the
- * ownership check. As a public mutation this was directly callable by anyone
+ * ownership check and the continuation check (didLogValidation.checkWrite). As a public mutation this was directly callable by anyone
  * with the deployment URL. Go through didLogsHttp.storeDidLog.
  */
 export const upsertDidLog = internalMutation({
@@ -20,6 +20,9 @@ export const upsertDidLog = internalMutation({
     userDid: v.string(),
     path: v.string(),
     log: v.string(),
+    scid: v.string(),
+    versionId: v.string(),
+    author: v.boolean(),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -28,20 +31,11 @@ export const upsertDidLog = internalMutation({
       .first();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        log: args.log,
-        path: args.path,
-        updatedAt: Date.now(),
-      });
+      await ctx.db.patch(existing._id, { ...args, updatedAt: Date.now() });
       return existing._id;
     }
 
-    return await ctx.db.insert("didLogs", {
-      userDid: args.userDid,
-      path: args.path,
-      log: args.log,
-      updatedAt: Date.now(),
-    });
+    return await ctx.db.insert("didLogs", { ...args, updatedAt: Date.now() });
   },
 });
 

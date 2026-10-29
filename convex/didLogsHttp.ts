@@ -45,7 +45,36 @@ export const storeDidLog = httpAction(async (ctx, request) => {
 
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid, path });
 
-    await ctx.runMutation(internal.didLogs.upsertDidLog, { userDid, path, log });
+    // #286: only a valid continuation of what is served at this path, or a
+    // first log for an account with no did:webvh yet. A new DID at a path
+    // already serving another one is a re-genesis: /api/user/remintDid.
+    const served = await ctx.runQuery(internal.didLogs.getDidLogRecordByPath, { path });
+    if (served && served.userDid !== userDid) {
+      return new Response(JSON.stringify({ error: "This path serves another DID. Re-mint through /api/user/remintDid." }), {
+        status: 409,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+    if (!served) {
+      const account = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
+      if (account?.did?.startsWith("did:webvh:") && account.did !== userDid) {
+        return new Response(JSON.stringify({ error: "This account already has a DID. Re-mint through /api/user/remintDid." }), {
+          status: 409,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+    }
+    const checked = await ctx.runAction(internal.didLogValidation.checkWrite, { stored: served?.log ?? null, next: log });
+    if (!checked.ok || checked.did !== userDid) {
+      return new Response(JSON.stringify({ error: checked.ok ? "The log is for another DID" : checked.error }), {
+        status: 422,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    await ctx.runMutation(internal.didLogs.upsertDidLog, {
+      userDid, path, log, scid: checked.scid, versionId: checked.versionId, author: checked.author,
+    });
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,

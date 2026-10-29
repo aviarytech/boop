@@ -11,7 +11,7 @@ import { getFunctionName } from 'convex/server';
 process.env.JWT_SECRET = 'identity-binding-test-secret-not-a-deployed-credential';
 delete process.env.WEBVH_DOMAIN;
 const outdir = 'tmp/identity-binding-test';
-const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
+const names = ['userHttp', 'didLogsHttp', 'didLogs', 'didLogValidation', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
 await build({
   entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error', define: { 'process.env.NODE_ENV': '"production"' },
@@ -24,7 +24,13 @@ const token = subject => new SignJWT({ email: `${subject}@example.test` }).setPr
   .sign(new TextEncoder().encode(process.env.JWT_SECRET));
 const [ownerToken, editorToken] = await Promise.all([token('owner'), token('editor')]);
 
-const OWN = 'did:webvh:NEW:boop.ad:user-owner';
+// A real author DID at the owner's path (#286): its log is checked on write.
+// Turnkey is mocked with local keys (scripts/helpers/author-did-fixture.ts).
+await build({ entryPoints: ['scripts/helpers/author-did-fixture.ts'], outfile: `${outdir}/author-fixture.mjs`, bundle: true, platform: 'node', format: 'esm', logLevel: 'error' });
+const authorFixture = await import(pathToFileURL(`${process.cwd()}/${outdir}/author-fixture.mjs`));
+const ownAuthor = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+const OWN = ownAuthor.did;
+const OWN_LOG = ownAuthor.jsonl;
 const VICTIM = 'did:webvh:V:boop.ad:user-victimsuborg000';
 
 function fixture() {
@@ -65,7 +71,7 @@ function fixture() {
     patch: async (id, patch) => { Object.assign(find(id), patch); },
     delete: async id => { for (const t of Object.values(rows)) { const i = t.findIndex(r => r._id === id); if (i >= 0) t.splice(i, 1); } },
   }, scheduler: { runAfter: async () => {}, runAt: async () => {} } };
-  ctx.runQuery = ctx.runMutation = async (ref, args) => { const [m, f] = getFunctionName(ref).split(':'); return call(m, f, ctx, args); };
+  ctx.runQuery = ctx.runMutation = ctx.runAction = async (ref, args) => { const [m, f] = getFunctionName(ref).split(':'); return call(m, f, ctx, args); };
   return ctx;
 }
 const post = (path, body, authToken = ownerToken) => new Request(`https://test${path}`, {
@@ -84,7 +90,7 @@ test('re-mint cannot move an account onto another account\'s DID', async () => {
 test('re-mint rejects a DID already held by another account, even at the caller\'s own path', async () => {
   const ctx = fixture();
   ctx.rows.users[1].legacyDid = OWN; // e.g. an orphaned/migrated identity
-  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN }));
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
   assert.equal(response.ok, false);
   assert.equal(ctx.rows.users[0].did, 'did:webvh:OLD:trypoo.app:user-owner');
   assert.equal(ctx.rows.lists[0].ownerDid, 'did:webvh:OLD:trypoo.app:user-owner');
@@ -95,9 +101,10 @@ test('a legitimate re-mint at the caller\'s own path moves only whole-DID refere
   const ctx = fixture();
   const old = ctx.rows.users[0].did;
   ctx.rows.publications.push({ _id: 'P1', listId: 'L1', webvhDid: `${old}/resources/list-L1`, status: 'active' }, { _id: 'P2', listId: 'LV', webvhDid: `${old}0/resources/list-LV`, status: 'active' });
-  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN }));
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
   assert.equal(response.status, 200, await response.clone().text());
   assert.equal(ctx.rows.users[0].did, OWN);
+  assert.deepEqual(ctx.rows.didLogs.map(r => [r.userDid, r.path, r.log, r.author]), [[OWN, 'user-owner', OWN_LOG, true]]);
   assert.equal(ctx.rows.lists[0].ownerDid, OWN);
   assert.equal(ctx.rows.lists[1].ownerDid, VICTIM);
   assert.equal(ctx.rows.publications[0].webvhDid, `${OWN}/resources/list-L1`);
@@ -112,9 +119,64 @@ test('updateDID only binds a did:webvh minted at the caller\'s own path', async 
     assert.equal(ctx.rows.users[0].did, 'did:temp:owner');
   }
   const ctx = fixture(); ctx.rows.users[0].did = 'did:temp:owner';
+  // #286: only after its author log is served.
+  const early = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
+  assert.equal(early.status, 409);
+  const stored = await modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }));
+  assert.equal(stored.status, 200, await stored.clone().text());
   const response = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
   assert.equal(response.status, 200, await response.clone().text());
   assert.equal(ctx.rows.users[0].did, OWN);
+});
+
+// #286: re-genesis moves an account only onto a verifiable author DID, and
+// only while it has none on the current domain.
+test('re-mint requires a verifiable author DID log and refuses to walk an author DID', async () => {
+  const legacy = await authorFixture.mintLegacyDid('boop.ad', 'user-owner');
+  for (const [body, status] of [
+    [{ did: OWN, path: 'user-owner' }, 400],
+    [{ did: OWN, didLog: 'not json', path: 'user-owner' }, 422],
+    [{ did: legacy.did, didLog: legacy.jsonl, path: 'user-owner' }, 422],
+    [{ did: OWN, didLog: legacy.jsonl, path: 'user-owner' }, 422],
+  ]) {
+    const ctx = fixture(); const before = structuredClone(ctx.rows);
+    const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', body));
+    assert.equal(response.status, status, `${JSON.stringify(body).slice(0, 80)} → ${await response.clone().text()}`);
+    for (const table of ['users', 'lists', 'didLogs']) assert.deepEqual(ctx.rows[table], before[table]);
+  }
+  process.env.WEBVH_DOMAIN = 'boop.ad';
+  try {
+    const ctx = fixture();
+    ctx.rows.users[0].did = OWN;
+    ctx.rows.didLogs.push({ _id: 'D1', userDid: OWN, path: 'user-owner', log: OWN_LOG, author: true, updatedAt: 1 });
+    const next = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+    const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: next.did, didLog: next.jsonl, path: 'user-owner' }));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newDid, OWN, 'an author DID on the current domain is kept');
+    assert.equal(ctx.rows.users[0].did, OWN);
+  } finally { delete process.env.WEBVH_DOMAIN; }
+});
+
+test('DID log writes: only a continuation of the served DID, never another DID at the same path', async () => {
+  const turnkey = await authorFixture.mockTurnkey();
+  const author = await authorFixture.mintAuthor(turnkey, { path: 'user-owner' });
+  const updated = await authorFixture.updateAuthor(turnkey, author);
+  const forged = await authorFixture.resignLastEntry(updated, author.keys.author.multikey, turnkey.secretFor("m/44'/501'/1'/0'"), author.keys.assertion.multikey);
+  const store = (ctx, body) => modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', body));
+
+  const ctx = fixture(); ctx.rows.users[0].did = 'did:temp:owner';
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 200);
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: forged })).status, 422, 'signed by a key that is not an update key');
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: OWN_LOG })).status, 422, 'another DID\'s log');
+  assert.equal((await store(ctx, { userDid: OWN, path: 'user-owner', log: OWN_LOG })).status, 409, 'another DID at a served path is a re-genesis');
+  assert.equal(ctx.rows.didLogs[0].log, author.jsonl);
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: updated })).status, 200);
+  assert.deepEqual([ctx.rows.didLogs.length, ctx.rows.didLogs[0].log, ctx.rows.didLogs[0].versionId], [1, updated, JSON.parse(updated.split('\n')[1]).versionId]);
+
+  // An account that already has a did:webvh cannot start serving a second one.
+  const other = fixture();
+  assert.equal((await store(other, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 409);
+  assert.equal(other.rows.didLogs.length, 0);
 });
 
 test('publication DIDs name the publisher, and the resolver fallback requires the list owner as controller', async () => {

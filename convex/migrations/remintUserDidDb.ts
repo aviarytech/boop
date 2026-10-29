@@ -1,8 +1,8 @@
 /**
  * Database half of the user did:webvh re-mint.
  *
- * Split from remintUserDid.ts because that file is "use node" (Turnkey signing)
- * and Convex only allows actions in Node modules.
+ * Called from /api/user/remintDid (convex/userHttp.ts), for stale-domain
+ * repairs and for the #286 author DID re-genesis.
  *
  * A did:webvh encodes its domain in the identifier and these DIDs are minted
  * `portable: false` (src/lib/webvh.ts), so a domain change is a NEW DID, not an
@@ -153,27 +153,22 @@ export const getDidLogFor = internalQuery({
   },
 });
 
+/** Serve a re-genesised DID's log at the account's path. The caller checked it (didLogValidation.checkWrite). */
 export const storeDidLog = internalMutation({
-  args: { userDid: v.string(), path: v.string(), log: v.string() },
+  args: {
+    userDid: v.string(), path: v.string(), log: v.string(),
+    scid: v.string(), versionId: v.string(), author: v.boolean(),
+  },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("didLogs")
       .withIndex("by_path", (q) => q.eq("path", args.path))
       .first();
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        userDid: args.userDid,
-        log: args.log,
-        updatedAt: Date.now(),
-      });
+      await ctx.db.patch(existing._id, { ...args, updatedAt: Date.now() });
       return;
     }
-    await ctx.db.insert("didLogs", {
-      userDid: args.userDid,
-      path: args.path,
-      log: args.log,
-      updatedAt: Date.now(),
-    });
+    await ctx.db.insert("didLogs", { ...args, updatedAt: Date.now() });
   },
 });
 

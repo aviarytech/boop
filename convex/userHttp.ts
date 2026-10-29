@@ -58,6 +58,12 @@ export const updateUserDID = httpAction(async (ctx, request) => {
     // The account identity comes from the token; the DID must be minted at this
     // sub-org's own path. did:key is derived server-side at login, never accepted here.
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: did, path: didLogPathForSubOrg(auth.turnkeySubOrgId) });
+    // #286: only a DID whose checked log is already served (POST /api/did/log)
+    // and is an author DID, so no account adopts a DID the world can't resolve.
+    const served = await ctx.runQuery(internal.didLogs.getDidLogByUserDid, { userDid: did });
+    if (!served?.author) {
+      return errorResponse(request, "Store this DID's author log (POST /api/did/log) before adopting it", 409);
+    }
 
     console.log(`[userHttp] Updating DID for ${auth.email} to ${did}`);
 
@@ -104,6 +110,13 @@ export const updateUserDID = httpAction(async (ctx, request) => {
  * authenticated user change their DID, and today that silently strands every
  * row on the old value.
  *
+ * #286: also the author DID re-genesis. A did:webvh minted before #286 has
+ * one local key in every role and controller "", which Originals 5 refuses,
+ * so the client mints a new author DID through its Turnkey session and moves
+ * the account here. No continuity link is kept (decided on #286). Allowed
+ * only while the account has no author DID on the current domain, so a
+ * client can't walk an account from DID to DID.
+ *
  * Request: { "did": "did:webvh:...", "didLog": "<jsonl>", "path": "user-..." }
  * Response: { "success": true, "newDid": "...", "rewritten": n }
  */
@@ -132,19 +145,22 @@ export const remintUserDID = httpAction(async (ctx, request) => {
       return jsonResponse(request, { success: true, newDid, rewritten: 0 });
     }
 
-    // Only ever repair an identity that is actually on a stale domain. Without
-    // this, a client whose cached auth state still holds the pre-migration DID
-    // re-triggers on every reload and walks the account to a new DID each time.
+    // Only ever move an account that has no author DID on the current domain.
+    // Without this, a client whose cached auth state still holds the
+    // pre-migration DID re-triggers on every reload and walks the account to a
+    // new DID each time.
     const targetDomain = process.env.WEBVH_DOMAIN;
     const currentDomain = didWebvhDomain(user.did);
-    if (targetDomain && currentDomain === targetDomain) {
+    const current = await ctx.runQuery(internal.didLogs.getDidLogByUserDid, { userDid: user.did });
+    if (current?.author && (!targetDomain || currentDomain === targetDomain)) {
       return jsonResponse(request, {
         success: true,
         newDid: user.did,
         rewritten: 0,
-        skipped: "already on the current domain",
+        skipped: "already an author DID on the current domain",
       });
     }
+
 
     // Checked before applyRemint, whether or not a log is supplied: the new DID
     // must be minted at this sub-org's own path, so it cannot name another
@@ -153,18 +169,26 @@ export const remintUserDID = httpAction(async (ctx, request) => {
     // caller's log. Rejecting afterwards would leave rows already moved.
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: newDid, path: path ?? didLogPathForSubOrg(auth.turnkeySubOrgId) });
 
+    // The new DID's log must verify from genesis and be an author DID.
+    if (!didLog || !path) return errorResponse(request, "didLog and path are required");
+    const checked = await ctx.runAction(internal.didLogValidation.checkWrite, { stored: null, next: didLog });
+    if (!checked.ok) return errorResponse(request, checked.error, 422);
+    if (checked.did !== newDid) return errorResponse(request, "didLog is for another DID", 422);
+    if (!checked.author) return errorResponse(request, `Not an author DID: ${checked.authorProblems.join("; ")}`, 422);
+
     const { rewritten } = await ctx.runMutation(
       internal.migrations.remintUserDidDb.applyRemint,
       { userId: user._id, oldDid: user.did, newDid }
     );
 
-    if (didLog && path) {
-      await ctx.runMutation(internal.migrations.remintUserDidDb.storeDidLog, {
-        userDid: newDid,
-        path,
-        log: didLog,
-      });
-    }
+    await ctx.runMutation(internal.migrations.remintUserDidDb.storeDidLog, {
+      userDid: newDid,
+      path,
+      log: didLog,
+      scid: checked.scid,
+      versionId: checked.versionId,
+      author: checked.author,
+    });
 
     console.log(
       `[userHttp] Re-minted ${auth.email}: ${user.did} -> ${newDid} (${rewritten} rows)`
