@@ -268,7 +268,7 @@ test('without a live Turnkey session nothing is minted and nothing can sign', as
 test('a new account stores its author log, then adopts the DID; nothing is adopted if the server refuses', async () => {
   const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
   const api = server();
-  const result = await ensure({ did: 'did:temp:sub-org' }, api, turnkey);
+  const result = await ensure({ did: null }, api, turnkey);
   assert.equal(result.status, 'adopted');
   assert.deepEqual(api.state.calls.map(c => c.slice(0, 2).join(' ')), ['GET /api/did/log', 'POST /api/did/log', 'POST /api/user/updateDID'], 'the log is served before the DID is adopted');
   assert.equal(api.state.did, result.did);
@@ -276,7 +276,17 @@ test('a new account stores its author log, then adopts the DID; nothing is adopt
 
   const refused = server({ fail: { '/api/user/updateDID': 403 } });
   const other = await mockTurnkey();
-  await assert.rejects(() => ensure({ did: 'did:temp:sub-org' }, refused, other), /updateDID failed: 403/);
+  await assert.rejects(() => ensure({ did: null }, refused, other), /updateDID failed: 403/);
+});
+
+test('a legacy did:key account is re-minted, not adopted, so its rows move', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const api = server();
+  const result = await ensure({ did: 'did:key:z6MkLegacy' }, api, turnkey);
+  assert.equal(result.status, 'reminted');
+  assert.equal(result.previousDid, 'did:key:z6MkLegacy');
+  assert.ok(api.state.calls.some(c => c[1] === '/api/user/remintDid'));
+  assert.ok(!api.state.calls.some(c => c[1] === '/api/user/updateDID'));
 });
 
 test('a pre-#286 or stale-domain DID is re-genesised through remintDid', async () => {
@@ -331,7 +341,7 @@ test('a sign-up whose updateDID failed adopts the author DID it already stored',
   const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
   const author = await mintAuthor(turnkey, { path: PATH });
   const api = server({ log: author.jsonl });
-  assert.deepEqual(await ensure({ did: 'did:temp:sub-org' }, api, turnkey), { status: 'adopted', did: author.did });
+  assert.deepEqual(await ensure({ did: null }, api, turnkey), { status: 'adopted', did: author.did });
   assert.deepEqual(api.state.calls.filter(c => c[0] === 'POST').map(c => [c[1], c[2].did]), [['/api/user/updateDID', author.did]]);
 });
 

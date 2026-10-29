@@ -119,7 +119,9 @@ export async function ensureAuthorDid(
   if (!(await deps.ready(subOrgId))) return { status: "not-ready" };
   const keys = await resolveAuthorKeys(deps.backend, subOrgId);
   const path = userDidPath(subOrgId);
-  const did = user.did?.startsWith("did:webvh:") ? user.did : null;
+  // Any DID the server holds, did:webvh or a legacy did:key/did:temp: it owns
+  // rows, so moving off it is a re-mint (rows move with it), never an adopt.
+  const did = user.did || null;
 
   // What the path serves already, if it is this account's author DID on the
   // current domain. A DID on a domain we no longer serve is unresolvable, so

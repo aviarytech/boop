@@ -9,7 +9,8 @@ const { renderHook, cleanup, act } = await import('@testing-library/react');
 const turnkeyCalls = [];
 const turnkeyDefaults = { complete: async () => ({ clean: true, findings: [] }) };
 const state = globalThis.__authProviderTest = { platform: 'web', storage: new Map(), establish: async () => {}, authorDid: [], ensureAuthorDid: async () => ({ status: 'current', did: 'did:webvh:x' }), turnkeyCalls, turnkey: { ...turnkeyDefaults } };
-state.convex = { mutation: (...args) => state.establish(...args) };
+state.convex = { mutation: (...args) => state.establish(...args), query: (...args) => state.query(...args) };
+state.query = async () => null;
 await build({entryPoints:['src/hooks/useAuth.tsx'],outfile:'tmp/auth-provider-test.mjs',bundle:true,jsx:'automatic',platform:'node',format:'esm',external:['react','react/jsx-runtime','convex/server','convex/values'],plugins:[{
   name:'auth-provider-fixtures', setup(b) {
     b.onResolve({filter:/^(@capacitor\/core|convex\/react|\.\.?\/.*(storageAdapter|useAuthorDid|authorIdentity|convexUrls|analytics|turnkeySession))$/}, args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));
@@ -36,7 +37,7 @@ const token=`header.${btoa(JSON.stringify({exp:Math.floor(Date.now()/1000)+30*86
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const flush=()=>act(async()=>{await Promise.resolve();});
 const fetchBefore=globalThis.fetch;
-afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.platform='web';state.establish=async()=>{};state.authorDid.length=0;state.ensureAuthorDid=async()=>({status:'current',did:'did:webvh:x'});turnkeyCalls.length=0;state.turnkey={...turnkeyDefaults};});
+afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.platform='web';state.establish=async()=>{};state.authorDid.length=0;state.query=async()=>null;state.ensureAuthorDid=async()=>({status:'current',did:'did:webvh:x'});turnkeyCalls.length=0;state.turnkey={...turnkeyDefaults};});
 function seed(){state.storage.set('lisa-auth-state',JSON.stringify({user,token}));state.storage.set('lisa-jwt-token',token);}
 
 async function withEstablishClock(run) {
@@ -279,6 +280,28 @@ test('OTP sign-up of a new account fails, signed out, when its author DID can\'t
   assert.equal(result.current.isAuthenticated, false);
   assert.equal(state.storage.size, 0);
   assert.ok(turnkeyCalls.some(c => c[0] === 'clear'), 'its Turnkey session is cleared too');
+});
+
+test('a stored legacy DID the server holds (did:key) is kept at restore, from the server', async () => {
+  const legacy = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
+  state.query = async () => ({ did: 'did:key:z6MkLegacy' });
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.equal(result.current.isAuthenticated, true);
+  assert.equal(result.current.user.did, 'did:key:z6MkLegacy');
+  assert.equal(JSON.parse(state.storage.get('lisa-auth-state')).user.did, 'did:key:z6MkLegacy');
+});
+
+test('OTP sign-in on a legacy did:key needs no author DID first', async () => {
+  state.ensureAuthorDid = async () => { throw new Error('must not be called'); };
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ user: { ...user, did: 'did:key:z6MkLegacy' }, token });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => result.current.verifyOtp('123456'));
+  assert.equal(result.current.user.did, 'did:key:z6MkLegacy');
 });
 
 test('a stored session for an account without a DID is dropped, and the server session revoked', async () => {

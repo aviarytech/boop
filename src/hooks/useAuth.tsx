@@ -197,15 +197,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
           console.warn("[useAuth] Could not parse JWT for expiry check, proceeding anyway");
         }
 
-        // The server refuses every call from an account without a DID, and only
-        // an OTP sign-up can mint one now (#286): a session an older build
-        // stored before its DID upgrade worked is dropped, and the user signs
-        // in again with a code.
-        if (!parsed.user?.did?.startsWith("did:webvh:")) {
-          void revokeServerSession(parsed.token);
-          throw new Error("Stored session has no DID; sign in again");
-        }
-
         // Restore auth state
         try {
           await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: parsed.token }));
@@ -219,6 +210,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
             return;
           }
           throw err;
+        }
+        if (cancelled) return;
+        // An older build cached `did:temp` when the server had no DID. Which
+        // DID the account has is the server's to say: one with none is refused
+        // on every call, and only an OTP sign-up can mint one now (#286), so
+        // that session is dropped. A did:key or did:temp the server does hold
+        // is kept; useAuthorDid re-mints it.
+        if (!parsed.user?.did?.startsWith("did:webvh:")) {
+          const account = await withAuthTimeout(convex.query(api.auth.getUserByTurnkeyId, {
+            turnkeySubOrgId: parsed.user.turnkeySubOrgId, authToken: parsed.token,
+          })) as { did?: string } | null;
+          if (!account?.did) {
+            void revokeServerSession(parsed.token);
+            throw new Error("Stored session has no DID; sign in again");
+          }
+          parsed.user = { ...parsed.user, did: account.did };
+          await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(parsed));
         }
         if (cancelled) return;
         setUser(parsed.user);
@@ -371,10 +379,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // account without one. Its author DID can only be minted through this
         // Turnkey session (#286), so sign-up finishes only once it exists: a
         // failure here fails sign-in, to be retried, rather than leaving an
-        // account that can do nothing. Existing accounts keep their DID, and
-        // useAuthorDid moves them onto an author DID when it can.
+        // account that can do nothing. An account with any DID the server
+        // holds (did:webvh, or a legacy did:key/did:temp) signs in on it, and
+        // useAuthorDid moves it onto an author DID when it can.
         let userDid: string = serverUser.did;
-        if (!userDid?.startsWith("did:webvh:")) {
+        if (!userDid) {
           const authored = await withTimeout(
             ensureAuthorDid({ did: serverUser.did, turnkeySubOrgId: serverUser.turnkeySubOrgId }, jwtToken),
             AUTHOR_DID_SETUP_MS, "Setting up your account timed out");

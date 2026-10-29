@@ -47,7 +47,9 @@ The server signers (`convex/didCreation.ts`, `convex/lib/turnkeySigner.ts`,
 could never have signed: a parent-org key cannot stamp sub-org activities
 (production logged `organization mismatch`, `7bbba38`).
 
-A Turnkey login failure does not block sign-in to an existing account. It
+A Turnkey login failure does not block sign-in to an existing account: one
+with any DID the server holds, including a legacy `did:key` or `did:temp`,
+which is re-minted (rows moved through `remintDid`) once it can be. It
 only blocks DID updates and Originals signing until the next login that
 succeeds. A **new** account is different: the server refuses every call from
 an account without a DID, and its author DID can only be minted through the
