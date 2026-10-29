@@ -140,6 +140,24 @@ test('a feature removal that failed is retried at the next refresh check, before
   assert.equal(order[0], 'remove', 'the retry runs before any refresh');
 });
 
+test('a hung audit stops holding up refresh once its time is up', { timeout: 45_000 }, async () => {
+  t.http.getOrganizationConfigs = () => new Promise(() => {});
+  const listeners = [];
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: { addEventListener: (_, f) => listeners.push(f), removeEventListener() {}, visibilityState: 'visible' } });
+  let refreshed = false;
+  t.session = () => ({ userId: ME, organizationId: 'sub', expiry: Date.now() / 1000 + 3600, publicKey: 'pub' });
+  t.refresh = async () => { refreshed = true; };
+  try {
+    const stop = session.startTurnkeySessionRefresh('sub');
+    for (let i = 0; i < 80 && !refreshed; i += 1) await new Promise(r => setTimeout(r, 500));
+    stop();
+  } finally {
+    if (savedDocument) Object.defineProperty(globalThis, 'document', savedDocument); else delete globalThis.document;
+  }
+  assert.equal(refreshed, true);
+});
+
 test('discarding never deletes the key a stored session uses', async () => {
   await session.discardSessionKey('pub');
   assert.deepEqual(t.calls, []);

@@ -34,6 +34,7 @@ const FIRST_LOGIN_WINDOW_SECONDS = 60;
 /** Every session step (login, refresh) holds this cross-tab lock, released after at most this long. */
 const SESSION_LOCK = "boop-turnkey-session";
 const SESSION_LOCK_HOLD_MS = 30_000;
+const AUDIT_MS = 30_000;
 
 /**
  * Sub-org features that let the parent org choose a credential's target key
@@ -162,7 +163,9 @@ export async function completeTurnkeyLogin(params: {
 /** Harden and audit, sharing one run between every caller (login, retries). */
 function runAudit(subOrgId: string): Promise<SubOrgAudit> {
   if (auditInFlight) return auditInFlight;
-  const audit = hardenAndAuditSubOrg(subOrgId);
+  // Bounded: refresh waits on it, and Turnkey requests have no timeout of
+  // their own. A run that hangs is dropped; the next check starts a fresh one.
+  const audit = withTimeout(hardenAndAuditSubOrg(subOrgId), AUDIT_MS, "Turnkey audit timed out");
   auditInFlight = audit;
   void audit.finally(() => { if (auditInFlight === audit) auditInFlight = null; }).catch(() => {});
   return audit;
@@ -170,7 +173,7 @@ function runAudit(subOrgId: string): Promise<SubOrgAudit> {
 
 /** Wait for an audit this login started, then return this device's latest audit. */
 export async function subOrgAuditDone(subOrgId: string): Promise<SubOrgAudit | null> {
-  if (auditInFlight) await auditInFlight.catch(() => {});
+  if (auditInFlight) await auditInFlight.catch(() => {}); // bounded by AUDIT_MS
   return lastSubOrgAudit(subOrgId);
 }
 
@@ -298,6 +301,11 @@ export function startTurnkeySessionRefresh(subOrgId: string): () => void {
       if (auditNeedsRetry(await subOrgAuditDone(subOrgId)) && await turnkeySessionStatus(subOrgId) === "active") {
         await runAudit(subOrgId);
       }
+    } catch (err) {
+      console.warn("[turnkeySession] Sub-org audit failed; retrying later:", err);
+    }
+    // Whatever the audit did, the session must not lapse.
+    try {
       await refreshTurnkeySessionIfDue(subOrgId);
     } catch (err) {
       console.warn("[turnkeySession] Silent refresh failed; retrying later:", err);
