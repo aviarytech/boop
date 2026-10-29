@@ -79,8 +79,15 @@ export const storeDidLog = httpAction(async (ctx, request) => {
       const account = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
       // Any DID the account holds owns rows: moving off it is a re-mint
       // (rows move), never a new log here (#300 review).
-      if (account?.did || served?.author) {
+      if (account?.did) {
         return json(409, { error: "This account already has a DID. Re-mint through /api/user/remintDid." });
+      }
+      // A DID-less account may replace a served author log only when no
+      // account holds that DID: one its own failed sign-up left behind (on
+      // a domain since changed, say), which it couldn't otherwise get past.
+      if (served?.author) {
+        const holder = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserByDid, { did: served.userDid });
+        if (holder) return json(409, { error: "This path serves another account's DID." });
       }
     }
     const checked = await checkAccountDidLog(ctx, auth.turnkeySubOrgId, continuing ? served.log : null, log);

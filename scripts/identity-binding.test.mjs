@@ -181,7 +181,8 @@ test('DID log writes: only a continuation of the served DID, never another DID a
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 200);
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: forged })).status, 422, 'signed by a key that is not an update key');
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: OWN_LOG })).status, 422, 'another DID\'s log');
-  assert.equal((await store(ctx, { userDid: OWN, path: 'user-owner', log: OWN_LOG })).status, 409, 'another DID at a served path is a re-genesis');
+  // The served DID is no account's (this sign-up never adopted it), so a replacement is checked, and this one isn't the account's author DID.
+  assert.equal((await store(ctx, { userDid: OWN, path: 'user-owner', log: OWN_LOG })).status, 422, 'another DID at a served path must be this account\'s author DID');
   assert.equal(ctx.rows.didLogs[0].log, author.jsonl);
   assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: updated })).status, 200);
   assert.deepEqual([ctx.rows.didLogs.length, ctx.rows.didLogs[0].log, ctx.rows.didLogs[0].versionId], [1, updated, JSON.parse(updated.split('\n')[1]).versionId]);
@@ -361,6 +362,19 @@ test('a legacy did:key account can\'t adopt a new DID, and re-mints with its row
     assert.equal(ctx.rows.lists[0].ownerDid, OWN, `${legacy}: rows moved`);
     assert.equal(ctx.rows.agentApiKeys[0].ownerDid, OWN);
   }
+});
+
+test('a DID-less account can replace an author log no account holds, never one an account holds', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  const orphan = await authorFixture.mintAuthor(ownTurnkey, { path: 'user-owner', domain: 'boop.ad' });
+  ctx.rows.didLogs.push({ _id: 'D-orphan', userDid: 'did:webvh:ORPHAN:old.example:user-owner', path: 'user-owner', log: orphan.jsonl, author: true, updatedAt: 1 });
+  const store = (body) => modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', body));
+  assert.equal((await store({ userDid: OWN, path: 'user-owner', log: OWN_LOG })).status, 200);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').userDid, OWN);
+  // Held by an account: refused.
+  const held = fixture(); delete held.rows.users[0].did;
+  held.rows.didLogs.push({ _id: 'D-held', userDid: VICTIM, path: 'user-owner', log: OWN_LOG, author: true, updatedAt: 1 });
+  assert.equal((await modules.didLogsHttp.storeDidLog._handler(held, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }))).status, 409);
 });
 
 test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {

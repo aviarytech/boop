@@ -297,11 +297,22 @@ test('native: a transient failure asking the server for the DID keeps the sessio
   state.platform = 'ios';
   const legacy = { ...user, did: 'did:temp:owner' };
   state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
-  state.query = async () => { throw new Error('network'); };
+  state.query = async () => { throw new state.TimeoutError('Session verification timed out'); };
   globalThis.fetch = async () => new Response(null, { status: 204 });
   renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
   assert.ok(state.storage.has('lisa-auth-state'), 'not signed out');
   assert.ok(!turnkeyCalls.some(c => c[0] === 'clear'));
+});
+
+test('native: a server error from the DID lookup is an answer, not something to retry forever', async () => {
+  state.platform = 'ios';
+  const legacy = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
+  state.query = async () => { throw new Error('[CONVEX Q(auth:getUserByTurnkeyId)] Server Error'); };
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.equal(result.current.isLoading, false);
+  assert.equal(state.storage.size, 0);
 });
 
 test('OTP sign-in on a legacy did:key needs no author DID first', async () => {

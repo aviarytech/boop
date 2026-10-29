@@ -218,15 +218,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // that session is dropped. A did:key or did:temp the server does hold
         // is kept; useAuthorDid re-mints it.
         if (!parsed.user?.did?.startsWith("did:webvh:")) {
+          if (!parsed.user?.turnkeySubOrgId) throw new Error("Stored session is malformed; sign in again");
           let account: { did?: string } | null;
           try {
             account = await withAuthTimeout(convex.query(api.auth.getUserByTurnkeyId, {
               turnkeySubOrgId: parsed.user.turnkeySubOrgId, authToken: parsed.token,
             })) as { did?: string } | null;
           } catch (err) {
-            const code = authErrorData(err)?.code;
-            // As for establish: on native, keep the session through a transient failure.
-            if (Capacitor.isNativePlatform() && code !== "INVALID_TOKEN" && code !== "UNAUTHORIZED") {
+            // On native, keep the session through a transient failure: a
+            // dropped connection shows up as the timeout. Any server error is
+            // an answer, and retrying it would spin forever.
+            if (Capacitor.isNativePlatform() && err instanceof TimeoutError) {
               retrying = true;
               if (!cancelled) retryTimer = setTimeout(() => void restoreSession(), 5000);
               return;
