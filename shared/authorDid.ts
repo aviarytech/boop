@@ -61,6 +61,11 @@ export function authorDidProblems(
   for (const vm of methods) {
     if (vm.controller !== did) problems.push(`${vm.id ?? "a verification method"} is not controlled by the DID`);
   }
+  // Relationships only reference the two methods: an embedded method there is
+  // a key description other verifiers would bind (#300 review).
+  for (const relationship of ["assertionMethod", "authentication"] as const) {
+    if ((doc[relationship] ?? []).some(ref => typeof ref !== "string")) problems.push(`${relationship} embeds a verification method`);
+  }
   const byId = new Map(methods.map(vm => [absolute(did, vm.id ?? ""), vm]));
   // A Map keeps the last of duplicate ids, but a verifier may bind the first (#300 review).
   if (byId.size !== methods.length) problems.push("two verification methods share an id");

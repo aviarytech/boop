@@ -261,7 +261,7 @@ export const applyRemint = internalMutation({
     }
     // The identity row moves last: if anything above throws, `did` still points
     // at the old value and the whole run is safe to retry.
-    await ctx.db.patch(args.userId, { did: args.newDid });
+    await ctx.db.patch(args.userId, { did: args.newDid, pendingRemint: undefined });
     return { rewritten, skipped: false };
   },
 });
@@ -279,12 +279,20 @@ export const applyRemint = internalMutation({
 // review). A live claim heartbeats, so only one stalled for REMINT_CLAIM_MS is
 // taken over. didLogs is not paged: finishRemint rewrites the path's row.
 //
+// Until a re-mint finishes, the account is split: rows already paged sit on
+// the new DID while the account is still on the old one, so they look gone to
+// its owner. That lasts until the next attempt (the next sign-in or reload
+// with a live Turnkey session, once the claim has been quiet for a minute)
+// finishes the move.
+//
 // Rows written mid-re-mint under the old DID are caught by finishRemint's sweep
 // for indexed fields (list ownership among them). Unindexed attribution fields
 // (items.createdByDid, for one) written during the run are not.
 
 const REMINT_PAGE_SIZE = 200;
-const REMINT_CLAIM_MS = 5 * 60 * 1000;
+// A live re-mint heartbeats on every page (each is one short mutation), so a
+// claim quiet this long belongs to a re-mint that died; the next attempt resumes it.
+const REMINT_CLAIM_MS = 60 * 1000;
 const REMINT_SWEEP_LIMIT = 100;
 
 /** The tables /api/user/remintDid pages through. */
@@ -312,6 +320,8 @@ async function pendingFor(ctx: MutationCtx, userId: Id<"users">, oldDid: string,
   const user = await ctx.db.get(userId);
   const pending = user?.pendingRemint as PendingRemint | undefined;
   if (!user || pending?.newDid !== newDid || user.did !== oldDid) throw new Error("This re-mint is no longer the account's pending one");
+  // Deletion snapshots the pending re-mint's DIDs; moving rows after that would hide them from it.
+  if (user.deletionRequestedAt !== undefined) throw new Error("Account deletion is in progress");
   return { user, pending };
 }
 

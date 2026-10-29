@@ -11,7 +11,7 @@ import { getFunctionName } from 'convex/server';
 process.env.JWT_SECRET = 'identity-binding-test-secret-not-a-deployed-credential';
 delete process.env.WEBVH_DOMAIN;
 const outdir = 'tmp/identity-binding-test';
-const names = ['userHttp', 'didLogsHttp', 'didLogs', 'didLogValidation', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
+const names = ['userHttp', 'users', 'didLogsHttp', 'didLogs', 'didLogValidation', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
 await build({
   entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error', define: { 'process.env.NODE_ENV': '"production"' },
@@ -291,6 +291,37 @@ test('finishRemint sweeps indexed rows written under the old DID after their tab
   ctx.rows.lists.push({ _id: 'L-late', ownerDid: old, name: 'Made during the re-mint', createdAt: 2 });
   await call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
   assert.equal(ctx.rows.lists.find(l => l._id === 'L-late').ownerDid, OWN);
+});
+
+// #300 review round 4: deletion must reach rows a re-mint already moved.
+test('deleting an account mid-re-mint erases the new DID too, and the re-mint stops', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  ctx.rows.users[0].deletionRequestedAt = Date.now();
+  await assert.rejects(() => call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'items', cursor: null }), /deletion/);
+  await assert.rejects(() => call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true }), /deletion/);
+  await call('users', 'continueUserDeletion', ctx, { userId: 'U1' });
+  const dids = ctx.rows.users.find(u => u._id === 'U1')?.deletionDids;
+  assert.ok(dids?.includes(OWN) && dids.includes(old), JSON.stringify(dids));
+});
+
+test('a final sweep that finds more stragglers than it takes makes the re-mint page again', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  const finish = () => call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  for (let i = 0; i < 101; i += 1) ctx.rows.lists.push({ _id: `LL${i}`, ownerDid: old, name: `late ${i}`, createdAt: 3 });
+  await assert.rejects(finish, /REMINT_SWEEP_INCOMPLETE/);
+  assert.equal(ctx.rows.users[0].did, old, 'nothing moved the account');
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  await finish();
+  assert.equal(ctx.rows.lists.filter(l => l.ownerDid === old).length, 0);
+  assert.equal(ctx.rows.users[0].did, OWN);
 });
 
 test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {

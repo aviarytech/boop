@@ -145,6 +145,9 @@ test('only #key-0 and #orig-1, each in its one relationship', async () => {
   const evil = { ...orig1, publicKeyMultibase: (await authorDid.resolveAuthorKeys(await mockTurnkey(), SUB_ORG)).assertion.multikey };
   assert.match(tamper({ verificationMethod: [key0, evil, orig1] }).join(), /share an id/);
   assert.match(tamper({ verificationMethod: [key0, { ...orig1, publicKeyJwk: { kty: 'OKP' } }] }).join(), /carries publicKeyJwk/);
+  // Round 4: a method embedded in a relationship is a key description too.
+  assert.match(tamper({ assertionMethod: [{ ...evil, id: '#orig-1' }] }).join(), /embeds a verification method/);
+  assert.match(tamper({ authentication: [{ ...key0, publicKeyMultibase: evil.publicKeyMultibase }] }).join(), /embeds a verification method/);
 });
 
 test('witnesses, pre-rotation, deactivation and other domains are refused', async () => {

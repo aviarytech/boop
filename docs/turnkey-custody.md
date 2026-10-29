@@ -79,7 +79,10 @@ It is per account, not per device, so there is no per-device revocation.
   per-mutation limits; no continuity link). The account and its served log
   move together at the end, and only for the re-mint that claimed the move.
   A re-mint that dies part-way is resumed by the next attempt, which also
-  moves the rows it had already moved. Rows written under the old DID during
+  moves the rows it had already moved. Until then the account is split: rows
+  already moved look gone to their owner. The next sign-in or reload with a
+  live Turnkey session resumes it once the claim has been quiet for a minute.
+  Deleting the account erases the pending re-mint's DIDs too, and stops it. Rows written under the old DID during
   a re-mint are swept at the end for indexed fields (list ownership among
   them); unindexed attribution fields such as `items.createdByDid` written in
   that window keep the old DID.

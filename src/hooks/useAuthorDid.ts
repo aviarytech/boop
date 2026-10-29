@@ -61,7 +61,8 @@ export function useAuthorDid(
           window.location.reload();
         }
       } catch (err) {
-        // Never block sign-in. The account keeps its DID and retries at the next login.
+        // Never block sign-in. The next sign-in or reload retries; a re-mint
+        // that died part-way is resumed then (convex/migrations/remintUserDidDb.ts).
         console.error("[authorDid] failed", err);
         Sentry.captureException(err);
       }

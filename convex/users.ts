@@ -53,7 +53,10 @@ async function deleteUserBatch(ctx: MutationCtx, user: Doc<"users">): Promise<vo
   // Snapshot once, including when resuming a deletion started by an older build.
   // Retries must never replace the identities whose records need erasure.
   if (user.deletionDids === undefined) {
-    const deletionDids = [...new Set([user.did, user.legacyDid].filter(Boolean) as string[])];
+    // Include a re-mint in progress: rows it already moved sit on its new DID
+    // (or on an abandoned one it resumed), not on user.did (#300 review).
+    const remint = user.pendingRemint;
+    const deletionDids = [...new Set([user.did, user.legacyDid, remint?.newDid, ...(remint?.from ?? [])].filter(Boolean) as string[])];
     await ctx.db.patch(user._id, { deletionDids });
     user = { ...user, deletionDids };
   }
