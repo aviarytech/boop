@@ -48,6 +48,17 @@ import {
   startTurnkeySessionRefresh,
 } from "../lib/turnkeySession";
 
+/** Best effort: end a boop session the client is giving up on, and its cookie. */
+async function revokeServerSession(token: string): Promise<void> {
+  try {
+    await withTimeout(fetch(`${getConvexHttpUrl()}/auth/logout`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` }, credentials: "include",
+    }), 15_000, "Logout endpoint timed out");
+  } catch (err) {
+    console.warn("[useAuth] Could not revoke the abandoned session:", err);
+  }
+}
+
 /** Turnkey steps never hold up boop's own sign-in or sign-out for longer than this. */
 const TURNKEY_STEP_MS = 15_000;
 /** A new account's author DID: the audit (up to 30 s), the mint and two writes. */
@@ -186,6 +197,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           console.warn("[useAuth] Could not parse JWT for expiry check, proceeding anyway");
         }
 
+        // The server refuses every call from an account without a DID, and only
+        // an OTP sign-up can mint one now (#286): a session an older build
+        // stored before its DID upgrade worked is dropped, and the user signs
+        // in again with a code.
+        if (!parsed.user?.did?.startsWith("did:webvh:")) {
+          void revokeServerSession(parsed.token);
+          throw new Error("Stored session has no DID; sign in again");
+        }
+
         // Restore auth state
         try {
           await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: parsed.token }));
@@ -205,8 +225,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setToken(parsed.token);
         await storageAdapter.set(JWT_STORAGE_KEY, parsed.token);
 
-        // An account without an author DID gets one from useAuthorDid once
-        // its Turnkey session is live (#286); nothing is minted here.
+        // useAuthorDid moves the account onto an author DID once its Turnkey
+        // session is live (#286); nothing is minted here.
       } catch (err) {
         console.error("[useAuth] Error restoring session:", err);
         setUser(null);
@@ -290,6 +310,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       authTransitionRef.current = true;
       setIsLoading(true);
       let sessionPublicKey: string | null = null;
+      // Set once /auth/verify issued a boop session, so a later failure revokes it.
+      let issuedToken: string | null = null;
       // Set once this sign-in's Turnkey login succeeded or timed out (it may still land).
       let turnkeyLoginMayHaveLanded = false;
       try {
@@ -321,6 +343,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         const { token: jwtToken, user: serverUser, turnkey } = await response.json();
+        issuedToken = jwtToken;
         console.log("[useAuth] OTP verified, got JWT for:", serverUser.email);
 
         // The Turnkey session only gates DID updates, so a failure here must not
@@ -388,6 +411,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[useAuth] Authentication complete, DID:", userDid);
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
+        // /auth/verify already established a server session and set its cookie.
+        if (issuedToken) void revokeServerSession(issuedToken);
         if (sessionPublicKey) await discardSessionKey(sessionPublicKey);
         // boop sign-in failed after this sign-in's Turnkey login (or one that
         // may still land): don't leave it behind. Never clear a session this

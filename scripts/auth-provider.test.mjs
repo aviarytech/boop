@@ -281,6 +281,34 @@ test('OTP sign-up of a new account fails, signed out, when its author DID can\'t
   assert.ok(turnkeyCalls.some(c => c[0] === 'clear'), 'its Turnkey session is cleared too');
 });
 
+test('a stored session for an account without a DID is dropped, and the server session revoked', async () => {
+  const stale = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: stale, token })); state.storage.set('lisa-jwt-token', token);
+  const calls = [];
+  globalThis.fetch = async (url) => { calls.push(url.split('/').slice(3).join('/')); return new Response(null, { status: 204 }); };
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.equal(result.current.isAuthenticated, false);
+  assert.equal(state.storage.size, 0);
+  assert.ok(calls.includes('auth/logout'));
+});
+
+test('a failed sign-up revokes the session /auth/verify issued', async () => {
+  state.ensureAuthorDid = async () => ({ status: 'not-ready' });
+  const calls = [];
+  globalThis.fetch = async url => {
+    calls.push(url.split('/').slice(3).join('/'));
+    return url.endsWith('/auth/initiate')
+      ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+      : url.endsWith('/auth/verify') ? Response.json({ user: { ...user, did: null }, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } })
+      : new Response(null, { status: 204 });
+  };
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => assert.rejects(() => result.current.verifyOtp('123456')));
+  await flush();
+  assert.ok(calls.includes('auth/logout'));
+});
+
 for (const flow of ['restore', 'OTP']) {
   test(`${flow}: an account that has a DID mints nothing in useAuth; a move comes only from useAuthorDid`, async () => {
     const calls = [];

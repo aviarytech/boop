@@ -55,6 +55,9 @@ test('sending a code transitions to OTP entry', async ({ scenario, screen }) => 
   expect(scenario.httpCalls.find(call => call.path === '/auth/initiate')?.body.email).toBe('e2e@example.test');
 });
 
+// A returning account: the fixture's user already has a DID and no Turnkey
+// login, so this doesn't cover a new account's sign-up (minting its author DID
+// through Turnkey); scripts/auth-provider.test.mjs does, with Turnkey mocked.
 test('completing OTP establishes the session and opens the dashboard', async ({ scenario, screen, browser }) => {
   await scenario.open('/login', { authenticated: false });
   await submitEmail(screen);
