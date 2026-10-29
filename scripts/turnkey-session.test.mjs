@@ -17,7 +17,7 @@ await build({
     b.onLoad({ filter: /.*/, namespace: 'stub' }, ({ path }) => ({ loader: 'js', contents: path === '@turnkey/core'
       ? `export class TurnkeyClient { async init() {} get httpClient() { return globalThis.__turnkeyTest.http; }
           getSession() { return globalThis.__turnkeyTest.session(); }
-          loginWithOtp(p) { globalThis.__turnkeyTest.calls.push(['login', p]); }
+          loginWithOtp(p) { globalThis.__turnkeyTest.calls.push(['login', p]); if (globalThis.__turnkeyTest.loginFails) throw new Error('login failed after storing'); }
           refreshSession(p) { return globalThis.__turnkeyTest.refresh(p); }
           async clearUnusedKeyPairs() {} async deleteApiKeyPair(p) { globalThis.__turnkeyTest.calls.push(['delete', p.publicKey]); }
           async clearSession() { globalThis.__turnkeyTest.calls.push(['wipe']); } }
@@ -163,6 +163,18 @@ test('discarding never deletes the key a stored session uses', async () => {
   assert.deepEqual(t.calls, []);
   await session.discardSessionKey('stray');
   assert.deepEqual(t.calls, [['delete', 'stray']]);
+});
+
+test('a login marks the stored audit pending, so a refresh check re-audits even if its own audit never ran', async () => {
+  localStorage.setItem('boop-turnkey-audit:sub', JSON.stringify({ subOrgId: 'sub', checkedAt: 1, clean: true, findings: [] }));
+  t.calls = [];
+  // The login itself fails after the mark (e.g. it landed after the lock timed out).
+  const token = JSON.stringify({ public_key: 'pub' });
+  t.loginFails = true;
+  await session.completeTurnkeyLogin({ verificationToken: token, subOrgId: 'sub', publicKey: 'pub' }).catch(() => {});
+  t.loginFails = false;
+  assert.equal(session.lastSubOrgAudit('sub').clean, false, 'the old clean audit no longer stands');
+  assert.match(session.lastSubOrgAudit('sub').findings.join(), /could not complete/);
 });
 
 test('a verification token bound to another key is refused before any login', async () => {

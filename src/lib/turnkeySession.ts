@@ -78,7 +78,7 @@ let localLock: Promise<unknown> = Promise.resolve();
 const seconds = (timestamp?: { seconds?: string; nanos?: string }) =>
   Number(timestamp?.seconds ?? 0) + Number(timestamp?.nanos ?? 0) / 1e9;
 
-let auditInFlight: Promise<SubOrgAudit> | null = null;
+const auditsInFlight = new Map<string, Promise<SubOrgAudit>>();
 
 let clientPromise: Promise<TurnkeyClient> | null = null;
 
@@ -149,6 +149,10 @@ export async function completeTurnkeyLogin(params: {
     await discardSessionKey(params.publicKey);
     throw new Error("Verification token is not bound to this device's session key");
   }
+  // This login's audit replaces the last one. Until it writes a result, the
+  // stored audit says pending, so a refresh check retries it even if this
+  // login's own audit never starts (#299 review).
+  markAuditPending(params.subOrgId);
   await withSessionLock(async () => {
     await client.loginWithOtp({
       verificationToken: params.verificationToken,
@@ -160,20 +164,27 @@ export async function completeTurnkeyLogin(params: {
   void runAudit(params.subOrgId);
 }
 
-/** Harden and audit, sharing one run between every caller (login, retries). */
+function markAuditPending(subOrgId: string): void {
+  const sticky = lastSubOrgAudit(subOrgId)?.sticky ?? [];
+  const pending: SubOrgAudit = { subOrgId, checkedAt: Date.now(), clean: false, findings: [...sticky, AUDIT_INCOMPLETE], sticky };
+  try { localStorage.setItem(`${AUDIT_STORAGE_PREFIX}:${subOrgId}`, JSON.stringify(pending)); } catch { /* storage unavailable */ }
+}
+
+/** Harden and audit, sharing one run per sub-org between every caller (login, retries). */
 function runAudit(subOrgId: string): Promise<SubOrgAudit> {
-  if (auditInFlight) return auditInFlight;
+  const running = auditsInFlight.get(subOrgId);
+  if (running) return running;
   // Bounded: refresh waits on it, and Turnkey requests have no timeout of
   // their own. A run that hangs is dropped; the next check starts a fresh one.
   const audit = withTimeout(hardenAndAuditSubOrg(subOrgId), AUDIT_MS, "Turnkey audit timed out");
-  auditInFlight = audit;
-  void audit.finally(() => { if (auditInFlight === audit) auditInFlight = null; }).catch(() => {});
+  auditsInFlight.set(subOrgId, audit);
+  void audit.finally(() => { if (auditsInFlight.get(subOrgId) === audit) auditsInFlight.delete(subOrgId); }).catch(() => {});
   return audit;
 }
 
 /** Wait for an audit this login started, then return this device's latest audit. */
 export async function subOrgAuditDone(subOrgId: string): Promise<SubOrgAudit | null> {
-  if (auditInFlight) await auditInFlight.catch(() => {}); // bounded by AUDIT_MS
+  await auditsInFlight.get(subOrgId)?.catch(() => {}); // bounded by AUDIT_MS
   return lastSubOrgAudit(subOrgId);
 }
 

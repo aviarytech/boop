@@ -127,7 +127,12 @@ without checking each step in a test parent org first.
   their sub-orgs created with no credentials by the old code.
 - A second device signing in within 60 s of sign-up is flagged by the
   tripwire by mistake, and that device's finding would need clearing by hand.
-- A login in another tab during this tab's `/auth/verify` round trip can
-  delete this tab's pending session key (unused key pairs are cleared on
-  every session write). Sign-in still succeeds, without a Turnkey session
-  until the next login.
+- Another tab's login, silent refresh or sign-out (logout, boop session
+  expiry, a restore finding the token expired) during this tab's
+  `/auth/verify` round trip can delete this tab's pending session key: unused
+  key pairs are cleared on every session write. Sign-in still succeeds,
+  without a Turnkey session until the next login.
+- Login, refresh and sign-out share a cross-tab lock held for at most 30 s.
+  A login Turnkey answers after that still stores its session; its audit is
+  then run by the next refresh check (each login marks the stored audit
+  pending first), not at login.
