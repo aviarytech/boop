@@ -56,7 +56,9 @@ export function useAuthorDid(
               await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(state));
             }
           } catch (cacheErr) {
-            console.warn("[authorDid] could not refresh cached auth state", cacheErr);
+            // Reloading onto the stale cached DID would only land here again.
+            console.warn("[authorDid] could not refresh cached auth state; not reloading", cacheErr);
+            return;
           }
           window.location.reload();
         }

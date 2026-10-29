@@ -254,6 +254,8 @@ export const applyRemint = internalMutation({
   handler: async (ctx: MutationCtx, args) => {
     const user = await remintable(ctx, args.userId, args.oldDid, args.newDid);
     if (user === "skipped") return { rewritten: 0, skipped: true };
+    // A paged re-mint (live or stalled) owns rows on other DIDs; let it finish there.
+    if (user.pendingRemint) throw new Error("A paged re-mint is pending for this account; resume it through /api/user/remintDid");
     let rewritten = 0;
     for (const table of REMINT_TABLES) {
       const rows = (await ctx.db.query(table as never).collect()) as unknown as Row[];
@@ -261,7 +263,7 @@ export const applyRemint = internalMutation({
     }
     // The identity row moves last: if anything above throws, `did` still points
     // at the old value and the whole run is safe to retry.
-    await ctx.db.patch(args.userId, { did: args.newDid, pendingRemint: undefined });
+    await ctx.db.patch(args.userId, { did: args.newDid });
     return { rewritten, skipped: false };
   },
 });

@@ -103,6 +103,16 @@ test('storeDidLog: only a continuation signed by the update keys before it', asy
   await assert.rejects(() => authorDidLog.checkDidLogWrite(null, 'not json'), /not JSON Lines/);
 });
 
+// #300 review round 5: the client must refuse it too, or a hostile server could
+// serve an unsigned "author DID" built from the account's public keys.
+test('the client refuses an author DID log without signatures', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  assert.deepEqual((await authorDid.inspectAuthorDid(author.jsonl, author.keys)).problems, []);
+  const unsigned = withProof(author.jsonl, 0, []);
+  assert.match((await authorDid.inspectAuthorDid(unsigned, author.keys)).problems.join(), /not signed/);
+});
+
 // #300 review: didwebvh-ts 2.8 accepts `proof: []`, i.e. no signature at all.
 test('an entry without a signature is refused, at genesis or after', async () => {
   const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);

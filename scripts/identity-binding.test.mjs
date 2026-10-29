@@ -308,6 +308,14 @@ test('deleting an account mid-re-mint erases the new DID too, and the re-mint st
   assert.ok(dids?.includes(OWN) && dids.includes(old), JSON.stringify(dids));
 });
 
+test('the one-shot applyRemint refuses while a paged re-mint is pending', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  await call('migrations/remintUserDidDb', 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await assert.rejects(() => call('migrations/remintUserDidDb', 'applyRemint', ctx, { userId: 'U1', oldDid: old, newDid: 'did:webvh:N2:boop.ad:user-owner' }), /paged re-mint is pending/);
+  assert.equal(ctx.rows.users[0].did, old);
+});
+
 test('a final sweep that finds more stragglers than it takes makes the re-mint page again', async () => {
   const ctx = fixture();
   const old = ctx.rows.users[0].did;

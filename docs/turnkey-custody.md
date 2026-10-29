@@ -86,7 +86,7 @@ It is per account, not per device, so there is no per-device revocation.
   a re-mint are swept at the end for indexed fields (list ownership among
   them); unindexed attribution fields such as `items.createdByDid` written in
   that window keep the old DID.
-- Cost: each pre-#286 account's re-mint reads every row of the 17 tables once
+- Cost: each pre-#286 account's re-mint reads every row of 16 tables once
   (`items`, the largest, has no index on its DID fields, and nested proofs
   can't be indexed). `previewRemint` counts what would move for one account. `turnkeyListAuthorSource` is the
   `ListAuthor` source for Originals 5 (#298).
