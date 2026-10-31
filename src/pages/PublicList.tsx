@@ -2,7 +2,7 @@
  * Public list view page.
  *
  * Phase 4: Displays a published list that anyone can view without authentication.
- * Shows items with attribution and verification status.
+ * Shows current items with recorded attribution and unverified identifier details.
  */
 
 import { useEffect } from "react";
@@ -102,6 +102,15 @@ export function PublicList() {
             />
           </div>
         </div>
+
+        <section aria-label="Publication evidence" className="mb-6 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+          <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">Live list · not a sealed snapshot</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            This page shows the current list, which can change after publication.
+            It does not verify a sealed snapshot or who added each item.
+            Contributor names are recorded attribution.
+          </p>
+        </section>
 
         {/* Items */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow divide-y divide-gray-100 dark:divide-gray-700">

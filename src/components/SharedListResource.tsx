@@ -263,6 +263,14 @@ export function SharedListResource() {
           )}
         </div>
 
+        <section aria-label="Publication evidence" className="mb-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl">
+          <h2 className="text-sm font-medium text-gray-900 dark:text-gray-100">Live list · not a sealed snapshot</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            This page shows the current list, which can change after publication.
+            It does not verify a sealed snapshot or who added each item.
+          </p>
+        </section>
+
         {/* Plan limit hit when saving to favourites */}
         {bookmarkPlanLimit && (
           <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-sm space-y-2">
@@ -368,15 +376,18 @@ export function SharedListResource() {
 
         {/* Provenance */}
         {resource.credential?.proof && (
-          <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
-            <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-2">
+          <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl">
+            <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 mb-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0" />
               </svg>
-              <span className="text-sm font-medium">Cryptographically signed</span>
+              <span className="text-sm font-medium">Supplied proof (unverified)</span>
             </div>
-            <div className="space-y-1 text-xs text-green-600 dark:text-green-500">
-              <p><span className="font-medium">Signed by:</span> <span className="font-mono break-all">{resource.credential.issuer}</span></p>
+            <p className="mb-2 text-xs text-gray-600 dark:text-gray-400">
+              These supplied details have not been cryptographically verified by this page.
+            </p>
+            <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+              <p><span className="font-medium">Declared issuer:</span> <span className="font-mono break-all">{resource.credential.issuer}</span></p>
               <p><span className="font-medium">Date:</span> {new Date(resource.credential.proof.created).toLocaleString()}</p>
               <p><span className="font-medium">Cryptosuite:</span> {resource.credential.proof.cryptosuite}</p>
             </div>
@@ -390,7 +401,7 @@ export function SharedListResource() {
             <a href="/" className="text-amber-600 hover:text-amber-500">
               boop
             </a>
-            {" "}· Verified with{" "}
+            {" "}· Identifier (unverified):{" "}
             <span className="font-mono">did:webvh</span>
           </p>
           <p className="text-xs text-gray-300 dark:text-gray-600 text-center mt-1 font-mono break-all">
