@@ -11,7 +11,7 @@ import { getFunctionName } from 'convex/server';
 process.env.JWT_SECRET = 'identity-binding-test-secret-not-a-deployed-credential';
 delete process.env.WEBVH_DOMAIN;
 const outdir = 'tmp/identity-binding-test';
-const names = ['userHttp', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
+const names = ['userHttp', 'users', 'didLogsHttp', 'didLogs', 'didLogValidation', 'auth', 'actorSession', 'migrations/remintUserDidDb', 'didResources', 'publication', 'lists', 'assignees', 'presence', 'comments', 'activity'];
 await build({
   entryPoints: names.map(n => `convex/${n}.ts`), outdir, outbase: 'convex', bundle: true, platform: 'node', format: 'esm',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error', define: { 'process.env.NODE_ENV': '"production"' },
@@ -24,7 +24,15 @@ const token = subject => new SignJWT({ email: `${subject}@example.test` }).setPr
   .sign(new TextEncoder().encode(process.env.JWT_SECRET));
 const [ownerToken, editorToken] = await Promise.all([token('owner'), token('editor')]);
 
-const OWN = 'did:webvh:NEW:boop.ad:user-owner';
+// A real author DID at the owner's path (#286): its log is checked on write.
+// Turnkey is mocked with local keys (scripts/helpers/author-did-fixture.ts).
+await build({ entryPoints: ['scripts/helpers/author-did-fixture.ts'], outfile: `${outdir}/author-fixture.mjs`, bundle: true, platform: 'node', format: 'esm', logLevel: 'error' });
+const authorFixture = await import(pathToFileURL(`${process.cwd()}/${outdir}/author-fixture.mjs`));
+const ownTurnkey = await authorFixture.mockTurnkey();
+const ownAuthor = await authorFixture.mintAuthor(ownTurnkey, { path: 'user-owner' });
+const OWN_ACCOUNTS = await authorFixture.accountsOf(ownTurnkey);
+const OWN = ownAuthor.did;
+const OWN_LOG = ownAuthor.jsonl;
 const VICTIM = 'did:webvh:V:boop.ad:user-victimsuborg000';
 
 function fixture() {
@@ -55,6 +63,10 @@ function fixture() {
       collect: async () => (rows[table] ?? []).filter(r => predicates.every(p => p(r))),
       take: async n => (await q.collect()).slice(0, n),
       first: async () => (await q.collect())[0] ?? null,
+      paginate: async ({ numItems, cursor }) => {
+        const all = await q.collect(); const start = Number(cursor ?? 0);
+        return { page: all.slice(start, start + numItems), isDone: start + numItems >= all.length, continueCursor: String(start + numItems) };
+      },
       unique: async () => (await q.collect())[0] ?? null,
     };
     return q;
@@ -65,7 +77,13 @@ function fixture() {
     patch: async (id, patch) => { Object.assign(find(id), patch); },
     delete: async id => { for (const t of Object.values(rows)) { const i = t.findIndex(r => r._id === id); if (i >= 0) t.splice(i, 1); } },
   }, scheduler: { runAfter: async () => {}, runAt: async () => {} } };
-  ctx.runQuery = ctx.runMutation = async (ref, args) => { const [m, f] = getFunctionName(ref).split(':'); return call(m, f, ctx, args); };
+  // The sub-org's Turnkey accounts (read-only, parent API key) come from the mock wallet.
+  ctx.accounts = OWN_ACCOUNTS;
+  ctx.runQuery = ctx.runMutation = ctx.runAction = async (ref, args) => {
+    const [m, f] = getFunctionName(ref).split(':');
+    if (m === 'authInternal' && f === 'listSubOrgEd25519Accounts') return ctx.accounts;
+    return call(m, f, ctx, args);
+  };
   return ctx;
 }
 const post = (path, body, authToken = ownerToken) => new Request(`https://test${path}`, {
@@ -84,7 +102,7 @@ test('re-mint cannot move an account onto another account\'s DID', async () => {
 test('re-mint rejects a DID already held by another account, even at the caller\'s own path', async () => {
   const ctx = fixture();
   ctx.rows.users[1].legacyDid = OWN; // e.g. an orphaned/migrated identity
-  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN }));
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
   assert.equal(response.ok, false);
   assert.equal(ctx.rows.users[0].did, 'did:webvh:OLD:trypoo.app:user-owner');
   assert.equal(ctx.rows.lists[0].ownerDid, 'did:webvh:OLD:trypoo.app:user-owner');
@@ -95,9 +113,10 @@ test('a legitimate re-mint at the caller\'s own path moves only whole-DID refere
   const ctx = fixture();
   const old = ctx.rows.users[0].did;
   ctx.rows.publications.push({ _id: 'P1', listId: 'L1', webvhDid: `${old}/resources/list-L1`, status: 'active' }, { _id: 'P2', listId: 'LV', webvhDid: `${old}0/resources/list-LV`, status: 'active' });
-  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN }));
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
   assert.equal(response.status, 200, await response.clone().text());
   assert.equal(ctx.rows.users[0].did, OWN);
+  assert.deepEqual(ctx.rows.didLogs.map(r => [r.userDid, r.path, r.log, r.author]), [[OWN, 'user-owner', OWN_LOG, true]]);
   assert.equal(ctx.rows.lists[0].ownerDid, OWN);
   assert.equal(ctx.rows.lists[1].ownerDid, VICTIM);
   assert.equal(ctx.rows.publications[0].webvhDid, `${OWN}/resources/list-L1`);
@@ -106,15 +125,297 @@ test('a legitimate re-mint at the caller\'s own path moves only whole-DID refere
 
 test('updateDID only binds a did:webvh minted at the caller\'s own path', async () => {
   for (const did of [VICTIM, 'did:key:z6MkForged', 'did:webvh:X:boop.ad:user-owner-evil', 'did:webvh:X:boop.ad:evil:user-ownerx']) {
-    const ctx = fixture(); ctx.rows.users[0].did = 'did:temp:owner';
+    const ctx = fixture(); delete ctx.rows.users[0].did;
     const response = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did }));
     assert.ok([400, 403].includes(response.status), `${did} → ${response.status}`);
-    assert.equal(ctx.rows.users[0].did, 'did:temp:owner');
+    assert.equal(ctx.rows.users[0].did, undefined);
   }
-  const ctx = fixture(); ctx.rows.users[0].did = 'did:temp:owner';
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  // #286: only after its author log is served.
+  const early = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
+  assert.equal(early.status, 409);
+  const stored = await modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }));
+  assert.equal(stored.status, 200, await stored.clone().text());
   const response = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
   assert.equal(response.status, 200, await response.clone().text());
   assert.equal(ctx.rows.users[0].did, OWN);
+});
+
+// #286: re-genesis moves an account only onto a verifiable author DID, and
+// only while it has none on the current domain.
+test('re-mint requires a verifiable author DID log and refuses to walk an author DID', async () => {
+  const legacy = await authorFixture.mintLegacyDid('boop.ad', 'user-owner');
+  for (const [body, status] of [
+    [{ did: OWN, path: 'user-owner' }, 400],
+    [{ did: OWN, didLog: 'not json', path: 'user-owner' }, 422],
+    [{ did: legacy.did, didLog: legacy.jsonl, path: 'user-owner' }, 422],
+    [{ did: OWN, didLog: legacy.jsonl, path: 'user-owner' }, 422],
+  ]) {
+    const ctx = fixture(); const before = structuredClone(ctx.rows);
+    const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', body));
+    assert.equal(response.status, status, `${JSON.stringify(body).slice(0, 80)} → ${await response.clone().text()}`);
+    for (const table of ['users', 'lists', 'didLogs']) assert.deepEqual(ctx.rows[table], before[table]);
+  }
+  process.env.WEBVH_DOMAIN = 'boop.ad';
+  try {
+    const ctx = fixture();
+    ctx.rows.users[0].did = OWN;
+    ctx.rows.didLogs.push({ _id: 'D1', userDid: OWN, path: 'user-owner', log: OWN_LOG, author: true, updatedAt: 1 });
+    const next = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+    const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: next.did, didLog: next.jsonl, path: 'user-owner' }));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).newDid, OWN, 'an author DID on the current domain is kept');
+    assert.equal(ctx.rows.users[0].did, OWN);
+  } finally { delete process.env.WEBVH_DOMAIN; }
+});
+
+test('DID log writes: only a continuation of the served DID, never another DID at the same path', async () => {
+  const turnkey = await authorFixture.mockTurnkey();
+  const author = await authorFixture.mintAuthor(turnkey, { path: 'user-owner' });
+  const updated = await authorFixture.updateAuthor(turnkey, author);
+  const forged = await authorFixture.resignLastEntry(updated, author.keys.author.multikey, turnkey.secretFor("m/44'/501'/1'/0'"), author.keys.assertion.multikey);
+  const store = (ctx, body) => modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', body));
+
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  ctx.accounts = await authorFixture.accountsOf(turnkey);
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 200);
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: forged })).status, 422, 'signed by a key that is not an update key');
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: OWN_LOG })).status, 422, 'another DID\'s log');
+  // The served DID is no account's (this sign-up never adopted it), so a replacement is checked, and this one isn't the account's author DID.
+  assert.equal((await store(ctx, { userDid: OWN, path: 'user-owner', log: OWN_LOG })).status, 422, 'another DID at a served path must be this account\'s author DID');
+  assert.equal(ctx.rows.didLogs[0].log, author.jsonl);
+  assert.equal((await store(ctx, { userDid: author.did, path: 'user-owner', log: updated })).status, 200);
+  assert.deepEqual([ctx.rows.didLogs.length, ctx.rows.didLogs[0].log, ctx.rows.didLogs[0].versionId], [1, updated, JSON.parse(updated.split('\n')[1]).versionId]);
+
+  // An account that already has a did:webvh cannot start serving a second one.
+  const other = fixture();
+  other.accounts = ctx.accounts;
+  assert.equal((await store(other, { userDid: author.did, path: 'user-owner', log: author.jsonl })).status, 409);
+  assert.equal(other.rows.didLogs.length, 0);
+
+  // A new account's first log must be its own author DID: no unsigned, foreign-key or junk log can claim its path.
+  const fresh = fixture(); delete fresh.rows.users[0].did;
+  const stranger = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+  assert.equal((await store(fresh, { userDid: stranger.did, path: 'user-owner', log: stranger.jsonl })).status, 422);
+  const unsigned = authorFixture.withProof(OWN_LOG, 0, []);
+  assert.equal((await store(fresh, { userDid: OWN, path: 'user-owner', log: unsigned })).status, 422);
+  assert.equal(fresh.rows.didLogs.length, 0);
+});
+
+// #300 review: a JWT holder's own keys never make an account's author DID, so
+// the real owner can always re-genesise away from one.
+test('re-mint onto an author DID with keys other than the sub-org\'s is refused, and such a DID never blocks recovery', async () => {
+  const stranger = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+  const ctx = fixture();
+  const refused = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: stranger.did, didLog: stranger.jsonl, path: 'user-owner' }));
+  assert.equal(refused.status, 422);
+  assert.match(await refused.text(), /not this account's author key|assertion key/);
+  // Planted before the check existed: served, but not an author DID, so the owner can still move.
+  ctx.rows.users[0].did = stranger.did;
+  ctx.rows.didLogs.push({ _id: 'D1', userDid: stranger.did, path: 'user-owner', log: stranger.jsonl, author: false, updatedAt: 1 });
+  const recovered = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+  assert.equal(recovered.status, 200, await recovered.clone().text());
+  assert.equal(ctx.rows.users[0].did, OWN);
+});
+
+test('Turnkey being unreadable fails a DID write closed (503), storing nothing', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  ctx.runAction = async ref => { if (getFunctionName(ref) === 'authInternal:listSubOrgEd25519Accounts') throw new Error('turnkey down'); throw new Error('unexpected'); };
+  const response = await modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }));
+  assert.equal(response.status, 503);
+  assert.equal(ctx.rows.didLogs.length, 0);
+});
+
+// #300 review round 2: the re-mint is paged so it fits Convex's limits, and a
+// re-mint that lost a race stores nothing.
+test('a paged re-mint moves every row across many pages, then the account and its log together', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  for (let i = 0; i < 450; i += 1) ctx.rows.items.push({ _id: `IX${i}`, listId: 'L1', name: `n${i}`, checked: false, createdAt: 1, createdByDid: i % 3 ? old : VICTIM });
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(ctx.rows.items.filter(r => r.createdByDid === old).length, 0);
+  assert.equal(ctx.rows.items.filter(r => r.createdByDid === OWN).length, 300);
+  assert.equal(ctx.rows.items.filter(r => r.createdByDid === VICTIM).length, 150);
+  assert.equal(ctx.rows.users[0].did, OWN);
+  assert.equal(ctx.rows.users[0].pendingRemint, undefined);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').userDid, OWN);
+});
+
+test('a re-mint that lost the race stores nothing, and two can\'t run at once', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  // Other keys: the same keys minting in the same second would give the very same DID.
+  const other = await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' });
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await assert.rejects(() => call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: other.did }), /Another device/);
+  await call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+  // The loser: the account already moved, so it is told where, and nothing of its own is stored.
+  assert.deepEqual(await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: other.did }), { skipped: true, did: OWN });
+  await assert.rejects(() => call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: other.did, path: 'user-owner', log: other.jsonl, scid: 's', versionId: 'v', author: true }), /no longer/);
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: other.did, didLog: other.jsonl, path: 'user-owner' }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).newDid, OWN);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').log, OWN_LOG, 'the winner\'s log is still the one served');
+});
+
+// #300 review round 3: a re-mint that died part-way left rows on its own new
+// DID. The next claim resumes it, so nothing is stranded.
+test('a stalled re-mint is resumed by the next one, which also moves the rows it had moved', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  const abandoned = (await authorFixture.mintAuthor(await authorFixture.mockTurnkey(), { path: 'user-owner' })).did;
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: abandoned });
+  // It moved the lists, then died.
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: abandoned, table: 'lists', cursor: null });
+  assert.equal(ctx.rows.lists[0].ownerDid, abandoned);
+  // Still live (heartbeat): another device can't take over yet.
+  await assert.rejects(() => modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' })).then(async r => { if (!r.ok) throw new Error(await r.text()); }), /Another device/);
+  // Stalled past the claim: the next attempt (a fresh DID, as the client mints) takes over.
+  ctx.rows.users[0].pendingRemint.startedAt -= 6 * 60 * 1000;
+  const response = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(ctx.rows.users[0].did, OWN);
+  assert.equal(ctx.rows.lists[0].ownerDid, OWN, 'the abandoned re-mint\'s rows moved too');
+  assert.equal(ctx.rows.lists.filter(l => l.ownerDid === abandoned).length, 0);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').userDid, OWN);
+});
+
+test('finishRemint sweeps indexed rows written under the old DID after their table\'s pass', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  ctx.rows.lists.push({ _id: 'L-late', ownerDid: old, name: 'Made during the re-mint', createdAt: 2 });
+  await call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+  assert.equal(ctx.rows.lists.find(l => l._id === 'L-late').ownerDid, OWN);
+});
+
+// #300 review round 4: deletion must reach rows a re-mint already moved.
+test('deleting an account mid-re-mint erases the new DID too, and the re-mint stops', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  ctx.rows.users[0].deletionRequestedAt = Date.now();
+  await assert.rejects(() => call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'items', cursor: null }), /deletion/);
+  await assert.rejects(() => call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true }), /deletion/);
+  await call('users', 'continueUserDeletion', ctx, { userId: 'U1' });
+  const dids = ctx.rows.users.find(u => u._id === 'U1')?.deletionDids;
+  assert.ok(dids?.includes(OWN) && dids.includes(old), JSON.stringify(dids));
+});
+
+test('the one-shot applyRemint drops the author flag on the log row it moves', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  ctx.rows.didLogs.push({ _id: 'D-old', userDid: old, path: 'user-owner', log: 'old log', author: true, scid: 's', versionId: 'v', updatedAt: 1 });
+  await call('migrations/remintUserDidDb', 'applyRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  const row = ctx.rows.didLogs.find(r => r._id === 'D-old');
+  assert.deepEqual([row.userDid, row.author, row.scid, row.versionId], [OWN, false, undefined, undefined]);
+});
+
+test('the one-shot applyRemint refuses while a paged re-mint is pending', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  await call('migrations/remintUserDidDb', 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await assert.rejects(() => call('migrations/remintUserDidDb', 'applyRemint', ctx, { userId: 'U1', oldDid: old, newDid: 'did:webvh:N2:boop.ad:user-owner' }), /paged re-mint is pending/);
+  assert.equal(ctx.rows.users[0].did, old);
+});
+
+test('a final sweep that finds more stragglers than it takes makes the re-mint page again', async () => {
+  const ctx = fixture();
+  const old = ctx.rows.users[0].did;
+  const remint = 'migrations/remintUserDidDb';
+  const finish = () => call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+  await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  for (let i = 0; i < 101; i += 1) ctx.rows.lists.push({ _id: `LL${i}`, ownerDid: old, name: `late ${i}`, createdAt: 3 });
+  await assert.rejects(finish, /REMINT_SWEEP_INCOMPLETE/);
+  assert.equal(ctx.rows.users[0].did, old, 'nothing moved the account');
+  await call(remint, 'remintPage', ctx, { userId: 'U1', oldDid: old, newDid: OWN, table: 'lists', cursor: null });
+  await finish();
+  assert.equal(ctx.rows.lists.filter(l => l.ownerDid === old).length, 0);
+  assert.equal(ctx.rows.users[0].did, OWN);
+});
+
+// #300 review round 11: a legacy did:key/did:temp account owns rows on that
+// DID. It can't adopt a new one (rows would be orphaned); it re-mints.
+test('a legacy did:key account can\'t adopt a new DID, and re-mints with its rows', async () => {
+  for (const legacy of ['did:key:z6MkLegacy', 'did:temp:owner']) {
+    const ctx = fixture();
+    const old = ctx.rows.users[0].did;
+    for (const t of ['lists', 'agentApiKeys']) for (const r of ctx.rows[t]) if (r.ownerDid === old) r.ownerDid = legacy;
+    ctx.rows.users[0].did = legacy;
+    const store = await modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }));
+    assert.equal(store.status, 409, legacy);
+    ctx.rows.didLogs.push({ _id: 'Dx', userDid: OWN, path: 'user-owner', log: OWN_LOG, author: true, updatedAt: 1 });
+    const adopt = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
+    assert.equal(adopt.status, 409, legacy);
+    ctx.rows.didLogs.pop();
+    const remint = await modules.userHttp.remintUserDID._handler(ctx, post('/api/user/remintDid', { did: OWN, didLog: OWN_LOG, path: 'user-owner' }));
+    assert.equal(remint.status, 200, await remint.clone().text());
+    assert.equal(ctx.rows.users[0].did, OWN);
+    assert.equal(ctx.rows.lists[0].ownerDid, OWN, `${legacy}: rows moved`);
+    assert.equal(ctx.rows.agentApiKeys[0].ownerDid, OWN);
+  }
+});
+
+test('a DID-less account can replace an author log no account holds, never one an account holds', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  const orphan = await authorFixture.mintAuthor(ownTurnkey, { path: 'user-owner', domain: 'boop.ad' });
+  ctx.rows.didLogs.push({ _id: 'D-orphan', userDid: 'did:webvh:ORPHAN:old.example:user-owner', path: 'user-owner', log: orphan.jsonl, author: true, updatedAt: 1 });
+  const store = (body) => modules.didLogsHttp.storeDidLog._handler(ctx, post('/api/did/log', body));
+  assert.equal((await store({ userDid: OWN, path: 'user-owner', log: OWN_LOG })).status, 200);
+  assert.equal(ctx.rows.didLogs.find(r => r.path === 'user-owner').userDid, OWN);
+  // Held by an account: refused.
+  const held = fixture(); delete held.rows.users[0].did;
+  held.rows.didLogs.push({ _id: 'D-held', userDid: VICTIM, path: 'user-owner', log: OWN_LOG, author: true, updatedAt: 1 });
+  assert.equal((await modules.didLogsHttp.storeDidLog._handler(held, post('/api/did/log', { userDid: OWN, path: 'user-owner', log: OWN_LOG }))).status, 409);
+});
+
+// #300 review round 13: the holder and served-log checks happen inside the
+// writes, so a concurrent first sign-up on two devices can't split the account.
+test('replacing a served log someone adopted meanwhile is refused inside the write', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null });
+  // Device A adopts it...
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: OWN }), 'adopted');
+  // ...while device B, which read the log before that, tries to replace it.
+  await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, userDid: 'did:webvh:B:boop.ad:user-owner', expected: { userDid: OWN, log: OWN_LOG } }), /an account holds/);
+  assert.equal(ctx.rows.didLogs[0].userDid, OWN);
+  // And adoption is refused once the account holds a DID.
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: 'did:webvh:B:boop.ad:user-owner' }), 'conflict');
+});
+
+test('the other order: a replacement that lands first makes the stale adopt a conflict', async () => {
+  const ctx = fixture(); delete ctx.rows.users[0].did;
+  const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null });
+  const B = 'did:webvh:B:boop.ad:user-owner';
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, userDid: B, expected: { userDid: OWN, log: OWN_LOG } });
+  // Device A adopts the DID it stored, which is no longer served: refused.
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: OWN }), 'conflict');
+  assert.equal(ctx.rows.users[0].did, undefined);
+  assert.equal(await call('didLogs', 'adoptServedAuthorDid', ctx, { turnkeySubOrgId: 'owner', did: B }), 'adopted');
+});
+
+test('DID log writes are compare-and-swap, and updateDID never reports a DID the account didn\'t take', async () => {
+  const ctx = fixture();
+  const row = { userDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true };
+  await call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null });
+  await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, expected: null }), /conflict/, 'a second first write loses');
+  await assert.rejects(() => call('didLogs', 'upsertDidLog', ctx, { ...row, expected: { userDid: OWN, log: 'stale' } }), /conflict/);
+  assert.equal(ctx.rows.didLogs.length, 1);
+
+  // The account already holds a did:webvh: upsertUserInternal keeps it, so updateDID must not say yes.
+  const kept = await modules.userHttp.updateUserDID._handler(ctx, post('/api/user/updateDID', { did: OWN }));
+  assert.equal(kept.status, 409);
+  assert.equal(ctx.rows.users[0].did, 'did:webvh:OLD:trypoo.app:user-owner');
 });
 
 test('publication DIDs name the publisher, and the resolver fallback requires the list owner as controller', async () => {

@@ -8,15 +8,17 @@
  * resulting verification token can only be redeemed by the holder of this key.
  * So boop's backend can start an OTP but can never obtain the session.
  *
- * The session's only job is DID control: signing updates to the author's
- * did:webvh with the author's Turnkey Ed25519 key. Routine records are signed
- * by device keys, so an expired session blocks DID updates and nothing else.
+ * The session is the only way to use the author's two Turnkey Ed25519 keys
+ * (turnkeyAuthorBackend): the author key signs did:webvh updates, the
+ * assertion key signs Originals entries. Both are online-only: an expired
+ * session blocks them until the next login, and nothing else.
  *
  * See docs/turnkey-custody.md for the Turnkey-side guarantees this relies on.
  */
 import { TurnkeyClient, decodeVerificationToken } from "@turnkey/core";
 import { encryptOtpCodeToBundle } from "@turnkey/crypto";
 import { withTimeout } from "./authTimeout";
+import { publicKeyFromAddress, type AuthorKeyBackend } from "./authorDid";
 
 /** Decided on #286: seven days, refreshed silently while the app is used. */
 export const TURNKEY_SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -379,4 +381,67 @@ export async function clearTurnkeySession(): Promise<void> {
     }
     await client.clearUnusedKeyPairs().catch(() => {});
   }).catch(err => console.warn("[turnkeySession] Turnkey sign-out did not finish:", err));
+}
+
+const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+const unhex = (text: string) => Uint8Array.from(text.match(/../g) ?? [], byte => parseInt(byte, 16));
+
+/**
+ * The author's two Turnkey Ed25519 keys, through this device's session (#286
+ * PR b): reading the sub-org's Ed25519 accounts, creating the assertion
+ * account when a sub-org lacks it, and signing raw bytes. Turnkey stamps every
+ * call with this client's session key, so boop's backend can do none of it.
+ */
+export function turnkeyAuthorBackend(): AuthorKeyBackend {
+  return {
+    async ed25519Accounts(subOrgId) {
+      const { httpClient } = await getClient();
+      const { wallets } = await httpClient.getWallets({ organizationId: subOrgId });
+      const accounts = [];
+      for (const wallet of wallets) {
+        const { accounts: walletAccounts } = await httpClient.getWalletAccounts({ organizationId: subOrgId, walletId: wallet.walletId });
+        for (const account of walletAccounts) {
+          if (account.curve !== "CURVE_ED25519") continue;
+          // Solana-format addresses are the base58 public key itself.
+          accounts.push({ walletId: wallet.walletId, address: account.address, path: account.path, publicKey: publicKeyFromAddress(account.address) });
+        }
+      }
+      return accounts;
+    },
+    async createEd25519Account(subOrgId, walletId, path) {
+      const { httpClient } = await getClient();
+      await httpClient.createWalletAccounts({
+        organizationId: subOrgId,
+        walletId,
+        accounts: [{ curve: "CURVE_ED25519", pathFormat: "PATH_FORMAT_BIP32", path, addressFormat: "ADDRESS_FORMAT_SOLANA" }],
+      });
+    },
+    async sign(subOrgId, address, message) {
+      const { httpClient } = await getClient();
+      const { r, s } = await httpClient.signRawPayload({
+        organizationId: subOrgId,
+        signWith: address,
+        payload: hex(message),
+        encoding: "PAYLOAD_ENCODING_HEXADECIMAL",
+        // Ed25519 signs the message itself (RFC 8032); Turnkey requires this value for it.
+        hashFunction: "HASH_FUNCTION_NOT_APPLICABLE",
+      });
+      return unhex(`${r}${s}`);
+    },
+  };
+}
+
+/**
+ * Whether this device may sign as the author now: a live Turnkey session in
+ * this sub-org, refreshed if due, and a clean audit from this device's last
+ * login (no credential it didn't create).
+ */
+export async function authorSigningReady(subOrgId: string): Promise<boolean> {
+  try {
+    if (await refreshTurnkeySessionIfDue(subOrgId) !== "active") return false;
+  } catch {
+    return false;
+  }
+  // A login just now starts the audit in the background; wait for it.
+  return (await subOrgAuditDone(subOrgId))?.clean === true;
 }

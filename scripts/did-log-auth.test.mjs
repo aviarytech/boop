@@ -128,9 +128,9 @@ async function rejects(promise, description) {
   await rejects(jwt.verifyAuthToken("not-a-jwt"), /.*/);
 }
 
-// --- didLogPathForSubOrg mirrors the client's toUserSlug ------------------
+// --- didLogPathForSubOrg mirrors the client's userDidPath ----------------
 
-// src/lib/webvh.ts toUserSlug: `user-${subOrgId.slice(0, 16)}`. If these ever
+// src/lib/webvh.ts userDidPath: `user-${subOrgId.slice(0, 16)}`. If these ever
 // disagree, every honest write starts failing.
 {
   assert.equal(didLogAuth.didLogPathForSubOrg(SUB_ORG), SLUG);

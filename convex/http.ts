@@ -254,9 +254,9 @@ const verify = httpAction(async (ctx, request) => {
       subOrgId: result.subOrgId,
     });
 
-    // DID creation happens client-side after auth completes: for a NEW account
-    // the client mints a did:webvh with BrowserWebVHSigner and posts it to
-    // /api/user/updateDID.
+    // DID creation happens client-side after auth completes: the client mints
+    // an author did:webvh through its own Turnkey session (#286,
+    // src/lib/authorIdentity.ts), stores its log, then posts /api/user/updateDID.
     await ctx.runMutation(internal.auth.upsertUserInternal, {
       turnkeySubOrgId: result.subOrgId,
       email: result.email,

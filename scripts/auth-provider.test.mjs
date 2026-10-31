@@ -6,20 +6,20 @@ import { pathToFileURL } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 const { renderHook, cleanup, act } = await import('@testing-library/react');
-const unexpectedMint = async () => { throw new Error('Unexpected DID creation'); };
 const turnkeyCalls = [];
 const turnkeyDefaults = { complete: async () => ({ clean: true, findings: [] }) };
-const state = globalThis.__authProviderTest = { platform: 'web', storage: new Map(), establish: async () => {}, mint: unexpectedMint, turnkeyCalls, turnkey: { ...turnkeyDefaults } };
-state.convex = { mutation: (...args) => state.establish(...args) };
+const state = globalThis.__authProviderTest = { platform: 'web', storage: new Map(), establish: async () => {}, authorDid: [], ensureAuthorDid: async () => ({ status: 'current', did: 'did:webvh:x' }), turnkeyCalls, turnkey: { ...turnkeyDefaults } };
+state.convex = { mutation: (...args) => state.establish(...args), query: (...args) => state.query(...args) };
+state.query = async () => null;
 await build({entryPoints:['src/hooks/useAuth.tsx'],outfile:'tmp/auth-provider-test.mjs',bundle:true,jsx:'automatic',platform:'node',format:'esm',external:['react','react/jsx-runtime','convex/server','convex/values'],plugins:[{
   name:'auth-provider-fixtures', setup(b) {
-    b.onResolve({filter:/^(@capacitor\/core|convex\/react|\.\.?\/.*(storageAdapter|webvh|useDidDomainRemint|convexUrls|analytics|turnkeySession))$/}, args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));
+    b.onResolve({filter:/^(@capacitor\/core|convex\/react|\.\.?\/.*(storageAdapter|useAuthorDid|authorIdentity|convexUrls|analytics|turnkeySession))$/}, args=>({path:args.path.split('/').at(-1),namespace:'fixture'}));
     b.onLoad({filter:/.*/,namespace:'fixture'},({path})=>({resolveDir:`${process.cwd()}/src/lib`,contents:({
       core:'export const Capacitor={getPlatform:()=>globalThis.__authProviderTest.platform,isNativePlatform:()=>globalThis.__authProviderTest.platform!=="web"};',
       react:'export function useConvex(){return globalThis.__authProviderTest.convex;}',
       storageAdapter:'export const storageAdapter={get:async k=>globalThis.__authProviderTest.storage.get(k)??null,set:async(k,v)=>globalThis.__authProviderTest.storage.set(k,v),remove:async k=>globalThis.__authProviderTest.storage.delete(k)};',
-      webvh:'export const createUserWebVHDid=async(...args)=>globalThis.__authProviderTest.mint(...args);',
-      useDidDomainRemint:'export const useDidDomainRemint=()=>{};',
+      useAuthorDid:'export const useAuthorDid=(user,token,onAdopted)=>{globalThis.__authProviderTest.authorDid.push({user,token,onAdopted});};',
+      authorIdentity:'export const clearCurrentAuthor=()=>{globalThis.__authProviderTest.turnkeyCalls.push(["clearAuthor"]);};export const ensureAuthorDid=async(...args)=>{globalThis.__authProviderTest.turnkeyCalls.push(["ensureAuthorDid",...args]);return globalThis.__authProviderTest.ensureAuthorDid(...args);};',
       convexUrls:'export const getConvexHttpUrl=()=>"https://auth.example.test";',
       analytics:'export const identifyUser=()=>{};export const resetAnalytics=()=>{};',
       turnkeySession:`import { TimeoutError } from "./authTimeout"; globalThis.__authProviderTest.TimeoutError = TimeoutError; const t=()=>globalThis.__authProviderTest;
@@ -37,7 +37,7 @@ const token=`header.${btoa(JSON.stringify({exp:Math.floor(Date.now()/1000)+30*86
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const flush=()=>act(async()=>{await Promise.resolve();});
 const fetchBefore=globalThis.fetch;
-afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.platform='web';state.establish=async()=>{};state.mint=unexpectedMint;turnkeyCalls.length=0;state.turnkey={...turnkeyDefaults};});
+afterEach(()=>{cleanup();globalThis.fetch=fetchBefore;state.storage.clear();state.platform='web';state.establish=async()=>{};state.authorDid.length=0;state.query=async()=>null;state.ensureAuthorDid=async()=>({status:'current',did:'did:webvh:x'});turnkeyCalls.length=0;state.turnkey={...turnkeyDefaults};});
 function seed(){state.storage.set('lisa-auth-state',JSON.stringify({user,token}));state.storage.set('lisa-jwt-token',token);}
 
 async function withEstablishClock(run) {
@@ -250,29 +250,129 @@ test('mobile restore clears a definitively rejected session', async () => {
   assert.equal(state.storage.size, 0);
 });
 
-// #236: the server binds account DIDs; a client must not adopt a DID the server refused,
-// or it would publish and act under an identity the server does not recognise.
-for (const flow of ['restore', 'OTP']) for (const status of [403, 200]) {
-  test(`${flow}: a did:webvh upgrade is adopted only when updateDID succeeds (${status})`, async () => {
-    const minted = { did: 'did:webvh:NEW:boop.ad:user-owner', path: 'user-owner', didLogJsonl: '{}' };
-    state.mint = async () => minted;
-    const legacy = { ...user, did: 'did:key:z6MkLegacy' };
+// #286: the server refuses every call from an account without a DID, so a new
+// account's OTP sign-up finishes only once its author DID exists (minted
+// through the Turnkey session). A restore, or an account with a DID, mints
+// nothing in useAuth; useAuthorDid moves it later. (#236: only a DID the
+// server took is adopted.)
+test('OTP sign-up of a new account adopts its author DID before finishing', async () => {
+  const fresh = { ...user, did: null };
+  state.ensureAuthorDid = async () => ({ status: 'adopted', did: 'did:webvh:NEW:boop.ad:user-owner' });
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ user: fresh, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => result.current.verifyOtp('123456'));
+  assert.equal(result.current.user?.did, 'did:webvh:NEW:boop.ad:user-owner');
+  assert.equal(JSON.parse(state.storage.get('lisa-auth-state')).user.did, 'did:webvh:NEW:boop.ad:user-owner');
+});
+
+test('OTP sign-up of a new account fails, signed out, when its author DID can\'t be made', async () => {
+  const fresh = { ...user, did: null };
+  state.ensureAuthorDid = async () => ({ status: 'not-ready' });
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ user: fresh, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => assert.rejects(() => result.current.verifyOtp('123456'), /couldn't finish setting up/));
+  assert.equal(result.current.isAuthenticated, false);
+  assert.equal(state.storage.size, 0);
+  assert.ok(turnkeyCalls.some(c => c[0] === 'clear'), 'its Turnkey session is cleared too');
+});
+
+test('a stored legacy DID the server holds (did:key) is kept at restore, from the server', async () => {
+  const legacy = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
+  state.query = async () => ({ did: 'did:key:z6MkLegacy' });
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.equal(result.current.isAuthenticated, true);
+  assert.equal(result.current.user.did, 'did:key:z6MkLegacy');
+  assert.equal(JSON.parse(state.storage.get('lisa-auth-state')).user.did, 'did:key:z6MkLegacy');
+});
+
+test('native: a transient failure asking the server for the DID keeps the session', async () => {
+  state.platform = 'ios';
+  const legacy = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
+  state.query = async () => { throw new state.TimeoutError('Session verification timed out'); };
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.ok(state.storage.has('lisa-auth-state'), 'not signed out');
+  assert.ok(!turnkeyCalls.some(c => c[0] === 'clear'));
+});
+
+test('native: a server error from the DID lookup is an answer, not something to retry forever', async () => {
+  state.platform = 'ios';
+  const legacy = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token);
+  state.query = async () => { throw new Error('[CONVEX Q(auth:getUserByTurnkeyId)] Server Error'); };
+  globalThis.fetch = async () => new Response(null, { status: 204 });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.equal(result.current.isLoading, false);
+  assert.equal(state.storage.size, 0);
+});
+
+test('OTP sign-in on a legacy did:key needs no author DID first', async () => {
+  state.ensureAuthorDid = async () => { throw new Error('must not be called'); };
+  globalThis.fetch = async url => url.endsWith('/auth/initiate')
+    ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+    : Response.json({ user: { ...user, did: 'did:key:z6MkLegacy' }, token });
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => result.current.verifyOtp('123456'));
+  assert.equal(result.current.user.did, 'did:key:z6MkLegacy');
+});
+
+test('a stored session for an account without a DID is dropped, and the server session revoked', async () => {
+  const stale = { ...user, did: 'did:temp:owner' };
+  state.storage.set('lisa-auth-state', JSON.stringify({ user: stale, token })); state.storage.set('lisa-jwt-token', token);
+  const calls = [];
+  globalThis.fetch = async (url) => { calls.push(url.split('/').slice(3).join('/')); return new Response(null, { status: 204 }); };
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+  assert.equal(result.current.isAuthenticated, false);
+  assert.equal(state.storage.size, 0);
+  assert.ok(calls.includes('auth/logout'));
+});
+
+test('a failed sign-up revokes the session /auth/verify issued', async () => {
+  state.ensureAuthorDid = async () => ({ status: 'not-ready' });
+  const calls = [];
+  globalThis.fetch = async url => {
+    calls.push(url.split('/').slice(3).join('/'));
+    return url.endsWith('/auth/initiate')
+      ? Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' })
+      : url.endsWith('/auth/verify') ? Response.json({ user: { ...user, did: null }, token, turnkey: { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId } })
+      : new Response(null, { status: 204 });
+  };
+  const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
+  await act(async () => result.current.startOtp(user.email));
+  await act(async () => assert.rejects(() => result.current.verifyOtp('123456')));
+  await flush();
+  assert.ok(calls.includes('auth/logout'));
+});
+
+for (const flow of ['restore', 'OTP']) {
+  test(`${flow}: an account that has a DID mints nothing in useAuth; a move comes only from useAuthorDid`, async () => {
     const calls = [];
-    globalThis.fetch = async (url, options) => {
+    globalThis.fetch = async (url) => {
       calls.push(url.split('/').slice(3).join('/'));
-      if (url.endsWith('/api/user/updateDID')) return Response.json(status === 200 ? { success: true } : { error: 'denied' }, { status });
       if (url.endsWith('/auth/initiate')) return Response.json({ sessionId: 'otp-session', otpEncryptionTargetBundle: 'target' });
-      if (url.endsWith('/auth/verify')) return Response.json({ user: legacy, token });
+      if (url.endsWith('/auth/verify')) return Response.json({ user, token });
       return Response.json({ ok: true });
     };
-    if (flow === 'restore') { state.storage.set('lisa-auth-state', JSON.stringify({ user: legacy, token })); state.storage.set('lisa-jwt-token', token); }
+    if (flow === 'restore') seed();
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
-    if (flow === 'OTP') { await act(async () => result.current.startOtp(legacy.email)); await act(async () => result.current.verifyOtp('123456')); }
+    if (flow === 'OTP') { await act(async () => result.current.startOtp(user.email)); await act(async () => result.current.verifyOtp('123456')); }
     await flush();
-    const expected = status === 200 ? minted.did : legacy.did;
-    assert.equal(result.current.user?.did, expected);
-    assert.equal(JSON.parse(state.storage.get('lisa-auth-state')).user.did, expected);
-    if (status !== 200) assert.ok(!calls.includes('api/did/log'), 'no DID log is stored for a refused DID');
+    assert.ok(!calls.some(c => /updateDID|did\/log|remintDid/.test(c)));
+    assert.ok(!turnkeyCalls.some(c => c[0] === 'ensureAuthorDid'));
+    assert.equal(result.current.user?.did, user.did);
+    const last = state.authorDid.at(-1);
+    await act(async () => last.onAdopted('did:webvh:NEW:boop.ad:user-owner'));
+    assert.equal(result.current.user?.did, 'did:webvh:NEW:boop.ad:user-owner');
   });
 }
 
@@ -347,4 +447,5 @@ test('logout clears the Turnkey session', async () => {
   const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush();
   await act(async () => result.current.logout());
   assert.ok(turnkeyCalls.some(c => c[0] === 'clear'));
+  assert.ok(turnkeyCalls.some(c => c[0] === 'clearAuthor'), 'the author signer is forgotten');
 });

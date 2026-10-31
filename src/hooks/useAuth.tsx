@@ -35,8 +35,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { createUserWebVHDid } from "../lib/webvh";
-import { useDidDomainRemint } from "./useDidDomainRemint";
+import { useAuthorDid } from "./useAuthorDid";
+import { clearCurrentAuthor, ensureAuthorDid } from "../lib/authorIdentity";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
 import { identifyUser, resetAnalytics } from "../lib/analytics";
@@ -48,8 +48,21 @@ import {
   startTurnkeySessionRefresh,
 } from "../lib/turnkeySession";
 
+/** Best effort: end a boop session the client is giving up on, and its cookie. */
+async function revokeServerSession(token: string): Promise<void> {
+  try {
+    await withTimeout(fetch(`${getConvexHttpUrl()}/auth/logout`, {
+      method: "POST", headers: { Authorization: `Bearer ${token}` }, credentials: "include",
+    }), 15_000, "Logout endpoint timed out");
+  } catch (err) {
+    console.warn("[useAuth] Could not revoke the abandoned session:", err);
+  }
+}
+
 /** Turnkey steps never hold up boop's own sign-in or sign-out for longer than this. */
 const TURNKEY_STEP_MS = 15_000;
+/** A new account's author DID: the audit (up to 30 s), the mint and two writes. */
+const AUTHOR_DID_SETUP_MS = 60_000;
 
 /**
  * Get the Convex HTTP endpoint base URL from the Convex URL.
@@ -199,57 +212,44 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw err;
         }
         if (cancelled) return;
+        // An older build cached `did:temp` when the server had no DID. Which
+        // DID the account has is the server's to say: one with none is refused
+        // on every call, and only an OTP sign-up can mint one now (#286), so
+        // that session is dropped. A did:key or did:temp the server does hold
+        // is kept; useAuthorDid re-mints it.
+        if (!parsed.user?.did?.startsWith("did:webvh:")) {
+          if (!parsed.user?.turnkeySubOrgId) throw new Error("Stored session is malformed; sign in again");
+          let account: { did?: string } | null;
+          try {
+            account = await withAuthTimeout(convex.query(api.auth.getUserByTurnkeyId, {
+              turnkeySubOrgId: parsed.user.turnkeySubOrgId, authToken: parsed.token,
+            })) as { did?: string } | null;
+          } catch (err) {
+            // On native, keep the session through a transient failure: a
+            // dropped connection shows up as the timeout. Any server error is
+            // an answer, and retrying it would spin forever.
+            if (Capacitor.isNativePlatform() && err instanceof TimeoutError) {
+              retrying = true;
+              if (!cancelled) retryTimer = setTimeout(() => void restoreSession(), 5000);
+              return;
+            }
+            throw err;
+          }
+          // Only the server answering that it holds no DID drops the session.
+          if (!account?.did) {
+            void revokeServerSession(parsed.token);
+            throw new Error("Stored session has no DID; sign in again");
+          }
+          parsed.user = { ...parsed.user, did: account.did };
+          await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(parsed));
+        }
+        if (cancelled) return;
         setUser(parsed.user);
         setToken(parsed.token);
         await storageAdapter.set(JWT_STORAGE_KEY, parsed.token);
 
-        // If user is stuck on did:temp (or no DID), create did:webvh now
-        if (parsed.user && (!parsed.user.did || !parsed.user.did.startsWith("did:webvh:"))) {
-          try {
-            console.log("[useAuth] User has no did:webvh, creating client-side...");
-            const webvhResult = await createUserWebVHDid({
-              email: parsed.user.email,
-              subOrgId: parsed.user.turnkeySubOrgId,
-            });
-
-            const httpUrl = getConvexHttpUrl();
-            const updated = await fetch(`${httpUrl}/api/user/updateDID`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${parsed.token}`,
-              },
-              credentials: "include",
-              body: JSON.stringify({ did: webvhResult.did }),
-            });
-            // Only adopt a DID the server accepted; ownership and publishing are checked
-            // against the server's account DID. The upgrade is retried on the next restore.
-            if (!updated.ok) throw new Error(`updateDID failed: ${updated.status}`);
-
-            // Store DID log in Convex for resolution
-            await fetch(`${httpUrl}/api/did/log`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${parsed.token}`,
-              },
-              credentials: "include",
-              body: JSON.stringify({
-                userDid: webvhResult.did,
-                path: webvhResult.path,
-                log: webvhResult.didLogJsonl,
-              }),
-            });
-
-            const upgradedUser = { ...parsed.user, did: webvhResult.did };
-            setUser(upgradedUser);
-            const updatedState: PersistedAuthState = { user: upgradedUser, token: parsed.token };
-            await storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify(updatedState));
-            console.log("[useAuth] Upgraded DID on session restore:", webvhResult.did);
-          } catch (didErr) {
-            console.error("[useAuth] Failed to upgrade DID on restore:", didErr);
-          }
-        }
+        // useAuthorDid moves the account onto an author DID once its Turnkey
+        // session is live (#286); nothing is minted here.
       } catch (err) {
         console.error("[useAuth] Error restoring session:", err);
         setUser(null);
@@ -333,6 +333,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       authTransitionRef.current = true;
       setIsLoading(true);
       let sessionPublicKey: string | null = null;
+      // Set once /auth/verify issued a boop session, so a later failure revokes it.
+      let issuedToken: string | null = null;
       // Set once this sign-in's Turnkey login succeeded or timed out (it may still land).
       let turnkeyLoginMayHaveLanded = false;
       try {
@@ -364,6 +366,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         const { token: jwtToken, user: serverUser, turnkey } = await response.json();
+        issuedToken = jwtToken;
         console.log("[useAuth] OTP verified, got JWT for:", serverUser.email);
 
         // The Turnkey session only gates DID updates, so a failure here must not
@@ -387,32 +390,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
-        // Start with server-provided DID. If it is not already did:webvh,
-        // create did:webvh client-side and persist it.
-        let userDid = serverUser.did || `did:temp:${serverUser.turnkeySubOrgId}`;
-        if (!userDid.startsWith("did:webvh:")) {
-          try {
-            const webvhResult = await createUserWebVHDid({
-              email: serverUser.email,
-              subOrgId: serverUser.turnkeySubOrgId,
-            });
-            const updated = await fetch(`${httpUrl}/api/user/updateDID`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${jwtToken}`,
-              },
-              credentials: "include",
-              body: JSON.stringify({ did: webvhResult.did }),
-            });
-            // Keep the server's DID unless it accepted the new one (retried on restore).
-            if (!updated.ok) throw new Error(`updateDID failed: ${updated.status}`);
-            userDid = webvhResult.did;
-
-            console.log("[useAuth] Upgraded user DID to did:webvh:", userDid);
-          } catch (didErr) {
-            console.error("[useAuth] Failed to create/update did:webvh:", didErr);
+        // A new account has no DID, and the server refuses every call from an
+        // account without one. Its author DID can only be minted through this
+        // Turnkey session (#286), so sign-up finishes only once it exists: a
+        // failure here fails sign-in, to be retried, rather than leaving an
+        // account that can do nothing. An account with any DID the server
+        // holds (did:webvh, or a legacy did:key/did:temp) signs in on it, and
+        // useAuthorDid moves it onto an author DID when it can.
+        let userDid: string = serverUser.did;
+        if (!userDid) {
+          const authored = await withTimeout(
+            ensureAuthorDid({ did: serverUser.did, turnkeySubOrgId: serverUser.turnkeySubOrgId }, jwtToken),
+            AUTHOR_DID_SETUP_MS, "Setting up your account timed out");
+          if (authored.status === "not-ready" || authored.status === "kept") {
+            throw new Error("We couldn't finish setting up your account. Please request a new code and try again.");
           }
+          userDid = authored.did;
         }
 
         // Create auth user object
@@ -442,6 +435,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[useAuth] Authentication complete, DID:", userDid);
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
+        // /auth/verify already established a server session and set its cookie.
+        if (issuedToken) void revokeServerSession(issuedToken);
         if (sessionPublicKey) await discardSessionKey(sessionPublicKey);
         // boop sign-in failed after this sign-in's Turnkey login (or one that
         // may still land): don't leave it behind. Never clear a session this
@@ -473,6 +468,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setOtpFlowState({ sessionId: null, email: null, otpEncryptionTargetBundle: null });
     resetAnalytics();
 
+    clearCurrentAuthor();
     try {
       await storageAdapter.remove(AUTH_STORAGE_KEY);
       await storageAdapter.remove(JWT_STORAGE_KEY);
@@ -524,8 +520,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return startTurnkeySessionRefresh(subOrgId);
   }, [subOrgId]);
 
-  // Repairs identities minted on a domain we no longer serve. Temporary.
-  useDidDomainRemint(user, token);
+  // Moves the account onto an author DID (#286), including identities minted
+  // on a domain we no longer serve.
+  const adoptAuthorDid = useCallback((did: string) => {
+    setUser(current => {
+      if (!current) return current;
+      const next = { ...current, did };
+      if (token) void storageAdapter.set(AUTH_STORAGE_KEY, JSON.stringify({ user: next, token }));
+      return next;
+    });
+  }, [token]);
+  useAuthorDid(user, token, adoptAuthorDid);
 
   const value: AuthContextValue = {
     isAuthenticated: user !== null,

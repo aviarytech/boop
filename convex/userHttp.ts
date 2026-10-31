@@ -13,6 +13,8 @@ import {
 } from "./lib/auth";
 import { jsonResponse, errorResponse } from "./lib/httpResponses";
 import { assertDidLogOwnership, didLogPathForSubOrg, DidLogOwnershipError } from "./lib/didLogAuth";
+import { checkAccountDidLog, KeyLookupError } from "./didLogsHttp";
+import { REMINT_PAGED_TABLES, REMINT_SWEEP_INCOMPLETE } from "./migrations/remintUserDidDb";
 
 /** The domain encoded in a did:webvh, percent-decoded. Null if not a did:webvh. */
 function didWebvhDomain(did: string): string | null {
@@ -58,15 +60,25 @@ export const updateUserDID = httpAction(async (ctx, request) => {
     // The account identity comes from the token; the DID must be minted at this
     // sub-org's own path. did:key is derived server-side at login, never accepted here.
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: did, path: didLogPathForSubOrg(auth.turnkeySubOrgId) });
+    // #286: only a DID-less account adopts a DID. One with any DID (a legacy
+    // did:key or did:temp included) owns rows keyed to it: that is a re-mint.
+    const holder = await ctx.runQuery(internal.migrations.remintUserDidDb.findUserBySubOrg, { turnkeySubOrgId: auth.turnkeySubOrgId });
+    if (holder?.did && holder.did !== did) {
+      return errorResponse(request, "This account already has a DID. Re-mint through /api/user/remintDid.", 409);
+    }
+    // #286: only a DID whose checked log is already served (POST /api/did/log)
+    // and is an author DID, so no account adopts a DID the world can't resolve.
+    const served = await ctx.runQuery(internal.didLogs.getDidLogByUserDid, { userDid: did });
+    if (!served?.author) {
+      return errorResponse(request, "Store this DID's author log (POST /api/did/log) before adopting it", 409);
+    }
 
     console.log(`[userHttp] Updating DID for ${auth.email} to ${did}`);
 
-    // Call upsertUser which handles the DID upgrade logic
-    await ctx.runMutation(internal.auth.upsertUserInternal, {
-      turnkeySubOrgId: auth.turnkeySubOrgId,
-      email: auth.email,
-      did,
-    });
+    // The checks above are early exits; this mutation re-checks them all in
+    // the transaction that sets the DID.
+    const adopted = await ctx.runMutation(internal.didLogs.adoptServedAuthorDid, { turnkeySubOrgId: auth.turnkeySubOrgId, did });
+    if (adopted !== "adopted") return errorResponse(request, "The account can't adopt this DID", 409);
 
     console.log(`[userHttp] DID updated successfully for ${auth.email}`);
 
@@ -104,6 +116,13 @@ export const updateUserDID = httpAction(async (ctx, request) => {
  * authenticated user change their DID, and today that silently strands every
  * row on the old value.
  *
+ * #286: also the author DID re-genesis. A did:webvh minted before #286 has
+ * one local key in every role and controller "", which Originals 5 refuses,
+ * so the client mints a new author DID through its Turnkey session and moves
+ * the account here. No continuity link is kept (decided on #286). Allowed
+ * only while the account has no author DID on the current domain, so a
+ * client can't walk an account from DID to DID.
+ *
  * Request: { "did": "did:webvh:...", "didLog": "<jsonl>", "path": "user-..." }
  * Response: { "success": true, "newDid": "...", "rewritten": n }
  */
@@ -132,38 +151,67 @@ export const remintUserDID = httpAction(async (ctx, request) => {
       return jsonResponse(request, { success: true, newDid, rewritten: 0 });
     }
 
-    // Only ever repair an identity that is actually on a stale domain. Without
-    // this, a client whose cached auth state still holds the pre-migration DID
-    // re-triggers on every reload and walks the account to a new DID each time.
+    // Only ever move an account that has no author DID on the current domain.
+    // Without this, a client whose cached auth state still holds the
+    // pre-migration DID re-triggers on every reload and walks the account to a
+    // new DID each time.
     const targetDomain = process.env.WEBVH_DOMAIN;
     const currentDomain = didWebvhDomain(user.did);
-    if (targetDomain && currentDomain === targetDomain) {
+    const current = await ctx.runQuery(internal.didLogs.getDidLogByUserDid, { userDid: user.did });
+    if (current?.author && (!targetDomain || currentDomain === targetDomain)) {
       return jsonResponse(request, {
         success: true,
         newDid: user.did,
         rewritten: 0,
-        skipped: "already on the current domain",
+        skipped: "already an author DID on the current domain",
       });
     }
 
-    // Checked before applyRemint, whether or not a log is supplied: the new DID
+
+    // Checked before any row moves, whether or not a log is supplied: the new DID
     // must be minted at this sub-org's own path, so it cannot name another
-    // account. storeDidLog patches the didLogs row matching `path`, so an
+    // account. finishRemint patches the didLogs row matching `path`, so an
     // unchecked path could also point another account's serving path at this
     // caller's log. Rejecting afterwards would leave rows already moved.
     assertDidLogOwnership({ subOrgId: auth.turnkeySubOrgId, userDid: newDid, path: path ?? didLogPathForSubOrg(auth.turnkeySubOrgId) });
 
-    const { rewritten } = await ctx.runMutation(
-      internal.migrations.remintUserDidDb.applyRemint,
-      { userId: user._id, oldDid: user.did, newDid }
-    );
+    // The new DID's log must verify from genesis and be an author DID.
+    if (!didLog || !path) return errorResponse(request, "didLog and path are required");
+    const checked = await checkAccountDidLog(ctx, auth.turnkeySubOrgId, null, didLog);
+    if (!checked.ok) return errorResponse(request, checked.error, 422);
+    if (checked.did !== newDid) return errorResponse(request, "didLog is for another DID", 422);
+    if (!checked.author) return errorResponse(request, `Not this account's author DID: ${checked.authorProblems.join("; ")}`, 422);
 
-    if (didLog && path) {
-      await ctx.runMutation(internal.migrations.remintUserDidDb.storeDidLog, {
-        userDid: newDid,
-        path,
-        log: didLog,
-      });
+    // Paged, so it fits Convex's per-mutation limits however large the tables
+    // are; the account and its served log move together at the end.
+    const remint = internal.migrations.remintUserDidDb;
+    const move = { userId: user._id, oldDid: user.did, newDid };
+    const begun = await ctx.runMutation(remint.beginRemint, move);
+    if (begun.skipped) {
+      // Another re-mint moved the account first. Store nothing: its log is the one served.
+      return jsonResponse(request, { success: true, newDid: begun.did, rewritten: 0, skipped: "moved by another re-mint" });
+    }
+    let rewritten = 0;
+    for (let attempt = 0; ; attempt += 1) {
+      for (const table of REMINT_PAGED_TABLES) {
+        let cursor: string | null = null;
+        for (;;) {
+          const page: { rewritten: number; isDone: boolean; cursor: string } = await ctx.runMutation(remint.remintPage, { ...move, table, cursor });
+          rewritten += page.rewritten;
+          if (page.isDone) break;
+          cursor = page.cursor;
+        }
+      }
+      try {
+        await ctx.runMutation(remint.finishRemint, {
+          ...move, path, log: didLog, scid: checked.scid, versionId: checked.versionId, author: checked.author,
+        });
+        break;
+      } catch (err) {
+        // More rows arrived under the old DID than the final sweep takes: page again.
+        if (attempt < 2 && err instanceof Error && err.message.includes(REMINT_SWEEP_INCOMPLETE)) continue;
+        throw err;
+      }
     }
 
     console.log(
@@ -177,6 +225,7 @@ export const remintUserDID = httpAction(async (ctx, request) => {
     if (err instanceof DidLogOwnershipError) {
       return errorResponse(request, err.message, 403);
     }
+    if (err instanceof KeyLookupError) return errorResponse(request, err.message, 503);
     console.error("[userHttp] Re-mint error:", err);
     return errorResponse(
       request,

@@ -47,8 +47,78 @@ The server signers (`convex/didCreation.ts`, `convex/lib/turnkeySigner.ts`,
 could never have signed: a parent-org key cannot stamp sub-org activities
 (production logged `organization mismatch`, `7bbba38`).
 
-A Turnkey login failure does not block boop sign-in. It only blocks DID updates
-until the next OTP login succeeds.
+A Turnkey login failure does not block sign-in to an existing account: one
+with any DID the server holds, including a legacy `did:key` or `did:temp`,
+which is re-minted (rows moved through `remintDid`) once it can be. It
+only blocks DID updates and Originals signing until the next login that
+succeeds. A **new** account is different: the server refuses every call from
+an account without a DID, and its author DID can only be minted through the
+Turnkey session, so sign-up finishes only once that DID exists. If the
+Turnkey login or the sub-org audit fails at sign-up, sign-up fails and the
+user requests a new code. Sign-up already depends on Turnkey to send the
+code, so this adds no new outage. A device with a sticky audit finding can't
+finish a sign-up at all.
+
+## The author DID (PR b)
+
+Each account has two Turnkey Ed25519 keys in its sub-org's default wallet,
+both used only through the client-side session above:
+
+| Key | Path | In the did:webvh | Signs |
+| --- | --- | --- | --- |
+| Author key | `m/44'/501'/0'/0'` | the only update key; `#key-0` in `authentication` | DID updates (genesis included) |
+| Assertion key | `m/44'/501'/1'/0'` | `#orig-1` in `assertionMethod`, not an update key | Originals 5 entries (`eddsa-jcs-2022`) |
+
+Every verification method's `controller` is the DID (written with the
+`{SCID}` placeholder at genesis), as Originals 5 requires. Sub-orgs created by
+boop already hold an Ed25519 account at the assertion path; one that lacks it
+gets it from the user's session (`CREATE_WALLET_ACCOUNTS` in the sub-org).
+Both keys sign through `SIGN_RAW_PAYLOAD_V2` with `HASH_FUNCTION_NOT_APPLICABLE`,
+stamped by the session key, and the client checks every returned signature
+against the expected public key before using it.
+
+Signing is **online-only**: it needs a live Turnkey session and a clean sub-org
+audit. With the session expired, Originals signing waits for the next login.
+It is per account, not per device, so there is no per-device revocation.
+
+- `src/lib/authorDid.ts`: key lookup, the didwebvh-ts signer, genesis.
+- `src/lib/authorIdentity.ts`: after sign-in, keeps an author DID or moves the
+  account to a new one (re-genesis through `/api/user/remintDid`, rows moved by
+  paged `beginRemint` / `remintPage` / `finishRemint`, so it fits Convex's
+  per-mutation limits; no continuity link). The account and its served log
+  move together at the end, and only for the re-mint that claimed the move.
+  A re-mint that dies part-way is resumed by the next attempt, which also
+  moves the rows it had already moved. Until then the account is split: rows
+  already moved look gone to their owner. The next sign-in or reload with a
+  live Turnkey session resumes it once the claim has been quiet for a minute.
+  Deleting the account erases the pending re-mint's DIDs too, and stops it. Rows written under the old DID during
+  a re-mint are swept at the end for indexed fields (list ownership among
+  them); unindexed attribution fields such as `items.createdByDid` written in
+  that window keep the old DID.
+- Cost: each pre-#286 account's re-mint reads every row of 16 tables once
+  (`items`, the largest, has no index on its DID fields, and nested proofs
+  can't be indexed). `previewRemint` counts what would move for one account. `turnkeyListAuthorSource` is the
+  `ListAuthor` source for Originals 5 (#298).
+- `src/lib/originalsSigning.ts`: `keySigner` from `@originals/sdk/originals`
+  with the key replaced by Turnkey: same checks and refusals, same signed bytes.
+- `convex/lib/authorDidLog.ts`: the server accepts a DID log only as a valid
+  continuation of the one it serves (same SCID, served entries unchanged, every
+  entry carrying at least one Ed25519 signature by the update keys before it,
+  checked by boop as well as by didwebvh-ts, which accepts `proof: []`). Logs
+  with witnesses, pre-rotation, deactivation, or a domain other than
+  `WEBVH_DOMAIN` are refused.
+- An author DID is one where **every version**, genesis included, has exactly
+  the two keys (`#key-0` the only update key and only `authentication`,
+  `#orig-1` the only `assertionMethod`, nothing else) and both are the
+  sub-org's own. Checking only the latest version would let a genesis under
+  someone else's key hand over to the victim's public keys while keeping an
+  assertion key of its own. Log parameters are an allowlist.
+- The server adopts or re-genesises an account only onto an author DID whose
+  two keys are that sub-org's own Turnkey accounts. It reads them with the
+  parent's read-only access (`list_wallets`, `list_wallet_accounts`;
+  `authInternal.listSubOrgEd25519Accounts`), so a JWT holder's own keys never
+  make an author DID, and the real owner can always move away from one. If
+  Turnkey can't be read, the write fails closed with 503.
 
 ## What Turnkey has to enforce
 
@@ -61,7 +131,7 @@ the parent picks the credential's target key:
 | `EMAIL_AUTH` (bundle to a parent-chosen key, link template the parent controls) | sub-org feature removed (new sub-orgs: at creation; old: at the user's next OTP login, retried at each refresh check until it succeeds) and boop API user policy |
 | Email recovery | same |
 | Legacy `INIT_OTP_AUTH`/`OTP_AUTH`, `INIT_OTP`/`VERIFY_OTP` + `OTP_LOGIN` (plaintext code through the server) | boop API user policy; the client never sends a plaintext code |
-| Parent signing, creating users/keys, root-quorum changes in a sub-org | Turnkey itself: the parent cannot stamp sub-org activities |
+| Parent signing with either author key, exporting them, creating users/keys/wallet accounts, root-quorum changes in a sub-org | Turnkey itself: the parent cannot stamp sub-org activities; the boop API user policy denies them as well |
 
 ## Operator runbook (not yet done)
 
@@ -92,10 +162,21 @@ without checking each step in a test parent org first.
    see how many are left, list sub-org features (read-only) for boop's accounts.
 
 ### Unvalidated
+- That the parent API key can read a sub-org's wallets and accounts
+  (`/public/v1/query/list_wallets`, `list_wallet_accounts` with the sub-org's
+  `organizationId`). Turnkey documents read-only parent access, and boop's
+  deleted server signer read sub-org wallets this way before failing at
+  signing, but this exact call is untested against the live API.
 
 - Every policy expression in `boop-api-user-policies.json`.
 - Whether removing sub-org features through the user's own session succeeds for
   every pre-#286 sub-org (the client records a finding if it does not).
+- Signing with either author key through the session (`SIGN_RAW_PAYLOAD_V2`,
+  Ed25519, `HASH_FUNCTION_NOT_APPLICABLE`) and creating the assertion account
+  (`CREATE_WALLET_ACCOUNTS`) have run only against a mock that signs with
+  local keys, never against Turnkey. That `r || s` from Turnkey is the 64-byte
+  Ed25519 signature is assumed; the client verifies it, so a wrong assumption
+  fails closed (nothing is published), but it would fail.
 - `VERIFY_OTP_V2` → `loginWithOtp` into a sub-org from a parent-org OTP has been
   tested only against mocks (`scripts/login-account.test.mjs`,
   `scripts/auth-provider.test.mjs`, the E2E fixture), never against Turnkey.
@@ -103,8 +184,8 @@ without checking each step in a test parent org first.
 ## Residual risk
 
 - **Whoever serves the JS can subvert the client.** A malicious build could send
-  the plaintext code, or sign whatever it likes with the session. Device keys in
-  PR b have the same limit. This is inherent to a web client.
+  the plaintext code, or sign whatever it likes with the session, including
+  DID updates and Originals entries. This is inherent to a web client.
 - **The parent org is shared with other apps** (`docs/login-account-recovery.md`).
   Their API users are not covered by boop's policies. The sub-org feature
   removals cover them for `EMAIL_AUTH` and recovery; any of them holding a

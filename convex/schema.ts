@@ -66,6 +66,12 @@ export default defineSchema({
     path: v.string(), // URL path slug (e.g. "user-abc123")
     log: v.string(), // JSONL content (one JSON object per line)
     updatedAt: v.number(),
+    // Set when the log was checked on write (#286): its SCID, latest version,
+    // and whether that version is an author DID (shared/authorDid.ts). Absent
+    // on logs stored before the check existed.
+    scid: v.optional(v.string()),
+    versionId: v.optional(v.string()),
+    author: v.optional(v.boolean()),
   })
     .index("by_path", ["path"])
     .index("by_user_did", ["userDid"]),
@@ -116,6 +122,8 @@ export default defineSchema({
     bonusLists: v.optional(v.number()),
     // Referral Pro: timestamp (ms) when referral-based Pro expires
     referralProUntil: v.optional(v.number()),
+    // A re-mint in progress (convex/migrations/remintUserDidDb.ts beginRemint).
+    pendingRemint: v.optional(v.object({ oldDid: v.string(), newDid: v.string(), startedAt: v.number(), from: v.optional(v.array(v.string())) })),
   })
     .index("by_did", ["did"])
     .index("by_turnkey_id", ["turnkeySubOrgId"])
