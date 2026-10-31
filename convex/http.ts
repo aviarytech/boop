@@ -480,7 +480,8 @@ http.route({ path: "/health", method: "GET", handler: healthCheck });
 // These MUST come after all /api/ routes to avoid conflicts.
 // ============================================================================
 // DID paths are proxied via /d/ prefix to satisfy Convex's pathPrefix-must-end-with-/ rule.
-// The production server (server.ts) rewrites /user-*/did.jsonl → /d/user-*/did.jsonl
+// The app server proxies /user-*/did.jsonl (and resolver reads of
+// /user-*/resources/list-*) to these routes: see didProxy.ts.
 http.route({ pathPrefix: "/d/", method: "GET", handler: didResourceHandler });
 http.route({ pathPrefix: "/d/", method: "POST", handler: didResourceHandler });
 http.route({ pathPrefix: "/d/", method: "OPTIONS", handler: didResourceHandler });
