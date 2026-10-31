@@ -22,6 +22,7 @@ import { HeaderActionsMenu } from "../components/HeaderActionsMenu";
 import { ListVerificationBadge } from "../components/VerificationBadge";
 import { RemintListModal } from "../components/RemintListModal";
 import { useListOriginal } from "../hooks/useListOriginal";
+import { badgeSignature, useListVerification } from "../hooks/useListVerification";
 import { MAX_NOTE_LENGTH } from "../lib/noteEditor";
 import { shortRelativeTime } from "../lib/format";
 
@@ -83,6 +84,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
   // Genesis commits to the saved body, not an unsaved draft.
   const originalContent = useMemo(() => ({ kind: "note" as const, body: note.body }), [note.body]);
   const original = useListOriginal(list, isOwner, originalContent, isOnline);
+  const verification = useListVerification(list);
 
   const [chosenMode, setChosenMode] = useState<Mode>(() => (note.body.trim() ? "preview" : "edit"));
 
@@ -157,7 +159,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
               >
                 {list.name}
               </h1>
-              <ListVerificationBadge anchorStatus="none" did={list.assetDid} />
+              <ListVerificationBadge anchorStatus="none" did={list.assetDid} signature={badgeSignature(verification)} />
             </div>
             <div
               className="flex items-center gap-2 text-[12px] mt-1 text-stone-500 dark:text-stone-400 flex-wrap"

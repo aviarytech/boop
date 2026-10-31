@@ -33,6 +33,7 @@ import { StreakBadge } from "../components/StreakBadge";
 import { LegacyBadge } from "../components/LegacyBadge";
 import { RemintListModal } from "../components/RemintListModal";
 import { useListOriginal } from "../hooks/useListOriginal";
+import { badgeSignature, useListVerification } from "../hooks/useListVerification";
 import { buildListSnapshot } from "../lib/originals";
 import { StreakCelebration } from "../components/StreakCelebration";
 import { NoItemsEmptyState } from "../components/ui/EmptyState";
@@ -124,6 +125,7 @@ export function ListView() {
   );
   const original = useListOriginal(list, userIsOwner, originalContent, isOnline);
   const isLegacyList = original.isLegacy;
+  const verification = useListVerification(list);
   
   // Streak tracking
   const { streak, recordTaskCompletion } = useStreaks(did ?? undefined);
@@ -732,6 +734,7 @@ export function ListView() {
               did={list.assetDid}
               anchorBlockHeight={publicationStatus?.anchorBlockHeight}
               anchorTxId={publicationStatus?.anchorTxId}
+              signature={badgeSignature(verification)}
             />
             </div>
 

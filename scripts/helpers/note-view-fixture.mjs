@@ -28,7 +28,7 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
     platform: browser ? 'browser' : 'node', format: 'esm',
     external: browser ? [] : ['react', 'react/jsx-runtime', 'react-dom/client'],
     plugins: [{ name: 'note-app-context', setup(b) {
-      b.onResolve({ filter: /\/useCurrentUser$|\/useSettings$|\/useOffline$|\/useCategories$|\/authenticatedConvex$|\/useListOriginal$|\/RemintListModal$|\/HeaderActionsMenu$|\/VerificationBadge$|\/(DeleteListDialog|RenameListDialog|ChangeCategoryDialog)$|^react-router-dom$/ }, args => realMenu && args.path.endsWith('/HeaderActionsMenu') ? undefined : ({ path: args.path, namespace: 'fixture' }));
+      b.onResolve({ filter: /\/useCurrentUser$|\/useSettings$|\/useOffline$|\/useCategories$|\/authenticatedConvex$|\/useListOriginal$|\/useListVerification$|\/RemintListModal$|\/HeaderActionsMenu$|\/VerificationBadge$|\/(DeleteListDialog|RenameListDialog|ChangeCategoryDialog)$|^react-router-dom$/ }, args => realMenu && args.path.endsWith('/HeaderActionsMenu') ? undefined : ({ path: args.path, namespace: 'fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => {
         const prelude = 'const state = () => globalThis.__noteViewFixture;';
         let contents;
@@ -46,6 +46,7 @@ export async function buildNoteViewFixture(outfile, browser = false, item = fals
             if ((args.expectedBody ?? args.expectedDescription) !== s.body) throw { data: { code: 'NOTE_CONFLICT' } };
             s.body = args.body ?? args.description; s.refresh?.();
           };`;
+        else if (path.endsWith('/useListVerification')) contents = 'export const useListVerification = () => ({ status: "checking" }); export const badgeSignature = () => undefined;';
         else if (path.endsWith('/useListOriginal')) contents = 'export const useListOriginal = () => ({ state: "minted", isLegacy: false, remint: async () => {}, error: null });';
         else if (path.endsWith('/useCurrentUser')) contents = 'export const useCurrentUser = () => ({ did: state().did, legacyDid: state().legacyDids[state().did] ?? null, isLoading: state().identityLoading });';
         else if (path.endsWith('/useSettings')) contents = 'export const useSettings = () => ({ haptic: () => {} });';

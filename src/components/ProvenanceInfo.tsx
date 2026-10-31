@@ -24,8 +24,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
 import { useSettings } from "../hooks/useSettings";
-import { useOriginalsClient } from "../hooks/useListOriginal";
-import { isLegacyAssetDid, verifyList } from "../lib/originals";
+import { useListVerification, type ListVerificationState } from "../hooks/useListVerification";
 
 interface ListProvenanceProps {
   list: Doc<"lists">;
@@ -171,47 +170,7 @@ function TimestampRow({ label, timestamp }: { label: string; timestamp: number }
   );
 }
 
-type OriginalState =
-  | { status: "absent"; legacy: boolean }
-  | { status: "checking" }
-  | { status: "verified"; checkpoint: string }
-  | { status: "failed"; detail: string };
-
-/**
- * Verifies the list's Original client-side from what the host serves: the
- * did:vh log, the owner's DID history and every resource's bytes. Real work
- * (signature checks and hashing), so it runs in an effect, keyed by the head it
- * verified so a stale result is never shown for a newer log.
- */
-function useOriginalVerification(list: Doc<"lists">): OriginalState {
-  const client = useOriginalsClient();
-  const hosted = useQuery(api.originalsHost.getAccepted, { listId: list._id });
-  const head = hosted?.head ?? null;
-  const [result, setResult] = useState<{ head: string; state: OriginalState } | null>(null);
-
-  useEffect(() => {
-    if (!head) return;
-    let cancelled = false;
-    void verifyList(client, list._id).then((verification) => {
-      if (cancelled || !verification) return;
-      setResult({
-        head,
-        state: verification.verified
-          ? { status: "verified", checkpoint: verification.checkpoint }
-          : { status: "failed", detail: verification.error ?? verification.reasons.join(", ") },
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [client, head, list._id]);
-
-  if (hosted === undefined) return { status: "checking" };
-  if (hosted === null) return { status: "absent", legacy: isLegacyAssetDid(list.assetDid) };
-  return result?.head === head ? result.state : { status: "checking" };
-}
-
-function OriginalVerificationRow({ state }: { state: OriginalState }) {
+function OriginalVerificationRow({ state }: { state: ListVerificationState }) {
   // Every state says something, so a list with no Original is never mistaken
   // for one whose history simply wasn't shown.
   const [icon, text, tone] =
@@ -687,7 +646,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
   
   const ownerName = userInfo?.[list.ownerDid]?.displayName ?? null;
 
-  const originalState = useOriginalVerification(list);
+  const originalState = useListVerification(list);
 
   // Build timeline events
   const timelineEvents: Array<{

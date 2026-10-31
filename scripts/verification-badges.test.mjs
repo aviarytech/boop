@@ -103,3 +103,28 @@ for (const [name, didDocument] of [
     assert.equal(button.getAttribute('aria-expanded'), 'false');
   });
 }
+
+test('a list whose signed history verified on this device says Signed, with the version', () => {
+  const { container, getByLabelText } = render(React.createElement(ListVerificationBadge, {
+    did: 'did:vh:recorded', signature: { status: 'signed', checkpoint: '2-zabc' },
+  }));
+  fireEvent.mouseEnter(getByLabelText('Signed · not anchored').parentElement);
+  assert.match(container.textContent, /checked every signature, the owner's key and the content, as of version 2/);
+  assert.match(container.textContent, /has not been anchored/);
+});
+
+test('a check still running or one that failed makes no signed claim', () => {
+  const checking = render(React.createElement(ListVerificationBadge, { did: 'did:vh:recorded', signature: { status: 'checking' } }));
+  checking.getByLabelText('Checking · not anchored');
+  assertNoVerificationClaim(checking.container);
+  checking.unmount();
+  const failed = render(React.createElement(ListVerificationBadge, { did: 'did:vh:recorded', signature: { status: 'failed' } }));
+  fireEvent.mouseEnter(failed.getByLabelText('Unverified ID · not anchored').parentElement);
+  assert.match(failed.container.textContent, /does not verify authenticity, ownership, or authorship/);
+  assert.doesNotMatch(failed.container.textContent, /\bSigned\b/);
+});
+
+test('a signed result without an identifier claims nothing', () => {
+  const { getByLabelText } = render(React.createElement(ListVerificationBadge, { signature: { status: 'signed', checkpoint: '1-z' } }));
+  getByLabelText('No ID · not anchored');
+});

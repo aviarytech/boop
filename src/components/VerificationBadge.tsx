@@ -2,7 +2,8 @@
  * VerificationBadge - one chip for identifier presence and anchor status
  *
  * The label keeps both evidence boundaries (docs/action-records.md):
- * - an identifier is "unverified ID" (presence is not ownership/authorship proof)
+ * - an identifier is "unverified ID" (presence is not ownership/authorship
+ *   proof) unless this device verified its signed history: then "signed"
  * - the Bitcoin anchor is stated separately: anchored, anchoring, or not anchored
  * The tooltip explains each part.
  * 
@@ -22,6 +23,11 @@ export interface VerificationStatus {
   anchorBlockHeight?: number;
   /** Optional: Transaction ID for the anchor */
   anchorTxId?: string;
+  /**
+   * The list's Original as verified on this device (useListVerification).
+   * Only "signed" makes a claim; without it an identifier stays unverified.
+   */
+  signature?: { status: "signed"; checkpoint: string } | { status: "checking" } | { status: "failed" };
 }
 
 interface VerificationBadgeProps {
@@ -164,8 +170,29 @@ export function VerificationBadge({
   size = "sm",
 }: VerificationBadgeProps) {
   const hasDid = Boolean(status.did);
-  
-  const identifierTooltip = hasDid ? (
+  const signed = hasDid && status.signature?.status === "signed" ? status.signature : null;
+  const checking = hasDid && status.signature?.status === "checking";
+
+  const identifierTooltip = signed ? (
+    <div>
+      <div className="font-semibold mb-1">Signed</div>
+      <div className="text-gray-300">
+        Its history is signed by its owner&apos;s key. This device checked every signature, the owner&apos;s key and the content, as of version {signed.checkpoint.split("-")[0]}.
+      </div>
+      {status.did && (
+        <div className="mt-1 text-gray-400 text-[10px] font-mono truncate max-w-[200px]">
+          {status.did}
+        </div>
+      )}
+    </div>
+  ) : checking ? (
+    <div>
+      <div className="font-semibold mb-1">Checking signatures</div>
+      <div className="text-gray-300">
+        This device is checking the signed history recorded for this data.
+      </div>
+    </div>
+  ) : hasDid ? (
     <div>
       <div className="font-semibold mb-1">Unverified ID</div>
       <div className="text-gray-300">
@@ -228,7 +255,7 @@ export function VerificationBadge({
     return null;
   }
 
-  const identifierLabel = hasDid ? "Unverified ID" : "No ID";
+  const identifierLabel = signed ? "Signed" : checking ? "Checking" : hasDid ? "Unverified ID" : "No ID";
   const anchorLabel = { verified: "anchored", pending: "anchoring", none: "not anchored" }[status.anchorStatus];
 
   return (
@@ -275,15 +302,17 @@ export function ListVerificationBadge({
   did,
   anchorBlockHeight,
   anchorTxId,
+  signature,
 }: {
   anchorStatus?: VerificationState;
   did?: string;
   anchorBlockHeight?: number;
   anchorTxId?: string;
+  signature?: VerificationStatus["signature"];
 }) {
   return (
     <VerificationBadge
-      status={{ anchorStatus, did, anchorBlockHeight, anchorTxId }}
+      status={{ anchorStatus, did, anchorBlockHeight, anchorTxId, signature }}
       compact={false}
       size="md"
     />

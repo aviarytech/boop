@@ -17,7 +17,7 @@ await build({
   bundle: true, jsx: 'automatic', platform: 'node', format: 'esm',
   external: ['react', 'react/jsx-runtime', 'react-router-dom', 'convex/server'],
   plugins: [{ name: 'provenance-fixture', setup(b) {
-    b.onResolve({ filter: /(?:lib\/(authenticatedConvex|originals)|hooks\/(useCurrentUser|useSettings|useListOriginal))$/ }, ({ path }) => ({ path: path.split('/').pop(), namespace: 'fixture' }));
+    b.onResolve({ filter: /(?:lib\/(authenticatedConvex|originals)|hooks\/(useCurrentUser|useSettings|useListOriginal)|^\.\/useListOriginal)$/ }, ({ path }) => ({ path: path.split('/').pop(), namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents: {
       authenticatedConvex: 'export const useQuery=(ref,args)=>globalThis.__provenanceQuery?.(ref,args)??null; export const useMutation=()=>async()=>{};',
       useCurrentUser: 'export const useCurrentUser=()=>({did:"did:owner"});',
