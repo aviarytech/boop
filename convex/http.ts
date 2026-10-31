@@ -165,6 +165,7 @@ const initiate = httpAction(async (ctx, request) => {
     return jsonResponse({
       sessionId: result.sessionId,
       message: result.message,
+      otpEncryptionTargetBundle: result.otpEncryptionTargetBundle,
     }, 200, {}, request);
   } catch (error) {
     console.error("[authHttp] Initiate error:", error);
@@ -178,15 +179,19 @@ const initiate = httpAction(async (ctx, request) => {
 });
 
 /**
- * POST /auth/verify - Verify OTP and issue JWT
+ * POST /auth/verify - Verify the encrypted OTP bundle and issue JWT.
+ *
+ * The client encrypts the code to Turnkey's enclave with its own session key
+ * (encryptOtpCodeToBundle). Plaintext codes are refused: relaying one would let
+ * this backend complete a Turnkey login with a key of its own choosing.
  */
 const verify = httpAction(async (ctx, request) => {
   try {
     const body = await request.json();
     const sessionId = body.sessionId as string;
-    const code = body.code as string;
+    const encryptedOtpBundle = body.encryptedOtpBundle as string;
 
-    if (!sessionId || !code) {
+    if (!sessionId || (!encryptedOtpBundle && !body.code)) {
       return jsonResponse({ error: "Session ID and code are required" }, 400, {}, request);
     }
 
@@ -202,6 +207,15 @@ const verify = httpAction(async (ctx, request) => {
       }
     }
 
+    if (!encryptedOtpBundle) {
+      return jsonResponse(
+        { error: "This version of boop can no longer sign in. Please update or reload the app." },
+        426,
+        {},
+        request
+      );
+    }
+
     console.log(`[authHttp] Verifying OTP for session: ${sessionId}`);
 
     // Get session from database
@@ -211,14 +225,14 @@ const verify = httpAction(async (ctx, request) => {
     }
 
     // Validate required session fields
-    if (!dbSession.subOrgId || !dbSession.otpId) {
+    if (!dbSession.otpId) {
       return jsonResponse({ error: "Invalid session state" }, 400, {}, request);
     }
 
     // Call internal Node.js action
     const result = await ctx.runAction(internal.authInternal.verifyAuth, {
       sessionId,
-      code,
+      encryptedOtpBundle,
       session: {
         email: dbSession.email,
         subOrgId: dbSession.subOrgId,
@@ -228,7 +242,7 @@ const verify = httpAction(async (ctx, request) => {
       },
     });
 
-    if (!result.verified || !result.email || !result.subOrgId) {
+    if (!result.verified || !result.email || !result.subOrgId || !result.verificationToken) {
       return jsonResponse({ error: "That code didn't work. Check it, or send a new one." }, 400, {}, request);
     }
 
@@ -276,6 +290,8 @@ const verify = httpAction(async (ctx, request) => {
     return jsonResponse(
       {
         token: authResult.token,
+        // Bound to the client's Turnkey session key; useless to anyone else.
+        turnkey: { verificationToken: result.verificationToken, subOrgId: result.subOrgId },
         user: {
           turnkeySubOrgId: result.subOrgId,
           email: result.email,

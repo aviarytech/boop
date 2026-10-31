@@ -20,7 +20,10 @@ Authorization: Bearer <your-jwt-token>
 
 To obtain a JWT token, use the standard auth flow:
 1. `POST /auth/initiate` with `{ "email": "your@email.com" }`
-2. `POST /auth/verify` with `{ "sessionId": "...", "code": "..." }` (OTP from email)
+2. `POST /auth/verify` with `{ "sessionId": "...", "encryptedOtpBundle": "..." }`: the emailed
+   code encrypted to Turnkey's enclave with your session key (`encryptOtpCodeToBundle` from
+   `@turnkey/crypto`, using `otpEncryptionTargetBundle` from step 1). A plaintext `code` is
+   refused with `426`; see [docs/turnkey-custody.md](docs/turnkey-custody.md)
 3. Use the returned `token` in subsequent requests
 
 **API key** (for unattended agents) via the `X-API-Key` header:

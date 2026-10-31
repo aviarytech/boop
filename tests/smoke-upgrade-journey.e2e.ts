@@ -62,7 +62,10 @@ test('completing OTP establishes the session and opens the dashboard', async ({ 
   await browser.keyboard.type('123456');
   await expect(browser).toHaveURL('/d');
   await expect(screen.getByRole('heading', /Your lists|Welcome in/i)).toBeVisible();
-  expect(scenario.httpCalls.find(call => call.path === '/auth/verify')?.body.code).toBe('123456');
+  // #286: only the code encrypted to Turnkey's enclave leaves the device.
+  const verifyBody = scenario.httpCalls.find(call => call.path === '/auth/verify')?.body;
+  expect(typeof verifyBody?.encryptedOtpBundle).toBe('string');
+  expect(JSON.stringify(verifyBody)).not.toContain('123456');
   expect((await scenario.state()).calls.some(call => call.path === 'actorSession:establish')).toBe(true);
 });
 

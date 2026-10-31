@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { authErrorData } from "../../convex/lib/authError";
 import { onSessionExpiry } from "../lib/sessionExpiry";
-import { withAuthTimeout } from "../lib/authTimeout";
+import { TimeoutError, withAuthTimeout, withTimeout } from "../lib/authTimeout";
 import { useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 /**
@@ -11,12 +11,15 @@ import { api } from "../../convex/_generated/api";
  * authentication mechanism for the app.
  *
  * Authentication flow uses Convex HTTP endpoints:
- * - /auth/initiate - Start OTP flow, get sessionId
- * - /auth/verify - Verify OTP, get JWT token (DID created server-side)
+ * - /auth/initiate - Start OTP flow, get sessionId and Turnkey's encryption target
+ * - /auth/verify - Relay the code, encrypted on this device to Turnkey's enclave
+ *   with this device's Turnkey session key; get the JWT and a verification
+ *   token only this device can redeem
  * - /auth/logout - Clear auth cookie
  *
- * The JWT token is stored in localStorage and sent with API requests.
- * All signing operations (credentials, DIDs) are handled server-side.
+ * The JWT token is stored in localStorage and sent with API requests. The
+ * Turnkey session (lib/turnkeySession) is completed by this client, never by
+ * the server, and is the only thing that can use the author's Turnkey key.
  * 
  * Storage uses the async storageAdapter (Capacitor Preferences on native, localStorage on web)
  * for reliable persistence across platforms.
@@ -37,6 +40,16 @@ import { useDidDomainRemint } from "./useDidDomainRemint";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
 import { identifyUser, resetAnalytics } from "../lib/analytics";
+import {
+  clearTurnkeySession,
+  completeTurnkeyLogin,
+  discardSessionKey,
+  encryptOtpForSession,
+  startTurnkeySessionRefresh,
+} from "../lib/turnkeySession";
+
+/** Turnkey steps never hold up boop's own sign-in or sign-out for longer than this. */
+const TURNKEY_STEP_MS = 15_000;
 
 /**
  * Get the Convex HTTP endpoint base URL from the Convex URL.
@@ -94,6 +107,8 @@ interface OtpFlowState {
   /** Session ID from /auth/initiate (used for /auth/verify) */
   sessionId: string | null;
   email: string | null;
+  /** Turnkey enclave target the code is encrypted to; its signature is checked before use. */
+  otpEncryptionTargetBundle: string | null;
 }
 
 /**
@@ -123,6 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [otpFlowState, setOtpFlowState] = useState<OtpFlowState>({
     sessionId: null,
     email: null,
+    otpEncryptionTargetBundle: null,
   });
 
   // Track mounted state to prevent setState after unmount
@@ -159,6 +175,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             console.log("[useAuth] Stored token expired, clearing session");
             await storageAdapter.remove(AUTH_STORAGE_KEY);
             await storageAdapter.remove(JWT_STORAGE_KEY);
+            // Signed out of boop, so out of Turnkey too.
+            void clearTurnkeySession();
             if (isMountedRef.current) setIsLoading(false);
             return;
           }
@@ -238,6 +256,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);
         await storageAdapter.remove(JWT_STORAGE_KEY);
+        // Signed out of boop, so out of Turnkey too.
+        void clearTurnkeySession();
       } finally {
         if (!cancelled && !retrying) {
           authTransitionRef.current = false;
@@ -283,10 +303,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw new Error(errorData.error || "Failed to initiate authentication");
         }
 
-        const { sessionId } = await response.json();
+        const { sessionId, otpEncryptionTargetBundle } = await response.json();
         console.log("[useAuth] OTP initiated, sessionId:", sessionId);
 
-        setOtpFlowState({ sessionId, email });
+        setOtpFlowState({ sessionId, email, otpEncryptionTargetBundle: otpEncryptionTargetBundle ?? null });
       } catch (err) {
         console.error("[useAuth] Failed to start OTP:", err);
         throw err;
@@ -305,15 +325,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
    */
   const verifyOtp = useCallback(
     async (code: string) => {
-      if (!otpFlowState.sessionId || !otpFlowState.email) {
+      if (!otpFlowState.sessionId || !otpFlowState.email || !otpFlowState.otpEncryptionTargetBundle) {
         throw new Error("OTP flow not started. Call startOtp first.");
       }
 
       if (authTransitionRef.current) throw new Error("Authentication is already in progress");
       authTransitionRef.current = true;
       setIsLoading(true);
+      let sessionPublicKey: string | null = null;
+      // Set once this sign-in's Turnkey login succeeded or timed out (it may still land).
+      let turnkeyLoginMayHaveLanded = false;
       try {
         console.log("[useAuth] Verifying OTP via server...");
+
+        // No plaintext fallback: the server refuses codes it could read.
+        const { encryptedOtpBundle, publicKey } = await withTimeout(
+          encryptOtpForSession(code, otpFlowState.otpEncryptionTargetBundle),
+          TURNKEY_STEP_MS, "Couldn't prepare a secure sign-in on this device. Reload and try again.");
+        sessionPublicKey = publicKey;
 
         const httpUrl = getConvexHttpUrl();
         const response = await fetch(`${httpUrl}/auth/verify`, {
@@ -324,7 +353,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           credentials: "include", // Include cookies for httpOnly auth cookie
           body: JSON.stringify({
             sessionId: otpFlowState.sessionId,
-            code,
+            encryptedOtpBundle,
             platform: Capacitor.getPlatform(),
           }),
         });
@@ -334,8 +363,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw new Error(errorData.error || "Verification failed");
         }
 
-        const { token: jwtToken, user: serverUser } = await response.json();
+        const { token: jwtToken, user: serverUser, turnkey } = await response.json();
         console.log("[useAuth] OTP verified, got JWT for:", serverUser.email);
+
+        // The Turnkey session only gates DID updates, so a failure here must not
+        // block sign-in; the next OTP login retries it.
+        try {
+          if (!turnkey?.verificationToken) throw new Error("Server returned no Turnkey verification token");
+          // Only the login itself is awaited; the audit runs on in the background.
+          await withTimeout(completeTurnkeyLogin({
+            verificationToken: turnkey.verificationToken,
+            subOrgId: turnkey.subOrgId,
+            publicKey,
+          }), TURNKEY_STEP_MS, "Turnkey login timed out");
+          turnkeyLoginMayHaveLanded = true;
+        } catch (turnkeyErr) {
+          console.error("[useAuth] Turnkey session login failed:", turnkeyErr);
+          // After a timeout the login may still land and use this key; keep it.
+          if (turnkeyErr instanceof TimeoutError) turnkeyLoginMayHaveLanded = true;
+          else await discardSessionKey(publicKey);
+        }
+        sessionPublicKey = null;
 
         await withAuthTimeout(convex.mutation(api.actorSession.establish, { authToken: jwtToken }));
 
@@ -386,7 +434,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         // Update state
         setUser(authUser);
-        setOtpFlowState({ sessionId: null, email: null });
+        setOtpFlowState({ sessionId: null, email: null, otpEncryptionTargetBundle: null });
 
         // Identify user in analytics
         identifyUser(authUser.turnkeySubOrgId, { email_domain: authUser.email.split('@')[1] });
@@ -394,6 +442,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.log("[useAuth] Authentication complete, DID:", userDid);
       } catch (err) {
         console.error("[useAuth] Failed to verify OTP:", err);
+        if (sessionPublicKey) await discardSessionKey(sessionPublicKey);
+        // boop sign-in failed after this sign-in's Turnkey login (or one that
+        // may still land): don't leave it behind. Never clear a session this
+        // sign-in didn't create, e.g. another tab's.
+        else if (turnkeyLoginMayHaveLanded) void clearTurnkeySession();
         setUser(null);
         setToken(null);
         await storageAdapter.remove(AUTH_STORAGE_KEY);
@@ -417,20 +470,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setIsLoading(true);
     setToken(null);
     setUser(null);
-    setOtpFlowState({ sessionId: null, email: null });
+    setOtpFlowState({ sessionId: null, email: null, otpEncryptionTargetBundle: null });
     resetAnalytics();
 
     try {
       await storageAdapter.remove(AUTH_STORAGE_KEY);
       await storageAdapter.remove(JWT_STORAGE_KEY);
       const httpUrl = getConvexHttpUrl();
-      await fetch(`${httpUrl}/auth/logout`, {
+      await withTimeout(fetch(`${httpUrl}/auth/logout`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         credentials: "include",
-      });
+      }), TURNKEY_STEP_MS, "Logout endpoint timed out");
     } catch (err) {
       console.error("[useAuth] Logout endpoint failed:", err);
+    }
+    try {
+      // After boop's own session is gone, and even if the endpoint failed: a
+      // slow Turnkey must not keep a signed-out device signed in.
+      await withTimeout(clearTurnkeySession(), TURNKEY_STEP_MS, "Turnkey sign-out timed out");
+    } catch (err) {
+      console.warn("[useAuth] Turnkey session not cleared:", err);
     } finally {
       authTransitionRef.current = false;
       setIsLoading(false);
@@ -453,8 +513,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       void storageAdapter.remove(AUTH_STORAGE_KEY);
       void storageAdapter.remove(JWT_STORAGE_KEY);
+      void clearTurnkeySession();
     });
   }, [token]);
+
+  // Keep this device's Turnkey session alive (7 days, refreshed silently).
+  const subOrgId = user?.turnkeySubOrgId;
+  useEffect(() => {
+    if (!subOrgId) return;
+    return startTurnkeySessionRefresh(subOrgId);
+  }, [subOrgId]);
 
   // Repairs identities minted on a domain we no longer serve. Temporary.
   useDidDomainRemint(user, token);

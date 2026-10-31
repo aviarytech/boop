@@ -8,7 +8,7 @@ import { ConvexError, convexToJson, jsonToConvex } from 'convex/values';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'boundary-test-secret-not-a-deployed-credential';
-const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','didCreation','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits'];
+const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits'];
 await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/auth-boundary-test', define: { 'process.env.NODE_ENV': '"production"' }, bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*','@originals/*','@turnkey/*','didwebvh-ts','@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/auth-boundary-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
@@ -253,7 +253,6 @@ test('site publication and signing actions reject forged owner and signing ident
   }
   await assert.rejects(()=>call('siteActions','replaceSiteFile',actionCtx,{authToken:strangerToken,siteId:'site1',bucketKey:'known'}),/not found/i);
   await assert.rejects(()=>call('siteActions','createSiteFromUpload',actionCtx,{authToken:ownerToken,bucketKey:'attachments/I2/private.html'}),/upload key/i);
-  await assert.rejects(()=>call('didCreation','createListDID',actionCtx,{authToken:strangerToken,subOrgId:'owner',domain:'example.test',slug:'list'}),/signing identity/i);
 });
 test('account-id callers cannot bypass the authenticated boundary through billing, referrals or feedback', async()=>{
   for(const [mod,fn] of [['billing','getUserPlan'],['referrals','getReferralCode'],['feedback','submit']]) {
@@ -507,7 +506,7 @@ test('OTP HTTP signup stores neutral attribution and returning login preserves s
     }];
     ctx.runAction = async (ref) => {
       switch (getFunctionName(ref)) {
-        case 'authInternal:verifyAuth': return { verified: true, email: 'owner@example.test', subOrgId: 'owner' };
+        case 'authInternal:verifyAuth': return { verified: true, email: 'owner@example.test', subOrgId: 'owner', verificationToken: 'client-bound' };
         case 'authInternal:createAuthToken': return { token: ownerToken, cookieValue: 'fixture' };
         default: assert.fail(`Unexpected action ${getFunctionName(ref)}`);
       }
@@ -515,10 +514,11 @@ test('OTP HTTP signup stores neutral attribution and returning login preserves s
     const [verify] = modules.http.default.lookup('/auth/verify', 'POST');
     const response = await verify._handler(ctx, new Request('https://test/auth/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: 'signup-session', code: '123456' }),
+      body: JSON.stringify({ sessionId: 'signup-session', encryptedOtpBundle: 'sealed-code' }),
     }));
     assert.equal(response.status, 200);
     const body = await response.json();
+    assert.deepEqual(body.turnkey, { verificationToken: 'client-bound', subOrgId: 'owner' });
     const user = ctx.rows.users.find(u => u.turnkeySubOrgId === 'owner');
     assert.equal(user.displayName, existingName ?? 'boop user');
     assert.equal(user.email, 'owner@example.test');
@@ -565,4 +565,22 @@ test('all anonymous attribution masks historical owner and current/legacy creato
     }
     assert.deepEqual(ctx.rows.users, before, 'Public reads must not rewrite private profiles');
   }
+});
+
+// #286: relaying a plaintext code would let the backend finish a Turnkey login
+// with a key of its choosing, so an old client's code is refused unread.
+test('/auth/verify refuses a plaintext OTP code without calling Turnkey', async () => {
+  const ctx = fixture();
+  ctx.rows.authSessions = [{
+    _id: 'otp', sessionId: 'old-client', email: 'owner@example.test', subOrgId: 'owner', otpId: 'otp',
+    timestamp: Date.now(), verified: false, expiresAt: Date.now() + 60000,
+  }];
+  ctx.runAction = async (ref) => assert.fail(`Unexpected action ${getFunctionName(ref)}`);
+  const [verify] = modules.http.default.lookup('/auth/verify', 'POST');
+  const response = await verify._handler(ctx, new Request('https://test/auth/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: 'old-client', code: '123456' }),
+  }));
+  assert.equal(response.status, 426);
+  assert.match((await response.json()).error, /update/);
 });

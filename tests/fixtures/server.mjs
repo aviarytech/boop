@@ -1,7 +1,7 @@
 // Test-only Convex wire-protocol fixture. Never imported by the application.
 // Runs beside Vite on loopback; each test owns a separate in-memory account.
 import { createServer } from 'vite';
-import { randomUUID } from 'node:crypto';
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { BUILTIN_TEMPLATES } from '../../convex/lib/templateCatalog.ts';
 import { canonical, revision, replayTargets } from '../../shared/replay.ts';
 import { getPublicKeyAsync, signAsync } from '@noble/ed25519';
@@ -10,6 +10,23 @@ import {
 } from '../../shared/actionRecord.ts';
 
 const TS_ZERO = 'AAAAAAAAAAA=';
+
+// Stand-in for Turnkey's OTP enclave signer. The client verifies the target
+// bundle's signature before encrypting a code to it; dev builds accept this key
+// via VITE_TURNKEY_TEST_OTP_SIGNER (src/lib/turnkeySession.ts).
+const uncompressedP256 = key => {
+  const { x, y } = key.export({ format: 'jwk' });
+  return `04${Buffer.from(x, 'base64url').toString('hex')}${Buffer.from(y, 'base64url').toString('hex')}`;
+};
+const otpSigner = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+const otpTargetData = Buffer.from(JSON.stringify({
+  targetPublic: uncompressedP256(generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey),
+}));
+const OTP_ENCRYPTION_TARGET_BUNDLE = JSON.stringify({
+  enclaveQuorumPublic: uncompressedP256(otpSigner.publicKey),
+  data: otpTargetData.toString('hex'),
+  dataSignature: sign('sha256', otpTargetData, { key: otpSigner.privateKey, dsaEncoding: 'der' }).toString('hex'),
+});
 const accounts = new Map();
 const sockets = new Set();
 const user = {
@@ -292,7 +309,7 @@ const backend = Bun.serve({
     }
     if (url.pathname === '/__e2e/seed' && request.method === 'POST') {
       const account = await seed(await request.json());
-      return Response.json({ token: account.token, user });
+      return Response.json({ token: account.token, user, otpEncryptionTargetBundle: OTP_ENCRYPTION_TARGET_BUNDLE });
     }
     if (url.pathname === '/__e2e/start') {
       const account = accounts.get(url.searchParams.get('token'));
@@ -412,6 +429,7 @@ const backend = Bun.serve({
 const backendUrl = `http://127.0.0.1:${backend.port}`;
 Object.assign(process.env, {
   VITE_CONVEX_URL: backendUrl, VITE_CONVEX_HTTP_URL: backendUrl,
+  VITE_TURNKEY_TEST_OTP_SIGNER: uncompressedP256(otpSigner.publicKey),
   VITE_STRIPE_PRO_MONTHLY_PRICE_ID: 'price_e2e_monthly',
   VITE_STRIPE_PRO_YEARLY_PRICE_ID: 'price_e2e_yearly',
   VITE_STRIPE_TEAM_PRICE_ID: 'price_e2e_team',
