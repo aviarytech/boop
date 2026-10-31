@@ -40,6 +40,12 @@ is re-minted from its current state when its owner opens it (a blocking
 prompt); its old history is not carried over, and its `listEnvelopes` row is
 kept, unread, until that data is dropped.
 
+Local development: SDK 5 accepts an author DID only on a dotted domain, so a
+DID minted for plain `localhost` can't sign. Run the app at `localhost` (Turnkey
+needs a secure context) but mint DIDs for a dotted name that resolves locally:
+`VITE_WEBVH_DOMAIN=lvh.me:5173 npm run dev`, with `WEBVH_DOMAIN=lvh.me:5173` set on
+the dev Convex deployment.
+
 Focused verification: `node --test scripts/originals-v5.test.mjs scripts/originals-turnkey-lists.test.mjs`.
 
 ## Sites
