@@ -61,5 +61,5 @@ test('lost success response and reload retry reuse the committed template at quo
   expect(state.items.length).toBe(6);
   const attempts = state.calls.filter(c => c.path === 'templates:createListFromTemplate');
   expect(attempts.length >= 2).toBe(true);
-  expect(new Set(attempts.map(a => a.args.assetDid)).size).toBe(1);
+  expect(new Set(attempts.map(a => a.args.creationKey)).size).toBe(1);
 });

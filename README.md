@@ -18,22 +18,35 @@ Check that list for what needs to be built. Mark items done when you ship them.
 - **Credentials**: Verifiable Credentials (via @originals/sdk)
 - **Deploy**: Railway (frontend) + Convex Cloud (backend)
 
-## Originals SDK compatibility
+## Originals
 
-New lists and notes use `@originals/sdk` 4.0.0 with explicit local Ed25519
-signers and version-4 envelopes. The application's `assetDid` field remains
-unchanged; the SDK envelope calls this identity `assetId`.
+Each list and note is an Original under `@originals/sdk` 5: a `did:vh` asset
+log signed by its owner's `did:webvh`, with the list's state (or a note's body)
+as its resource. Entries are signed with the owner's Turnkey assertion key
+through their own Turnkey session, never by boop.
+Convex is the shared host (`convex/originalsHost.ts`): it appends an entry only
+when it extends the accepted head and verifies against the owner's DID history,
+so two devices racing get one append and a stale-parent answer, not a fork.
 
-Saved version-1 envelopes from the old prerelease cannot be loaded by the
-v4 lifecycle. `originalsLegacy.ts` loads the pinned `@originals/sdk-legacy`
-alias only for those archives, preserving their signatures, identities and
-existing device keys when verifying or publishing. This intentionally retains
-the old SDK for compatibility; do not remove it while those archives remain
-in use. No stored histories are rewritten or re-minted by this upgrade.
-See the [upstream migration guide](https://github.com/onionoriginals/sdk/blob/main/docs/MIGRATION_4.0.md).
+A list gets its Original when its owner first opens it while signed in
+(`src/hooks/useListOriginal.ts`); `lists.assetDid` is set then. The signer is
+`turnkeyListAuthorSource` (`src/lib/authorIdentity.ts`), installed in
+`src/main.tsx`. Originals 5 needs the signing key to be in the owner DID's
+`assertionMethod`, to not be one of its update keys, and each verification
+method's `controller` to be the DID itself; #286 PR b mints author DIDs that way.
 
-Focused verification:
-`bun test scripts/originals.test.mjs scripts/published-version.test.mjs scripts/cel-migration.test.mjs`.
+Nothing written under CEL (`did:cel`) is read. A list made before Originals 5
+is re-minted from its current state when its owner opens it (a blocking
+prompt); its old history is not carried over, and its `listEnvelopes` row is
+kept, unread, until that data is dropped.
+
+Local development: SDK 5 accepts an author DID only on a dotted domain, so a
+DID minted for plain `localhost` can't sign. Run the app at `localhost` (Turnkey
+needs a secure context) but mint DIDs for a dotted name that resolves locally:
+`VITE_WEBVH_DOMAIN=lvh.me:5173 npm run dev`, with `WEBVH_DOMAIN=lvh.me:5173` set on
+the dev Convex deployment.
+
+Focused verification: `node --test scripts/originals-v5.test.mjs scripts/originals-turnkey-lists.test.mjs`.
 
 ## Sites
 

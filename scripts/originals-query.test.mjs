@@ -76,8 +76,8 @@ test("authenticated owner filter applied", async () => {
   const ctx = {
     db: makeDb({
       lists: [
-        { _id: "L1", _creationTime: 1, name: "Mine", ownerDid: "me", assetDid: "did:cel:L1" },
-        { _id: "L2", _creationTime: 1, name: "Theirs", ownerDid: "other", assetDid: "did:cel:L2" },
+        { _id: "L1", _creationTime: 1, name: "Mine", ownerDid: "me", assetDid: "did:vh:L1" },
+        { _id: "L2", _creationTime: 1, name: "Theirs", ownerDid: "other", assetDid: "did:vh:L2" },
       ],
       sites: [],
       siteHostnames: [],
@@ -95,7 +95,7 @@ test("authenticated owner filter applied", async () => {
 test("joins all source tables and produces rows in updatedAt desc order", async () => {
   const ctx = {
     db: makeDb({
-      lists: [{ _id: "L1", _creationTime: 100, name: "A list", ownerDid: "me", assetDid: "did:cel:L1" }],
+      lists: [{ _id: "L1", _creationTime: 100, name: "A list", ownerDid: "me", assetDid: "did:vh:L1" }],
       sites: [{ _id: "S1", _creationTime: 50, ownerDid: "me", scid: "scid", did: "did:webvh:s1", primaryHostnameId: "H1", fileId: "F1", createdAt: 50, updatedAt: 9999 }],
       siteHostnames: [{ _id: "H1", siteId: "S1", hostname: "brisk-paper-07.boop.ad", kind: "boop_sub", status: "active", isPrimary: true, createdAt: 50, updatedAt: 50 }],
       publications: [{ _id: "P1", listId: "L1", webvhDid: "did:webvh:L1", status: "active", publishedAt: 200, publishedByDid: "me" }],
@@ -123,7 +123,7 @@ test("joins all source tables and produces rows in updatedAt desc order", async 
 test("missing optional joins do not crash", async () => {
   const ctx = {
     db: makeDb({
-      lists: [{ _id: "L1", _creationTime: 100, name: "Bare", ownerDid: "me", assetDid: "did:cel:L1" }],
+      lists: [{ _id: "L1", _creationTime: 100, name: "Bare", ownerDid: "me", assetDid: "did:vh:L1" }],
       sites: [],
       siteHostnames: [],
       publications: [],
@@ -133,7 +133,7 @@ test("missing optional joins do not crash", async () => {
     }),
   };
   const rows = await handler(ctx, { authToken: ownerSession.authToken });
-  assert.equal(rows[0].layer, "did:cel");
+  assert.equal(rows[0].layer, "did:vh");
   assert.equal(rows[0].verification, "none");
   assert.equal(rows[0].collaborators, undefined);
 });
@@ -157,7 +157,7 @@ test("a site never reports anchored", async () => {
 test("multiple confirmed anchors → most recent confirmedAt wins", async () => {
   const ctx = {
     db: makeDb({
-      lists: [{ _id: "L1", _creationTime: 100, name: "Anchored", ownerDid: "me", assetDid: "did:cel:L1" }],
+      lists: [{ _id: "L1", _creationTime: 100, name: "Anchored", ownerDid: "me", assetDid: "did:vh:L1" }],
       sites: [],
       siteHostnames: [],
       publications: [],

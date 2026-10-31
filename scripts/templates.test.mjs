@@ -32,14 +32,11 @@ const STRANGER = "did:webvh:QmS:boop.ad:user-stranger";
 const ownerSession = await createAuthFixture(OWNER);
 const strangerSession = await createAuthFixture(STRANGER);
 
-/**
- * The source list is a migrated one: its envelope exists but nobody holds the
- * key, which is the situation copyList is for.
- */
+/** One existing list, created from an earlier template attempt with its own creation key. */
 function makeCtx({ items = [], lists: extraLists = [], user = null, subscription = null, failItem = false } = {}) {
   const rows = {
     lists: [
-      { _id: "L1", ownerDid: OWNER, name: "Camping", createdAt: 1000, assetDid: "did:cel:old", itemViewMode: "categorized", itemCategories: [{ id: "c1", name: "Gear", emoji: "🎒", order: 0 }] },
+      { _id: "L1", ownerDid: OWNER, name: "Camping", createdAt: 1000, creationKey: "earlier-attempt", templateSource: "builtin:grocery", itemViewMode: "categorized", itemCategories: [{ id: "c1", name: "Gear", emoji: "🎒", order: 0 }] },
       ...extraLists,
     ],
     items: items.map((i, n) => ({ _id: `I${n}`, listId: "L1", ...i })),
@@ -47,7 +44,6 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
     accessSessions: [ownerSession.accessSession, strangerSession.accessSession],
     subscriptions: subscription ? [subscription] : [],
     referrals: [],
-    listEnvelopes: [],
   };
 
   const byId = new Map();
@@ -96,7 +92,7 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
 
 const create = unwrap(mod.createListFromTemplate);
 const records = (ctx, action) => (ctx.rows.actionRecords ?? []).map(r => JSON.parse(r.payload)).filter(p => p.action === action);
-const args = { builtinId: 'release-checklist', listName: 'Release checklist', assetDid: 'did:cel:template-test', authToken: ownerSession.authToken, expectedOwnerDid: OWNER };
+const args = { builtinId: 'release-checklist', listName: 'Release checklist', creationKey: 'template-test', authToken: ownerSession.authToken, expectedOwnerDid: OWNER };
 
 test('all ten catalog runbooks have actionable, ordered steps and distinct landing copy', async () => {
   const { AGENT_RUNBOOKS, templateLoginDestination } = await import('../convex/lib/templateCatalog.ts');
@@ -122,6 +118,8 @@ test('retry returns the complete original list without extra items, even at quot
   assert.equal(ctx.rows.items.length, 6);
   assert.ok(ctx.rows.items.every(i => i.checked === false && i.createdByDid === OWNER));
   assert.equal((await ctx.db.get(id)).vcProof, undefined, 'no new unsigned ownership placeholder');
+  assert.equal((await ctx.db.get(id)).creationKey, args.creationKey);
+  assert.equal((await ctx.db.get(id)).assetDid, undefined, 'the Original is minted by the owner\'s device, not here');
   assert.equal(records(ctx, 'list.created').length, 1);
   assert.deepEqual(ctx.scheduled, [], 'recording schedules no background work');
 });
@@ -140,14 +138,15 @@ test('quick-start and saved template items get one creation record each, like or
     assert.ok(items.length > 0);
     const origin = { kind: 'template', source: saved ? `saved:${source.templateId}` : 'builtin:grocery' };
     assert.deepEqual(records(ctx, 'list.created').map(r => [r.subject, r.after, r.origin]),
-      [[{ listId, listAssetDid: args.assetDid }, { name: args.listName, kind: 'list' }, origin]]);
+      [[{ listId }, { name: args.listName, kind: 'list' }, origin]]);
     for (const item of items) {
       assert.equal(item.updatedAt, item.createdAt);
       assert.equal(item.assignmentsVersion, 1);
       assert.equal(item.vcProofs, undefined, 'no new unsigned authorship placeholder');
       const [record, ...extra] = records(ctx, 'item.created').filter(r => r.subject.itemId === item._id);
       assert.deepEqual(extra, []);
-      assert.deepEqual(record.subject, { listId, listAssetDid: args.assetDid, itemId: item._id });
+      // No Original until the owner's device mints one, so no asset DID to record.
+      assert.deepEqual(record.subject, { listId, itemId: item._id });
       assert.deepEqual(record.after, { name: item.name, checked: false });
       assert.deepEqual(record.origin, origin);
       assert.deepEqual(record.owner, { did: OWNER, userId: ownerSession.user._id });
@@ -166,11 +165,11 @@ test('new creation enforces free-plan quota before writing', async () => {
   assert.equal(ctx.rows.lists.length, 5);
   assert.equal(ctx.rows.items.length, 0);
 });
-test('unknown template, mismatched account and unrelated asset cannot be acknowledged as activation', async () => {
+test('unknown template, mismatched account and another attempt\'s key cannot be acknowledged as activation', async () => {
   const ctx = makeCtx();
   await assert.rejects(create(ctx, {...args,builtinId:'private-id'}), /Template not found/);
   await assert.rejects(create(ctx, {...args,expectedOwnerDid:STRANGER}), /Account changed/);
-  await assert.rejects(create(ctx, {...args,assetDid:'did:cel:old'}), /Asset already used/);
+  await assert.rejects(create(ctx, {...args,creationKey:'earlier-attempt'}), /Creation key already used/);
   await assert.rejects(create(ctx, {...args,authToken:undefined}), /auth|sign|session/i);
   assert.equal(ctx.rows.lists.length, 1);
 });
@@ -180,11 +179,11 @@ test('item failure rejects the whole mutation; it never reports list creation su
   // rollback in production; here verify that an insert error escapes the transaction.
   await assert.rejects(create(ctx,args), /Injected insert failure/);
 });
-test('same asset cannot cross template or account boundaries', async () => {
+test('same creation key cannot cross template or account boundaries', async () => {
   const ctx = makeCtx();
   await create(ctx,args);
-  await assert.rejects(create(ctx,{...args,builtinId:'ci-triage'}), /Asset already used/);
-  await assert.rejects(create(ctx,{...args,authToken:strangerSession.authToken,expectedOwnerDid:STRANGER}), /Asset already used/);
+  await assert.rejects(create(ctx,{...args,builtinId:'ci-triage'}), /Creation key already used/);
+  await assert.rejects(create(ctx,{...args,authToken:strangerSession.authToken,expectedOwnerDid:STRANGER}), /Creation key already used/);
 });
 
 test('first template grants referral benefits atomically and retries do not renew them',async()=>{

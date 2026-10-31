@@ -8,7 +8,7 @@ import { ConvexError, convexToJson, jsonToConvex } from 'convex/values';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'boundary-test-secret-not-a-deployed-credential';
-const names = ['items','lists','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits'];
+const names = ['items','lists','originalsHost','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits'];
 await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/auth-boundary-test', define: { 'process.env.NODE_ENV': '"production"' }, bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*','@originals/*','@turnkey/*','didwebvh-ts','@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/auth-boundary-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
@@ -66,7 +66,7 @@ test('forged current, legacy, and wallet identities never confer access', async 
   }
 });
 test('anonymous and unrelated authenticated callers cannot read private list surfaces', async () => {
-  const reads = [ ['lists','getList',{listId:'L1'}], ['lists','getListEnvelope',{listId:'L1'}], ['lists','getLegacyListIds',{listIds:['L1']}], ['items','getListItems',{listId:'L1'}], ['items','getItemForSync',{itemId:'I1'}], ['items','getSubItems',{parentId:'I1'}], ['attachments','getAttachmentUrls',{itemId:'I1'}], ['activity','getListActivity',{listId:'L1'}], ['presence','getListPresence',{listId:'L1'}], ['assignees','getItemAssignees',{itemId:'I1'}], ['comments','getCommentCount',{itemId:'I1'}], ['bitcoinAnchors','getListDataForAnchor',{listId:'L1'}] ];
+  const reads = [ ['lists','getList',{listId:'L1'}], ['originalsHost','getAccepted',{listId:'L1'}], ['originalsHost','getOriginalStatus',{listIds:['L1']}], ['items','getListItems',{listId:'L1'}], ['items','getItemForSync',{itemId:'I1'}], ['items','getSubItems',{parentId:'I1'}], ['attachments','getAttachmentUrls',{itemId:'I1'}], ['activity','getListActivity',{listId:'L1'}], ['presence','getListPresence',{listId:'L1'}], ['assignees','getItemAssignees',{itemId:'I1'}], ['comments','getCommentCount',{itemId:'I1'}], ['bitcoinAnchors','getListDataForAnchor',{listId:'L1'}] ];
   for (const [mod,fn,args] of reads) for (const authToken of [undefined,strangerToken]) {
     if(fn==='getList' && authToken){assert.equal(await call(mod,fn,fixture(),{...args,authToken}),null);continue;}
     await assert.rejects(() => call(mod,fn,fixture(),{...args,authToken}), /auth|token/i, `${mod}.${fn}`);

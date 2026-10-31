@@ -1,206 +1,81 @@
 /**
- * Originals SDK wrapper for the Lisa app.
+ * Lists as Originals (Originals SDK 5).
  *
- * Provides a simplified API for:
- * - Asset creation (for lists with did:cel DIDs)
- * - Verifying a persisted asset envelope
+ * Each list is an Original: a did:vh asset log signed by its owner's
+ * did:webvh. Entries are signed with the owner's Turnkey assertion key through
+ * their own Turnkey session — boop never signs for anyone — and saved through
+ * Convex as the shared host (convex/originalsHost.ts), which appends only an
+ * entry that extends the accepted head and verifies.
  *
- * Note: Credential signing is now handled server-side via Convex actions.
+ * The signer comes from `setListAuthorSource`, installed at startup with
+ * `turnkeyListAuthorSource` (src/lib/authorIdentity.ts, #286). Without a live
+ * Turnkey session there is no signer: lists still work, they just have no
+ * Original yet, and `mintList` throws ListNotAuthorableError.
+ *
+ * Nothing written under CEL (did:cel) is read. A legacy list is re-minted from
+ * its current state as a new Original; its old history is not carried over.
  */
 
-import { OriginalsSDK } from "@originals/sdk";
-import type {
-  DIDDocument,
-  VerifiableCredential,
-  KeyPair,
-} from "@originals/sdk";
-import { localCelKeyStore, hasCelKey } from "./celKeyStore";
+import type { ConvexReactClient } from "convex/react";
+import {
+  EVIDENCE_FORMAT,
+  MemoryStore,
+  OriginalsSDK,
+  type OriginalsSigner,
+  type OriginalView,
+  type SharedHost,
+  type SubmitResult,
+} from "@originals/sdk/originals";
+import {
+  ORIGINALS_METHOD,
+  resourceDigest,
+  type AuthorDidEvidence,
+  type AuthorRef,
+  type ValidAsOf,
+} from "@originals/vh/originals";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 
-import { createLocalSigner } from "@originals/sdk/v3";
+/** The Convex calls the host needs, with the session already applied (useOriginalsClient). */
+export type OriginalsClient = Pick<ConvexReactClient, "query" | "action">;
 
-/** Metadata helpers retain their app-facing shape; v4 computes its own digests. */
-interface AssetResource {
-  id: string;
-  type: string;
-  contentType: string;
-  content: string;
-  hash: string;
+/** Who signs a list's entries: the owner's DID, its assertion key's VM, and that DID's history. */
+export interface ListAuthor {
+  author: AuthorRef;
+  signer: OriginalsSigner;
+  evidence: AuthorDidEvidence;
 }
 
-/** Only the old container versions may enter the compatibility reader. */
-function isLegacyEnvelope(envelope: string): boolean {
-  const parsed = JSON.parse(envelope);
-  return parsed?.format === "originals/asset" && parsed.version === 1;
+let authorSource: () => Promise<ListAuthor | null> = async () => null;
+
+/** Install where the signer comes from. Called once at startup (src/main.tsx). */
+export function setListAuthorSource(source: () => Promise<ListAuthor | null>): void {
+  authorSource = source;
 }
 
-async function createAsset(resources: AssetResource[]) {
-  const secret = crypto.getRandomValues(new Uint8Array(32));
-  const signer = createLocalSigner("Ed25519", secret);
-  const sdk = OriginalsSDK.create({ signer });
-  const asset = await sdk.lifecycle.createAsset(resources.map(r => ({
-    id: r.id, mediaType: r.contentType, content: r.content,
-  })));
-  // Keep the existing per-asset storage key, so authorship checks work for both formats.
-  const hex = Array.from(secret, b => b.toString(16).padStart(2, "0")).join("");
-  await localCelKeyStore.setPrivateKey!(`${asset.id}#key-0`, hex);
-  return asset;
-}
-
-export interface ListAsset {
-  assetDid: string;
-  name: string;
-  createdBy: string;
-  createdAt: string;
-  /** Serialized AssetEnvelope — the CEL log is the asset's provenance. */
-  envelope: string;
-}
-
-/** Lowercase hex SHA-256 — content-addresses the genesis resource. */
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+/** The signer for `ownerDid`'s lists, or null when this session cannot sign for them. */
+export async function getListAuthor(ownerDid: string): Promise<ListAuthor | null> {
+  const who = await authorSource();
+  return who && who.author.did === ownerDid ? who : null;
 }
 
 /**
- * Build the genesis resource for a list. did:cel genesis requires at least one
- * content-addressed resource, so the list's own metadata is that resource.
- */
-export async function buildListResource(
-  name: string,
-  creatorDid: string,
-  createdAt: string
-): Promise<AssetResource> {
-  const content = JSON.stringify({ name, createdBy: creatorDid, createdAt });
-  return {
-    id: "list-metadata",
-    type: "ListMetadata",
-    contentType: "application/json",
-    content,
-    hash: await sha256Hex(content),
-  };
-}
-
-/**
- * Creates a new list asset.
- * Each list is represented as a did:cel asset. Genesis is local — it mints a
- * keypair and builds the event log in-process, with no network round-trip — so
- * list creation stays instant and works offline.
- *
- * Returns the serialized envelope alongside the DID. Persist it: the DID alone
- * is an opaque identifier, while the envelope carries the signed event log that
- * makes the asset verifiable.
- *
- * @param name - The name of the list
- * @param creatorDid - The DID of the user creating the list
- * @returns Promise<ListAsset> The created list asset
- */
-export async function createListAsset(name: string, creatorDid: string): Promise<ListAsset> {
-  const createdAt = new Date().toISOString();
-
-  const asset = await createAsset([
-    await buildListResource(name, creatorDid, createdAt),
-  ]);
-
-  return {
-    assetDid: asset.id,
-    name,
-    createdBy: creatorDid,
-    createdAt,
-    envelope: JSON.stringify(asset.serialize()),
-  };
-}
-
-/** A note's markdown body, its own content-addressed resource beside the metadata. */
-export async function buildNoteBodyResource(body: string): Promise<AssetResource> {
-  return {
-    id: "note-body",
-    type: "NoteBody",
-    contentType: "text/markdown",
-    content: body,
-    hash: await sha256Hex(body),
-  };
-}
-
-/** createListAsset for a note: genesis also commits to the (empty) body. */
-export async function createNoteAsset(name: string, creatorDid: string): Promise<ListAsset> {
-  const createdAt = new Date().toISOString();
-
-  const asset = await createAsset([
-    await buildListResource(name, creatorDid, createdAt),
-    await buildNoteBodyResource(""),
-  ]);
-
-  return {
-    assetDid: asset.id,
-    name,
-    createdBy: creatorDid,
-    createdAt,
-    envelope: JSON.stringify(asset.serialize()),
-  };
-}
-
-export interface EnvelopeVerification {
-  verified: boolean;
-  assetDid?: string;
-  warnings: string[];
-  error?: string;
-}
-
-/**
- * Verify a persisted envelope: replays the signed CEL log, re-checks the
- * resource↔genesis binding and inline content hashes. Fails closed — any
- * tampering surfaces as verified:false rather than throwing at the call site.
- */
-export async function verifyListEnvelope(envelope: string): Promise<EnvelopeVerification> {
-  try {
-    if (isLegacyEnvelope(envelope)) {
-      return (await import("./originalsLegacy")).verifyListEnvelope(envelope);
-    }
-    const { asset, verification } = await OriginalsSDK.create().lifecycle.loadAsset(envelope);
-    return { verified: verification.verified, assetDid: asset.id, warnings: [] };
-  } catch (err) {
-    return {
-      verified: false,
-      warnings: [],
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-}
-
-/** A list's published state, as committed to by a version's content hash. */
-export interface ListSnapshot {
-  name: string;
-  items: Array<{ name: string; checked: boolean }>;
-}
-
-export interface RecordedVersion {
-  /** The asset envelope after the append. Persist it — it is the new log. */
-  envelope: string;
-  /** 1 is genesis, so a first published version is 2. */
-  version: number;
-  hash: string;
-  /** False when the content matched the current version and nothing was appended. */
-  appended: boolean;
-}
-
-/**
- * Thrown when a list cannot sign its own events, which is not a bug the user
- * can act on except by copying the list.
+ * Thrown when this session cannot sign for a list: it is someone else's, or
+ * there is no live Turnkey session. Nothing the user did is wrong.
  */
 export class ListNotAuthorableError extends Error {
-  constructor(message: string) {
+  constructor(message = "You can't sign for this list right now. Sign in again to sign it.") {
     super(message);
     this.name = "ListNotAuthorableError";
   }
 }
 
-/**
- * Build the content a published version commits to. Separate from
- * buildListResource because genesis commits to the list's identity while a
- * version commits to what was actually published.
- */
+/** A list's published state, as committed to by the `list-metadata` resource. */
+export interface ListSnapshot {
+  name: string;
+  items: Array<{ name: string; checked: boolean }>;
+}
+
 export function buildListSnapshot(
   name: string,
   items: Array<{ name: string; checked: boolean }>
@@ -208,95 +83,196 @@ export function buildListSnapshot(
   return { name, items: items.map(({ name, checked }) => ({ name, checked })) };
 }
 
-/**
- * Append a signed snapshot of the list's published state to its CEL log.
- * `changes` is retained for legacy histories only; v4 resource updates have no
- * description field, so their authenticated snapshot is the change record.
- *
- * Publishing used to leave no trace in the chain that exists to record an
- * asset's history — the `publications` row knew, the log did not. This appends
- * a content-addressed `update` event so the published state is verifiable.
- *
- * Stays on did:cel deliberately: publishToWeb would migrate the asset to
- * did:webvh, changing its DID and moving its public URL to a content-addressed
- * key, and boop serves published lists live at a stable path.
- *
- * Signing needs the genesis controller key, which lives in this device's
- * keyStore. Lists re-minted by the celAssetDids migration have no key at all —
- * they get ListNotAuthorableError rather than the SDK's CEL_APPEND_FAILED, so
- * the caller can point at the copy action instead of showing a raw SDK error.
- */
-export async function recordPublishedVersion(
-  envelope: string,
-  snapshot: ListSnapshot,
-  changes = "Published to the web"
-): Promise<RecordedVersion> {
-  if (isLegacyEnvelope(envelope)) {
-    return (await import("./originalsLegacy")).recordPublishedVersion(envelope, snapshot, changes);
-  }
-  const { asset } = await OriginalsSDK.create().lifecycle.loadAsset(envelope);
-  const hex = await localCelKeyStore.getPrivateKey(`${asset.id}#key-0`);
-  if (!hex) {
-    throw new ListNotAuthorableError(
-      "This list's signing key isn't on this device, so its history can't be updated."
-    );
-  }
-  const signer = createLocalSigner("Ed25519", Uint8Array.from(hex.match(/.{2}/g)!, b => parseInt(b, 16)));
-  const content = JSON.stringify(snapshot);
-  const current = asset.resources.filter(r => r.id === "list-metadata").at(-1);
-  if (current?.content && new TextDecoder().decode(current.content) === content) {
-    return { envelope, version: current.version, hash: await sha256Hex(content), appended: false };
-  }
-  await asset.addResourceVersion("list-metadata", content, "application/json", { signer });
-  const resource = asset.resources.filter(r => r.id === "list-metadata").at(-1)!;
+const LIST_RESOURCE = "list-metadata";
+const NOTE_RESOURCE = "note-body";
+const encoder = new TextEncoder();
+
+function snapshotBytes(snapshot: ListSnapshot): Uint8Array {
+  return encoder.encode(JSON.stringify(snapshot));
+}
+
+/** The Convex shared host for one list's Original. */
+function convexHost(client: OriginalsClient, listId: Id<"lists">): SharedHost {
   return {
-    envelope: JSON.stringify(asset.serialize()), version: resource.version,
-    hash: await sha256Hex(content), appended: true,
+    async submit(submission) {
+      return client.action(api.originalsHost.submitEntry, {
+        listId,
+        original: submission.original,
+        entry: submission.entry,
+        resources: Object.entries(submission.resources).map(([digest, bytes]) => ({
+          digest,
+          bytes: bytes.slice().buffer,
+        })),
+      });
+    },
+    async accepted(original) {
+      const hosted = await client.query(api.originalsHost.getAccepted, { listId });
+      if (!hosted || hosted.did !== original) throw new Error(`The host has no log for ${original}`);
+      const obtainedAt = new Date().toISOString();
+      return {
+        manifest: {
+          format: EVIDENCE_FORMAT,
+          profile: ORIGINALS_METHOD,
+          original,
+          checkpoint: hosted.head,
+          head: hosted.head,
+          completeness: hosted.author ? "complete" : "partial",
+          missing: hosted.author ? [] : [{ kind: "identity", did: "", role: "author" }],
+        },
+        log: hosted.log,
+        authors: hosted.author ? [{ ...hosted.author, source: "host", obtainedAt }] : [],
+        bytes: Object.fromEntries(hosted.resources.map((r) => [r.digest, new Uint8Array(r.bytes)])),
+      };
+    },
   };
 }
 
+function sdkFor(who: ListAuthor | null): OriginalsSDK {
+  return OriginalsSDK.create({ store: new MemoryStore(), authors: who ? [who.evidence] : [] });
+}
+
+async function requireAuthor(ownerDid: string): Promise<ListAuthor> {
+  const who = await getListAuthor(ownerDid);
+  if (!who) throw new ListNotAuthorableError();
+  return who;
+}
+
+export interface MintInput {
+  listId: Id<"lists">;
+  ownerDid: string;
+  name: string;
+  /** Lists commit to their items; notes to their markdown body. */
+  content: { kind: "list"; snapshot: ListSnapshot } | { kind: "note"; body: string };
+}
+
 /**
- * When the genesis event's proof was signed.
- *
- * Distinct from the list's own createdAt: the celAssetDids migration minted
- * genesis for existing lists, so it committed to the list's real creation date
- * while signing the log on the migration's clock. That gap is the only
- * server-observable difference between a migrated list and a client-minted one.
+ * Mint a list's Original from its current state: the genesis entry, signed
+ * through the owner's Turnkey session and accepted by the host, which then
+ * names the list by it. Also the re-mint for a legacy did:cel list — a new DID
+ * with no claim to the old history. If another device minted first, its
+ * Original is kept.
  */
-export function genesisSealedAt(envelope: string): number | null {
+export async function mintList(client: OriginalsClient, input: MintInput): Promise<string> {
+  const who = await requireAuthor(input.ownerDid);
+  const sdk = sdkFor(who);
+  const resources = input.content.kind === "list"
+    ? [{ id: LIST_RESOURCE, mediaType: "application/json", bytes: snapshotBytes(input.content.snapshot) }]
+    : [{ id: NOTE_RESOURCE, mediaType: "text/markdown", bytes: encoder.encode(input.content.body) }];
+  const draft = await sdk.prepareCreate({
+    name: input.name,
+    metadata: { app: "boop", kind: input.content.kind },
+    resources,
+    author: who.author,
+  });
+  // Genesis has no parent to submit against, so it is committed locally (signed
+  // and verified here) and that exact line is what the host judges.
+  const { original } = await sdk.commit(draft, who.signer);
+  const entry = (await sdk.committedLog(original.did)).trimEnd();
+  const answer = await convexHost(client, input.listId).submit({
+    original: original.did, entry, resources: Object.fromEntries(draft.bytes), identities: [],
+  });
+  if (answer.status === "stale-parent") {
+    const hosted = await client.query(api.originalsHost.getAccepted, { listId: input.listId });
+    if (!hosted) throw new Error("The list's Original could not be saved");
+    return hosted.did;
+  }
+  return original.did;
+}
+
+export interface RecordedVersion {
+  /** The checkpoint that commits to the published state. */
+  checkpoint: string;
+  /** The list-metadata resource's version; genesis is 1. */
+  version: number;
+  /** False when the published state matched the current version and nothing was appended. */
+  appended: boolean;
+}
+
+/**
+ * Append a signed snapshot of the list's published state to its Original, so
+ * what was published is in the log that records the list's history. Stays on
+ * did:vh: boop serves published lists at a stable path, not through an alias.
+ */
+export async function recordPublishedVersion(
+  client: OriginalsClient,
+  list: { listId: Id<"lists">; ownerDid: string; did: string },
+  snapshot: ListSnapshot
+): Promise<RecordedVersion> {
+  const who = await requireAuthor(list.ownerDid);
+  const sdk = sdkFor(who);
+  const host = convexHost(client, list.listId);
+  const head = (await sdk.sync(list.did, host)).original;
+
+  const bytes = snapshotBytes(snapshot);
+  const current = latestVersion(head, LIST_RESOURCE);
+  if (current?.digest === resourceDigest(bytes)) {
+    return { checkpoint: head.checkpoint, version: current.version, appended: false };
+  }
+
+  const change = { resources: [{ id: LIST_RESOURCE, bytes, mediaType: "application/json" }] };
+  const draft = await sdk.prepareEdit(list.did, { ...change, parent: head.checkpoint, author: who.author });
+  let saved: SubmitResult = await sdk.submit(await sdk.sign(draft, who.signer), host);
+  if (saved.status === "stale-parent") {
+    // Another device saved first. Publishing commits to the state being
+    // published, not to a merge, so the same snapshot goes on the new head.
+    saved = await sdk.reconcile(list.did, {
+      host, refused: saved.refused.versionId, author: who.author, signer: who.signer, change: () => change,
+    });
+    if (saved.status === "stale-parent") throw new Error("The list changed on another device; publish again");
+  }
+  const published = latestVersion(saved.original, LIST_RESOURCE)!;
+  return { checkpoint: saved.checkpoint, version: published.version, appended: true };
+}
+
+function latestVersion(view: OriginalView, resource: string) {
+  return view.resources.filter((r) => r.resource === resource).at(-1);
+}
+
+export interface ListVerification {
+  did: string;
+  /**
+   * Valid as of a checkpoint (history, author binding, identity evidence) and
+   * every resource's bytes served and matching its signed digest. The host is
+   * the only copy of the bytes, so missing content is a failure here.
+   */
+  verified: boolean;
+  content: "available" | "partial" | "digest-failure";
+  validAsOf: ValidAsOf | null;
+  checkpoint: string;
+  /** Why the result is not current. Always includes "not-anchored" for an Original not on Bitcoin. */
+  reasons: string[];
+  error?: string;
+}
+
+/**
+ * Verify a list's Original from what the host serves, trusting none of it:
+ * the log, the owner's DID history and the bytes are all checked here. Null
+ * when the list has no Original yet. Fails closed.
+ */
+export async function verifyList(client: OriginalsClient, listId: Id<"lists">): Promise<ListVerification | null> {
+  const hosted = await client.query(api.originalsHost.getAccepted, { listId });
+  if (!hosted) return null;
   try {
-    const log = JSON.parse(envelope)?.eventLog;
-    const proof = log?.log?.[0]?.proof ?? log?.events?.[0]?.proof;
-    const created = (Array.isArray(proof) ? proof[0] : proof)?.created;
-    const ms = created ? Date.parse(created) : NaN;
-    return Number.isNaN(ms) ? null : ms;
-  } catch {
-    return null;
+    const { original } = await sdkFor(null).sync(hosted.did, convexHost(client, listId));
+    const content = original.report.resources.status;
+    return {
+      did: original.did,
+      verified: original.validAsOf !== null && content === "available",
+      content,
+      validAsOf: original.validAsOf,
+      checkpoint: original.checkpoint,
+      reasons: original.report.reasons,
+      ...(content !== "available" ? { error: "Its content doesn't match its signed history" } : {}),
+    };
+  } catch (err) {
+    return {
+      did: hosted.did, verified: false, content: "partial", validAsOf: null, checkpoint: hosted.head, reasons: [],
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
-/** Genesis sealed this long after list creation counts as a re-genesis. */
-const RETROACTIVE_GENESIS_MS = 60_000;
-
-/**
- * True when this list's log was sealed well after the list already existed —
- * i.e. the migration minted it, so no one holds its controller key and it can
- * never author another event. Copying is the only way to get an authorable list.
- */
-export function isRetroactiveGenesis(envelope: string, listCreatedAt: number): boolean {
-  const sealed = genesisSealedAt(envelope);
-  return sealed !== null && sealed - listCreatedAt > RETROACTIVE_GENESIS_MS;
+/** True for an asset DID minted before Originals 5, which must be re-minted. */
+export function isLegacyAssetDid(assetDid: string | undefined): boolean {
+  return !!assetDid && !assetDid.startsWith("did:vh:");
 }
-
-/**
- * True when THIS DEVICE holds the list's genesis key. Custody is per-origin
- * localStorage, so a client-minted list is unauthorable from a second device
- * too — which is a different problem from a migrated list, and not one copying
- * should be offered for.
- */
-export async function canAuthorList(assetDid: string): Promise<boolean> {
-  return hasCelKey(`${assetDid}#key-0`);
-}
-
-// Re-export types that consumers might need
-export type { DIDDocument, VerifiableCredential, KeyPair };

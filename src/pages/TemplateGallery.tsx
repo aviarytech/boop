@@ -4,7 +4,7 @@ import { AGENT_RUNBOOKS, getRunbook } from '../../convex/lib/templateCatalog';
 import { useCurrentUser } from '../hooks/useCurrentUser';
 import { useMutation, useQuery } from '../lib/authenticatedConvex';
 import { api } from '../../convex/_generated/api';
-import { templateAsset, finishTemplateAttempt } from '../lib/templateActivation';
+import { templateCreationKey, finishTemplateAttempt } from '../lib/templateActivation';
 import { trackTemplate } from '../lib/analytics';
 import { applyTemplateMetadata } from '../lib/templateMetadata';
 import { REFERRAL_CODE_KEY } from './InviteLanding';
@@ -66,10 +66,10 @@ export function TemplateGallery({ activation = false }: { activation?: boolean }
         if (currentDid.current !== account) return;
         if (localStorage.getItem(REFERRAL_CODE_KEY) === referralCode) localStorage.removeItem(REFERRAL_CODE_KEY);
       }
-      const asset = await templateAsset(account, template.id, template.name, !automatic || search.get('new') === '1');
+      const creationKey = templateCreationKey(account, template.id, !automatic || search.get('new') === '1');
       if (currentDid.current !== account) throw new Error('Your account changed. Select the template again.');
       const listId = await create({ builtinId: template.id, listName: template.name,
-        assetDid: asset.assetDid, celEnvelope: asset.envelope, expectedOwnerDid: account });
+        creationKey, expectedOwnerDid: account });
       if (currentDid.current !== account) return;
       finishTemplateAttempt(account, template.id);
       trackTemplate('template_activated', template.id, listId);

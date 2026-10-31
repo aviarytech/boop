@@ -21,13 +21,13 @@ modules.assignees = await import(pathToFileURL(`${process.cwd()}/tmp/item-detail
 await build({ stdin: { contents: 'export { ItemDetailsModal } from "./src/components/ItemDetailsModal"; export { NestedListItem } from "./src/components/NestedListItem"; export { useOptimisticItems } from "./src/hooks/useOptimisticItems"; export { matchesItemId } from "./src/lib/optimisticItems";', resolveDir: process.cwd() }, outfile: 'tmp/item-details-offline.mjs', bundle: true, jsx: 'automatic', platform: 'node', format: 'esm', packages: 'external', define: { 'import.meta.env.MODE': '"test"' }, plugins: [{ name: 'detail-contexts', setup(b) {
   b.onResolve({ filter: /\/(authenticatedConvex|useOffline|useSettings|useAuth|useCurrentUser|originals|observability)$/ }, args => ({ path: args.path, namespace: 'detail-fixture' }));
   b.onLoad({ filter: /.*/, namespace: 'detail-fixture' }, ({ path }) => ({ contents:
-    path.endsWith('/authenticatedConvex') ? `export const useQuery=(ref,args)=>globalThis.__detailFixture.query(ref,args); export const useMutation=ref=>args=>globalThis.__detailFixture.mutate(ref,args); export const useAction=useMutation;` :
+    path.endsWith('/authenticatedConvex') ? `export const useQuery=(ref,args)=>globalThis.__detailFixture.query(ref,args); export const useMutation=ref=>args=>globalThis.__detailFixture.mutate(ref,args); export const useAction=useMutation; export const sessionArgs=(ref,args)=>args;` :
     path.endsWith('/useOffline') ? 'export const useOffline=()=>globalThis.__detailFixture.offline;' :
     path.endsWith('/useAuth') ? 'export const useAuth=()=>({token:null});' :
     path.endsWith('/useSettings') ? 'export const useSettings=()=>({haptic:()=>{}});' :
     path.endsWith('/useCurrentUser') ? 'export const useCurrentUser=()=>({did:globalThis.__detailFixture.did});' :
     path.endsWith('/observability') ? 'export const recordLatencyMs=()=>{};' :
-    'export const verifyListEnvelope=()=>{}; export const isRetroactiveGenesis=()=>false; export const createListAsset=()=>{};',
+    'export const verifyList=async()=>null;export const isLegacyAssetDid=d=>!!d&&!d.startsWith("did:vh:");export const mintList=async()=>{};export const buildListSnapshot=(name,items)=>({name,items});export const recordPublishedVersion=async()=>({});export const setListAuthorSource=()=>{};export const getListAuthor=async()=>null;export class ListNotAuthorableError extends Error {}',
   }));
 } }] });
 const { ItemDetailsModal, NestedListItem, useOptimisticItems, matchesItemId } = await import(pathToFileURL(`${process.cwd()}/tmp/item-details-offline.mjs`));

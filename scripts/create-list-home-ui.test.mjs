@@ -14,7 +14,7 @@ const fixture = globalThis.__createListHomeUi = {};
 const root = process.env.CREATE_DIALOG_ROOT ?? '.';
 const mocks = {
   '/lib/authenticatedConvex': 'export const useMutation=()=>globalThis.__createListHomeUi.save; export const useQuery=()=>[];',
-  '/_generated/api': 'export const api={lists:{createList:"create",getUserLists:"lists",getLegacyListIds:"legacy"},items:{addItem:"add"},publication:{getUserBookmarkIds:"bookmarks"}};',
+  '/_generated/api': 'export const api={lists:{createList:"create",getUserLists:"lists"},originalsHost:{getOriginalStatus:"originalStatus"},items:{addItem:"add"},publication:{getUserBookmarkIds:"bookmarks"}};',
   '/hooks/useCurrentUser': 'export const useCurrentUser=()=>({did:"did:owner",legacyDid:null,isLoading:false});',
   '/hooks/useSettings': 'export const useSettings=()=>({haptic:value=>globalThis.__createListHomeUi.feedback.push(value),listSort:"newest"});',
   '/hooks/useCategories': 'export const useCategories=()=>({categories:[],isLoading:false});',
@@ -22,7 +22,6 @@ const mocks = {
   '/hooks/useStreaks': 'export const useStreaks=()=>({streak:null});',
   '/hooks/useBilling': 'export const useBilling=()=>({isPro:false});',
   '/lib/offline': 'export const cacheAllLists=async()=>{}, getAllCachedLists=async()=>[];',
-  '/lib/originals': 'export const createListAsset=(...args)=>globalThis.__createListHomeUi.sign(...args);',
   '/lib/planLimit': 'export const isPlanLimitError=error=>error.message==="plan limit";',
   '/lib/noteBody': 'export const isNote=()=>false;',
   '/lib/analytics': 'export const trackListCreated=()=>{}, trackFirstListCreated=()=>{}, trackFeatureGateHit=()=>{}, trackInviteSent=()=>{};',
@@ -55,8 +54,8 @@ const { Home } = await import(pathToFileURL(`${process.cwd()}/tmp/create-list-ho
 afterEach(() => { cleanup(); localStorage.clear(); });
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 function mountHome() {
-  const sign = deferred(), save = deferred();
-  Object.assign(fixture, { feedback: [], sign: () => sign.promise, save: () => save.promise });
+  const save = deferred();
+  Object.assign(fixture, { feedback: [], save: () => save.promise });
   localStorage.setItem('boop:onboarding_demo_created', 'done');
   let location;
   function Location() { location = useLocation(); return null; }
@@ -68,31 +67,26 @@ function mountHome() {
   fireEvent.click(view.getByRole('button', { name: 'Create blank list' }));
   fireEvent.change(view.getByRole('textbox', { name: 'List name' }), { target: { value: 'Weekend' } });
   fireEvent.submit(document.getElementById('create-list-form'));
-  return { view, sign, save, location: () => location };
+  return { view, save, location: () => location };
 }
 
-for (const phase of ['sign', 'save']) {
-  test(`Home does not open an invite nudge after ${phase} is dismissed`, async () => {
-    const f = mountHome();
-    if (phase === 'save') await act(async () => f.sign.resolve({ assetDid: 'asset:weekend', envelope: '{}' }));
-    fireEvent.keyDown(window, { key: 'Escape' });
-    const feedback = [...fixture.feedback];
-    await act(async () => {
-      f.sign.resolve({ assetDid: 'asset:weekend', envelope: '{}' });
-      f.save.resolve('weekend-list');
-    });
-    assert.equal(f.view.queryByText('Invitation for Weekend'), null);
-    assert.deepEqual(fixture.feedback, feedback);
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
-    assert.equal(f.view.queryByRole('dialog'), null);
-    assert.equal(f.view.queryByText('Invitation for Weekend'), null);
-    assert.equal(f.location().pathname, '/d');
-  });
-}
+// Creation is one save now: the list's Original is minted when it is opened.
+test('Home does not open an invite nudge after the save is dismissed', async () => {
+  const f = mountHome();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  const feedback = [...fixture.feedback];
+  await act(async () => { f.save.resolve('weekend-list'); });
+  assert.equal(f.view.queryByText('Invitation for Weekend'), null);
+  assert.deepEqual(fixture.feedback, feedback);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
+  assert.equal(f.view.queryByRole('dialog'), null);
+  assert.equal(f.view.queryByText('Invitation for Weekend'), null);
+  assert.equal(f.location().pathname, '/d');
+});
 
 test('Home still opens its invite nudge when creation completes while visible', async () => {
   const f = mountHome();
-  await act(async () => { f.sign.resolve({ assetDid: 'asset:weekend', envelope: '{}' }); f.save.resolve('weekend-list'); });
+  await act(async () => { f.save.resolve('weekend-list'); });
   assert.ok(f.view.getByText('Invitation for Weekend'));
   assert.ok(f.view.getByRole('heading', { name: 'List created!' }));
   assert.equal(f.location().pathname, '/d');

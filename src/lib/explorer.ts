@@ -6,7 +6,7 @@
  */
 
 export type ExplorerSource = "list" | "site";
-export type ExplorerLayer = "did:cel" | "did:webvh" | "did:btco";
+export type ExplorerLayer = "did:vh" | "did:webvh" | "did:btco";
 export type ExplorerVerification = "verified" | "anchored" | "pending" | "none";
 
 export interface ExplorerRow {
@@ -44,7 +44,7 @@ interface RawList {
   _creationTime: number;
   name: string;
   ownerDid: string;
-  assetDid: string;
+  assetDid?: string;
 }
 
 interface RawSite {
@@ -134,7 +134,7 @@ function deriveListRow(list: RawList, input: DeriveInput): ExplorerRow {
     sourceId: list._id,
     title: list.name,
     identifier: isPublished ? pub.webvhDid : null,
-    layer: isPublished ? "did:webvh" : "did:cel",
+    layer: isPublished ? "did:webvh" : "did:vh",
     verification,
     collaborators: input.assigneesByList.get(list._id),
     anchorTxId: confirmed?.txid,
@@ -224,7 +224,7 @@ export function encodeFiltersToParams(f: ExplorerFilters): URLSearchParams {
 }
 
 const VALID_KINDS = new Set<ExplorerSource>(["list", "site"]);
-const VALID_LAYERS = new Set<ExplorerLayer>(["did:cel", "did:webvh", "did:btco"]);
+const VALID_LAYERS = new Set<ExplorerLayer>(["did:vh", "did:webvh", "did:btco"]);
 const VALID_VERIFY = new Set<ExplorerVerification>(["verified", "anchored", "pending", "none"]);
 
 export function decodeFiltersFromParams(p: URLSearchParams): ExplorerFilters {

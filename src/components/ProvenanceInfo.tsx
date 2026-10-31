@@ -19,14 +19,12 @@ import {
  */
 
 import { useEffect, useState } from "react";
-import { useQuery, useMutation } from "../lib/authenticatedConvex";
+import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import type { FunctionReturnType } from "convex/server";
-import { useNavigate } from "react-router-dom";
 import { useSettings } from "../hooks/useSettings";
-import { useCurrentUser } from "../hooks/useCurrentUser";
-import { verifyListEnvelope, isRetroactiveGenesis, createListAsset } from "../lib/originals";
+import { useListVerification, type ListVerificationState } from "../hooks/useListVerification";
 
 interface ListProvenanceProps {
   list: Doc<"lists">;
@@ -172,76 +170,25 @@ function TimestampRow({ label, timestamp }: { label: string; timestamp: number }
   );
 }
 
-/**
- * Collapsible wrapper for provenance info
- */
-type EnvelopeState =
-  | { status: "absent" }
-  | { status: "checking" }
-  | { status: "verified"; retroactive: boolean }
-  | { status: "failed"; detail: string };
-
-/**
- * Replays the list's signed CEL log client-side. Verification is real work
- * (signature checks + hashing), so it runs in an effect rather than on render.
- */
-function useEnvelopeVerification(
-  listId: Doc<"lists">["_id"],
-  listCreatedAt: number
-): EnvelopeState {
-  const stored = useQuery(api.lists.getListEnvelope, { listId });
-  const envelope = stored?.envelope ?? null;
-  // Keyed by the envelope it describes, so a stale result is never shown for a
-  // newer one — that also keeps loading/absent derivable during render.
-  const [result, setResult] = useState<{ envelope: string; state: EnvelopeState } | null>(null);
-
-  useEffect(() => {
-    if (!envelope) return;
-    let cancelled = false;
-    void verifyListEnvelope(envelope).then((verification) => {
-      if (cancelled) return;
-      setResult({
-        envelope,
-        state: verification.verified
-          ? { status: "verified", retroactive: isRetroactiveGenesis(envelope, listCreatedAt) }
-          : {
-              status: "failed",
-              detail: verification.error ?? verification.warnings.join("; "),
-            },
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [envelope, listCreatedAt]);
-
-  if (stored === undefined) return { status: "checking" };
-  if (stored === null) return { status: "absent" };
-  return result?.envelope === envelope ? result.state : { status: "checking" };
-}
-
-function EnvelopeVerificationRow({ state }: { state: EnvelopeState }) {
-  // Every state says something. Rendering nothing for "absent" made a list with
-  // no log indistinguishable from one whose log simply wasn't shown.
+function OriginalVerificationRow({ state }: { state: ListVerificationState }) {
+  // Every state says something, so a list with no Original is never mistaken
+  // for one whose history simply wasn't shown.
   const [icon, text, tone] =
     state.status === "absent"
-      ? ["—", "No event log recorded for this list", "text-gray-500 dark:text-gray-400"]
+      ? ["—", state.legacy
+          ? "Made before Originals 5. Its owner re-mints it when they open it."
+          : "Not an Original yet. It's minted when its owner next opens it.",
+        "text-gray-500 dark:text-gray-400"]
       : state.status === "checking"
-        ? ["⏳", "Verifying event log…", "text-gray-500 dark:text-gray-400"]
+        ? ["⏳", "Verifying signed history…", "text-gray-500 dark:text-gray-400"]
         : state.status === "verified"
-          ? [
-              "✅",
-              state.retroactive
-                ? "Event log verified — sealed when this list was migrated, not when it was created"
-                : "Event log verified",
-              "text-green-600 dark:text-green-400",
-            ]
-          : ["⚠️", `Event log failed verification: ${state.detail}`, "text-red-600 dark:text-red-400"];
+          ? ["✅", `Signed history verified, as of version ${state.checkpoint.split("-")[0]}`, "text-green-600 dark:text-green-400"]
+          : ["⚠️", `Signed history failed verification: ${state.detail}`, "text-red-600 dark:text-red-400"];
 
   return (
     <div className="py-2">
       <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-        🔗 Chained Event Log
+        🔗 Signed History
       </div>
       <div className={`text-sm ${tone}`}>
         {icon} {text}
@@ -251,65 +198,8 @@ function EnvelopeVerificationRow({ state }: { state: EnvelopeState }) {
 }
 
 /**
- * Offers an authorable copy of a list whose log was sealed by the migration.
- *
- * Those lists were given genesis server-side with an ephemeral controller, so
- * nobody holds their key and they can never record another event. A copy is
- * minted here in the browser, so its key lands in this device's keyStore.
- *
- * Owner-only: copying mints an identity naming the owner, so someone who can
- * merely view a shared list must not be able to do it. The server enforces this
- * too — this only decides whether to show the button.
+ * Collapsible wrapper for provenance info
  */
-function CopyForProvenance({ list }: { list: Doc<"lists"> }) {
-  const { did } = useCurrentUser();
-  const copyList = useMutation(api.lists.copyList);
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!did || did !== list.ownerDid) return null;
-
-  const handleCopy = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const name = `${list.name} (copy)`;
-      const asset = await createListAsset(name, did);
-      const { listId } = await copyList({
-        sourceListId: list._id,
-        assetDid: asset.assetDid,
-        celEnvelope: asset.envelope,
-        name,
-        createdAt: Date.now(),
-      });
-      navigate(`/list/${listId}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not copy this list");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="pb-2">
-      <button
-        onClick={() => void handleCopy()}
-        disabled={busy}
-        className="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
-      >
-        {busy ? "Copying…" : "Make an authorable copy"}
-      </button>
-      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-        Copies the items into a new list that can record its own history. This
-        list is left as it is.
-      </div>
-      {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 mt-1">{error}</div>
-      )}
-    </div>
-  );
-}
-
 function ProvenanceSection({
   title,
   children,
@@ -756,7 +646,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
   
   const ownerName = userInfo?.[list.ownerDid]?.displayName ?? null;
 
-  const envelopeState = useEnvelopeVerification(list._id, list.createdAt);
+  const originalState = useListVerification(list);
 
   // Build timeline events
   const timelineEvents: Array<{
@@ -806,11 +696,13 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
 
   return (
     <ProvenanceSection title="Originals Provenance">
-      <DidRow 
-        label="📋 List DID (Asset)" 
-        did={list.assetDid} 
-        haptic={haptic} 
-      />
+      {list.assetDid && (
+        <DidRow
+          label="📋 List DID (Original)"
+          did={list.assetDid}
+          haptic={haptic}
+        />
+      )}
       <DidRow 
         label="👤 Created By" 
         did={list.ownerDid} 
@@ -822,10 +714,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
         timestamp={list.createdAt}
       />
 
-      <EnvelopeVerificationRow state={envelopeState} />
-      {envelopeState.status === "verified" && envelopeState.retroactive && (
-        <CopyForProvenance list={list} />
-      )}
+      <OriginalVerificationRow state={originalState} />
 
       <ActionRecordList records={actionRecords} displayNames={userInfo} haptic={haptic} />
 

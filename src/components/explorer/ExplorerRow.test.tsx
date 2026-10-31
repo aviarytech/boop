@@ -12,7 +12,7 @@ const baseList: ExplorerRowType = {
   sourceId: "L1",
   title: "Groceries",
   identifier: null,
-  layer: "did:cel",
+  layer: "did:vh",
   verification: "none",
   createdAt: 1,
   updatedAt: 1,
@@ -61,7 +61,7 @@ test("renders title", () => {
 test("renders kind badge and layer for list", () => {
   const { container, cleanup } = renderRow(baseList);
   expect(container.textContent).toContain("list");
-  expect(container.textContent).toContain("did:cel");
+  expect(container.textContent).toContain("did:vh");
   cleanup();
 });
 

@@ -8,7 +8,6 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 
 interface AddItemInputProps {
-  assetDid: string;
   onAddItem: (args: {
     name: string;
     createdByDid: string;

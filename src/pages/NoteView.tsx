@@ -6,7 +6,7 @@ import { NoteConflict } from "../components/NoteConflict";
  * the list's view pill sits, over a markdown body that autosaves.
  */
 
-import { lazy, Suspense, useState, type ReactNode } from "react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -20,6 +20,9 @@ import { useOffline } from "../hooks/useOffline";
 import { useSettings } from "../hooks/useSettings";
 import { HeaderActionsMenu } from "../components/HeaderActionsMenu";
 import { ListVerificationBadge } from "../components/VerificationBadge";
+import { RemintListModal } from "../components/RemintListModal";
+import { useListOriginal } from "../hooks/useListOriginal";
+import { badgeSignature, useListVerification } from "../hooks/useListVerification";
 import { MAX_NOTE_LENGTH } from "../lib/noteEditor";
 import { shortRelativeTime } from "../lib/format";
 
@@ -78,6 +81,10 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
   const { isOnline } = useOffline();
   const { categories } = useCategories();
   const updateNoteBody = useMutation(api.notes.updateNoteBody);
+  // Genesis commits to the saved body, not an unsaved draft.
+  const originalContent = useMemo(() => ({ kind: "note" as const, body: note.body }), [note.body]);
+  const original = useListOriginal(list, isOwner, originalContent, isOnline);
+  const verification = useListVerification(list);
 
   const [chosenMode, setChosenMode] = useState<Mode>(() => (note.body.trim() ? "preview" : "edit"));
 
@@ -152,7 +159,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
               >
                 {list.name}
               </h1>
-              <ListVerificationBadge anchorStatus="none" did={list.assetDid} />
+              <ListVerificationBadge anchorStatus="none" did={list.assetDid} signature={badgeSignature(verification)} />
             </div>
             <div
               className="flex items-center gap-2 text-[12px] mt-1 text-stone-500 dark:text-stone-400 flex-wrap"
@@ -237,6 +244,10 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
         <p className="pt-2 text-xs text-stone-400 text-right">
           {displayBody.length} / {MAX_NOTE_LENGTH}
         </p>
+      )}
+
+      {isOwner && original.isLegacy && (
+        <RemintListModal kind="note" state={original.state} error={original.error} onRemint={() => void original.remint()} />
       )}
 
       <Suspense fallback={null}>

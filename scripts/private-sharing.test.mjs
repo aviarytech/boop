@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { pathToFileURL } from "node:url";
 import { fixture, sessions, credentials, digest, PRIVATE_SHARING_JWT_SECRET } from "./helpers/private-sharing-fixture.mjs";
 
-const names = ["lists", "notes", "items", "publication", "didResources", "attachments", "activity", "comments", "tags", "presence", "assignees", "itemCategories", "categories", "bitcoinAnchors", "listGrants", "lib/listGrants", "actorSession", "notifications", "notificationActions", "users", "agentReadHttp", "itemsHttp", "listsHttp", "didResourcesHttp", "didLogs"];
+const names = ["lists", "originalsHost", "notes", "items", "publication", "didResources", "attachments", "activity", "comments", "tags", "presence", "assignees", "itemCategories", "categories", "bitcoinAnchors", "listGrants", "lib/listGrants", "actorSession", "notifications", "notificationActions", "users", "agentReadHttp", "itemsHttp", "listsHttp", "didResourcesHttp", "didLogs"];
 const bucket = globalThis.__privateSharingBucket = { calls: [], afterDelete: null };
 await build({
   entryPoints: names.map(name => `convex/${name}.ts`), outdir: "tmp/private-sharing-test",
@@ -34,11 +34,10 @@ const roles = ["owner", "editor", "viewer", "outsider", "pending", "anonymous"];
 const readers = new Set(["owner", "editor", "viewer"]);
 const editors = new Set(["owner", "editor"]);
 const attachment = { key: "attachments/I/file.png", contentType: "image/png", size: 10, sha256: "abc" };
-const copyArgs = { sourceListId: "L", name: "My copy", assetDid: "did:cel:copy", celEnvelope: '{"format":"originals/asset"}', createdAt: 10 };
 
 const readOperations = [
-  ["lists", "getListEnvelope", { listId: "L" }],
-  ["lists", "getLegacyListIds", { listIds: ["L"] }],
+  ["originalsHost", "getAccepted", { listId: "L" }],
+  ["originalsHost", "getOriginalStatus", { listIds: ["L"] }],
   ["items", "getListItems", { listId: "L" }],
   ["items", "getItemForSync", { itemId: "I" }],
   ["items", "getSubItems", { parentId: "I" }],
@@ -151,7 +150,7 @@ const ownerWrites = [
   ["lists", "updateItemViewMode", { listId: "L", itemViewMode: "alphabetical" }],
   ["lists", "addCustomAisle", { listId: "L", name: "New", emoji: "a" }],
   ["lists", "removeCustomAisle", { listId: "L", aisleId: "a" }],
-  ["publication", "publishList", { listId: "L", webvhDid: "did:owner/resources/list-L", celEnvelope: "new-owner-envelope" }],
+  ["publication", "publishList", { listId: "L", webvhDid: "did:owner/resources/list-L" }],
   ["publication", "unpublishList", { listId: "L" }],
   ["bitcoinAnchors", "createAnchorRecord", { listId: "L", stateHash: "hash", stateSnapshot: "snapshot" }],
   ["bitcoinAnchors", "updateAnchorStatus", { anchorId: "ANCHOR", status: "confirmed" }],
@@ -171,6 +170,18 @@ for (const role of roles) test(`${role}: owner-only metadata, publishing/envelop
       assert.deepEqual(ctx.rows, before);
     }
   }
+});
+
+for (const role of roles.filter(r => r !== "owner")) test(`${role}: cannot submit entries to a list's Original`, async () => {
+  const ctx = make({ published: true });
+  const before = structuredClone(ctx.rows);
+  for (const suffix of ["", "Internal"]) {
+    await assert.rejects(
+      () => call("originalsHost", "submitEntry" + suffix, ctx.action, { listId: "L", original: "did:vh:x", entry: "{}", resources: [], ...credentials(role) }),
+      role === "anonymous" ? authDenied : denied,
+    );
+  }
+  assert.deepEqual(ctx.rows, before);
 });
 
 test("public reads remain public; bookmarks and historical authors are never edit grants", async () => {
@@ -380,49 +391,6 @@ test("notification generation rechecks current view access at scheduled-send loo
   assert.deepEqual(await tokens(), []);
 });
 
-test("viewer/editor personal copies are private, remap tags, survive source revocation/deletion, and never mutate the original", async () => {
-  for (const role of ["owner", "editor", "viewer"]) {
-    const ctx = make({ published: true }); ctx.rows.items[0].attachments = [];
-    const source = structuredClone(ctx.rows.lists[0]);
-    const sourceItems = structuredClone(ctx.rows.items.filter(i => i.listId === "L"));
-    const result = await call("lists", "copyList", ctx, { ...copyArgs, ...credentials(role) });
-    const copy = ctx.rows.lists.find(l => l._id === result.listId);
-    assert.equal(copy.ownerDid, `did:${role}`);
-    assert.equal(copy.assetDid, "did:cel:copy");
-    if (role !== "owner") assert.equal(copy.categoryId, undefined);
-    assert.equal(ctx.rows.publications.some(p => p.listId === copy._id), false);
-    assert.equal(ctx.rows.listGrants.some(g => g.listId === copy._id), false);
-    assert.deepEqual(ctx.rows.lists.find(l => l._id === "L"), source);
-    assert.deepEqual(ctx.rows.items.filter(i => i.listId === "L"), sourceItems);
-    const copiedItems = ctx.rows.items.filter(i => i.listId === copy._id);
-    assert.equal(copiedItems.length, 2);
-    const copiedParent = copiedItems.find(i => i.name === "Secret item");
-    assert.notEqual(copiedParent.tags[0], "T");
-    assert.equal(ctx.rows.tags.find(t => t._id === copiedParent.tags[0]).listId, copy._id);
-    assert.equal(copiedItems.find(i => i.name === "Child").parentId, copiedParent._id);
-    assert.equal(copiedParent.vcProofs, undefined);
-    if (role !== "owner") await call("listGrants", "revokeListGrant", ctx, { listId: "L", grantId: `G-L-${role}`, ...credentials("owner") });
-    await call("lists", "deleteList", ctx, { listId: "L", ...credentials("owner") });
-    assert.equal((await call("items", "getListItems", ctx, { listId: copy._id, ...credentials(role) })).length, 2);
-    await call("tags", "updateTag", ctx, { tagId: copiedParent.tags[0], name: "Independent", ...credentials(role) });
-  }
-});
-
-test("attachment-copy guard rejects object, legacy and mixed arrays before destination/envelope/reward writes; notes remain unsupported", async () => {
-  for (const attachments of [[attachment], ["legacy-storage-id"], ["legacy-storage-id", attachment]]) {
-    const ctx = make(); ctx.rows.items[0].attachments = attachments;
-    ctx.rows.referrals.push({ _id: "REF", refereeId: "U-viewer", referrerId: "U-owner" });
-    const before = structuredClone(ctx.rows);
-    await assert.rejects(() => call("lists", "copyList", ctx, { ...copyArgs, ...credentials("viewer") }), /Copying lists with attachments is not supported yet.*Export attachments separately/);
-    assert.deepEqual(ctx.rows, before);
-    assert.deepEqual(ctx.scheduled, []);
-    assert.deepEqual(bucket.calls, []);
-  }
-  const ctx = make();
-  await assert.rejects(() => call("lists", "copyList", ctx, { ...copyArgs, sourceListId: "N", ...credentials("viewer") }), /Notes cannot be copied/);
-  await assert.rejects(() => call("lists", "copyList", ctx, { ...copyArgs, ...credentials("outsider") }), denied);
-});
-
 test("resource deletion and bounded account erasure clean accepted grants without transferring resource ownership", async () => {
   const resource = make();
   await call("lists", "deleteList", resource, { listId: "N", ...credentials("owner") });
@@ -513,15 +481,6 @@ test("anchor ID substitution and malformed anchor associations fail closed", asy
     ctx.rows.bitcoinAnchors.push(anchor);
     await assert.rejects(() => call("bitcoinAnchors", "getAnchor", ctx, { anchorId: anchor._id, ...credentials("owner") }), denied);
   }
-});
-
-test("API copy creation requires write scope even for an owner, while a viewer key with that scope can make its own private copy", async () => {
-  const ctx = make();
-  ctx.rows.agentApiKeys.find(k => k._id === "KEY-owner").scopes = ["items:read"];
-  await assert.rejects(() => call("lists", "copyListInternal", ctx, { ...copyArgs, apiKey: "key-owner" }), /Missing scope/);
-  const copied = await call("lists", "copyListInternal", ctx, { ...copyArgs, apiKey: "key-viewer" });
-  assert.equal(ctx.rows.lists.find(l => l._id === copied.listId).ownerDid, "did:viewer");
-  assert.equal(ctx.rows.publications.some(p => p.listId === copied.listId), false);
 });
 
 test("anchor verification is read-only for viewers/public readers and read-scoped keys without granting signing or anchor writes", async () => {

@@ -40,15 +40,13 @@ renaming leaves existing values as issued.
 
 Historical JSON wrappers without signatures are labeled **unsigned**. Opaque or
 potentially genuine historical proof material is labeled **unverified** in the
-action presentation, not destroyed or promoted to verified. Existing CEL envelope
-and WebVH verification remain separate. A valid asset history does not prove that
+action presentation, not destroyed or promoted to verified. A list's Original (its
+did:vh history) and WebVH verification remain separate. A valid asset history does not prove that
 an action-placeholder JSON was signed.
 
 Do not fabricate historical signatures or alter genuine evidence's signed bytes
 or historical identity bindings. The legacy DID migrations still rewrite the
-placeholder wrapper fields, and `celAssetDids` still rebuilds a legacy list's
-unsigned ownership placeholder for its new asset DID (the constructor now lives
-in that migration, its only remaining user). Action records are kept out of
+placeholder wrapper fields. Action records are kept out of
 every rewrite path, because their payload is meant to be signed as written.
 
 ## Identifier badges and evidence boundaries
@@ -71,8 +69,8 @@ Historical attribution records may still be unsigned.
 
 Bitcoin anchor status remains a separate claim within the chip: confirmed anchors
 say **anchored** and retain their timestamp and transaction details, pending
-anchors say **anchoring**, and missing anchors say **not anchored**. The provenance panel's CEL replay and WebVH verification
-paths are unchanged; successful event-log verification is not action-record or
+anchors say **anchoring**, and missing anchors say **not anchored**. The provenance panel's Original and WebVH verification
+paths are separate; a verified signed history is not action-record or
 personal-ownership verification.
 
 ## Custody
@@ -101,16 +99,15 @@ replay, or the HTTP API:
 | `item.created` | `addItem`; each item of `createListFromTemplate`; the next occurrence generated when a recurring item is completed |
 | `item.completed` | `checkItem`, `batchCheckItems`, `checkSharedItem` (DID resource toggle) |
 | `item.reopened` | `uncheckItem`, `batchUncheckItems`, `uncheckSharedItem` (DID resource toggle) |
-| `list.created` | `createList` (lists and notes), `copyList`, `createListFromTemplate` |
+| `list.created` | `createList` (lists and notes), `createListFromTemplate` |
 | `list.renamed` | `renameList` |
 
 A batch writes one record per item, identical in shape to the record the
 individual call writes. Recording happens inside the mutation and schedules
 nothing, so it cannot fail or delay the write.
 
-Not recorded: item edits other than the above, deletion, reordering,
-assignment, and the items carried by `copyList` (they keep their original
-attribution fields, so a creation record would claim someone else's work).
+Not recorded: item edits other than the above, deletion, reordering, and
+assignment.
 
 ## Payload (version 1)
 
@@ -126,7 +123,7 @@ JSON cannot carry are never put in a payload.
   "action": "item.completed",
   "subject": {
     "listId": "<lists row id>",
-    "listAssetDid": "did:cel:…",        // omitted when the list has none
+    "listAssetDid": "did:vh:…",         // omitted when the list has none
     "itemId": "<items row id>"           // item.* actions only
   },
   "before": { "checked": false },        // null for *.created

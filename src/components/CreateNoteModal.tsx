@@ -10,7 +10,6 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
-import { createNoteAsset } from "../lib/originals";
 import { CategorySelector } from "./lists/CategorySelector";
 import { Panel } from "./ui/Panel";
 
@@ -44,10 +43,7 @@ export function CreateNoteModal({ onClose }: { onClose: () => void }) {
     haptic('medium');
 
     try {
-      const asset = await createNoteAsset(trimmed, did);
       const listId = await createList({
-        assetDid: asset.assetDid,
-        celEnvelope: asset.envelope,
         name: trimmed,
         categoryId,
         createdAt: Date.now(),

@@ -17,17 +17,19 @@ await build({
   bundle: true, jsx: 'automatic', platform: 'node', format: 'esm',
   external: ['react', 'react/jsx-runtime', 'react-router-dom', 'convex/server'],
   plugins: [{ name: 'provenance-fixture', setup(b) {
-    b.onResolve({ filter: /(?:lib\/(authenticatedConvex|originals)|hooks\/(useCurrentUser|useSettings))$/ }, ({ path }) => ({ path: path.split('/').pop(), namespace: 'fixture' }));
+    b.onResolve({ filter: /(?:lib\/(authenticatedConvex|originals)|hooks\/(useCurrentUser|useSettings|useListOriginal)|^\.\/useListOriginal)$/ }, ({ path }) => ({ path: path.split('/').pop(), namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path }) => ({ contents: {
       authenticatedConvex: 'export const useQuery=(ref,args)=>globalThis.__provenanceQuery?.(ref,args)??null; export const useMutation=()=>async()=>{};',
       useCurrentUser: 'export const useCurrentUser=()=>({did:"did:owner"});',
       useSettings: 'export const useSettings=()=>({haptic:()=>{}});',
-      originals: 'export const verifyListEnvelope=async()=>({verified:false}); export const isRetroactiveGenesis=()=>false; export const createListAsset=async()=>{};',
+      useListOriginal: 'export const useOriginalsClient=()=>globalThis.__originalsClient??(globalThis.__originalsClient={});',
+      // verifyList is the real check's boundary: tests say what it found.
+      originals: 'export const verifyList=async(client,listId)=>globalThis.__verifyList?.(listId)??null; export const isLegacyAssetDid=d=>!!d&&!d.startsWith("did:vh:");',
     }[path] }));
   } }],
 });
 const { ItemProvenanceInfo, ListProvenanceInfo } = await import(pathToFileURL(`${process.cwd()}/tmp/provenance-presentation/component.mjs`));
-afterEach(() => { cleanup(); delete globalThis.__provenanceQuery; });
+afterEach(() => { cleanup(); delete globalThis.__provenanceQuery; delete globalThis.__verifyList; });
 
 /** Serves stable query results by function name, as Convex subscriptions do. */
 function serve(results) {
@@ -141,4 +143,52 @@ test('list-level records and historical placeholders are presented side by side 
   assert.match(container.textContent, /List creation recordSigned/);
   assert.match(container.textContent, /Historical ownership record \(unsigned\)/);
   await waitFor(() => assert.match(container.textContent, /not independently verified here/));
+});
+
+/** The list provenance panel, opened. */
+function openList(list) {
+  const view = render(React.createElement(MemoryRouter, null, React.createElement(ListProvenanceInfo, { list })));
+  fireEvent.click(view.container.querySelector('button'));
+  return view;
+}
+const hosted = { did: 'did:vh:zList', log: '', head: '2-zHead', author: null, resources: [] };
+
+test('a legacy did:cel list says it is re-minted on open, never that its history verified', () => {
+  serve({ 'originalsHost:getAccepted': null });
+  globalThis.__verifyList = () => { throw new Error('nothing to verify'); };
+  const { container } = openList({ _id: 'L', assetDid: 'did:cel:old', name: 'List', ownerDid: 'did:owner', createdAt: 1 });
+  assert.match(container.textContent, /Signed History/);
+  assert.match(container.textContent, /Made before Originals 5\. Its owner re-mints it when they open it\./);
+  assert.doesNotMatch(container.textContent, /verified/i);
+});
+
+test('a list with no Original yet says when it will be minted, and shows no asset DID', () => {
+  serve({ 'originalsHost:getAccepted': null });
+  const { container } = openList({ _id: 'L', name: 'List', ownerDid: 'did:owner', createdAt: 1 });
+  assert.match(container.textContent, /Not an Original yet\. It's minted when its owner next opens it\./);
+  assert.doesNotMatch(container.textContent, /List DID \(Original\)/);
+});
+
+test('an Original is called verified only once the check passes, with the version it is valid as of', async () => {
+  serve({ 'originalsHost:getAccepted': hosted });
+  let finish;
+  globalThis.__verifyList = listId => {
+    assert.equal(listId, 'L');
+    return new Promise(resolve => { finish = resolve; });
+  };
+  const { container } = openList({ _id: 'L', assetDid: 'did:vh:zList', name: 'List', ownerDid: 'did:owner', createdAt: 1 });
+  assert.match(container.textContent, /List DID \(Original\)/);
+  assert.match(container.textContent, /Verifying signed history/);
+  assert.doesNotMatch(container.textContent, /history verified/);
+  finish({ did: 'did:vh:zList', verified: true, content: 'available', validAsOf: { checkpoint: '2-zHead', signers: [] }, checkpoint: '2-zHead', reasons: ['not-anchored'] });
+  await waitFor(() => assert.match(container.textContent, /Signed history verified, as of version 2/));
+});
+
+test('a failed check names why, and never reads as verified', async () => {
+  serve({ 'originalsHost:getAccepted': hosted });
+  globalThis.__verifyList = async () => ({ did: 'did:vh:zList', verified: false, content: 'partial', validAsOf: null,
+    checkpoint: '2-zHead', reasons: ['not-anchored'], error: "Its content doesn't match its signed history" });
+  const { container } = openList({ _id: 'L', assetDid: 'did:vh:zList', name: 'List', ownerDid: 'did:owner', createdAt: 1 });
+  await waitFor(() => assert.match(container.textContent, /Signed history failed verification: Its content doesn't match its signed history/));
+  assert.doesNotMatch(container.textContent, /history verified/);
 });

@@ -12,7 +12,6 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { trackTemplate } from "../lib/analytics";
 import { getRunbook } from "../../convex/lib/templateCatalog";
-import { createListAsset } from "../lib/originals";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
 
@@ -44,12 +43,10 @@ export function Templates() {
     haptic('medium');
 
     try {
-      const listAsset = await createListAsset(template.name, did);
       if (getRunbook(template.id)) trackTemplate("template_use_clicked", template.id);
       const listId = await createListFromTemplate({
         builtinId: template.id,
-        assetDid: listAsset.assetDid,
-        celEnvelope: listAsset.envelope,
+        creationKey: crypto.randomUUID(),
         listName: template.name,
       });
 
@@ -72,12 +69,10 @@ export function Templates() {
     haptic('medium');
 
     try {
-      const listAsset = await createListAsset(template.name, did);
       const listId = await createListFromTemplate({
         templateId: template._id,
         listName: template.name,
-        assetDid: listAsset.assetDid,
-        celEnvelope: listAsset.envelope,
+        creationKey: crypto.randomUUID(),
       });
 
       haptic('success');

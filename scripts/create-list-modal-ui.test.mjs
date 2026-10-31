@@ -25,7 +25,6 @@ await build({
       '/_generated/api': 'export const api={lists:{createList:"create",getUserLists:"lists"}};',
       '/hooks/useCurrentUser': 'export const useCurrentUser=()=>({did:globalThis.__createListModalUi.did});',
       '/hooks/useSettings': 'export const useSettings=()=>({haptic:value=>globalThis.__createListModalUi.feedback.push(value)});',
-      '/lib/originals': 'export const createListAsset=(...args)=>globalThis.__createListModalUi.sign(...args);',
       '/lib/planLimit': 'export const isPlanLimitError=error=>error.message==="plan limit";',
       '/lib/noteBody': 'export const isNote=()=>false;',
       '/lists/CategorySelector': 'export const CategorySelector=()=>null;',
@@ -49,10 +48,9 @@ function deferred() {
   return { promise, resolve, reject };
 }
 function mount({ navigateOnCreated = false } = {}) {
-  const calls = { sign: [], save: [], created: [], closed: 0 };
-  const requests = { sign: [], save: [] };
+  const calls = { save: [], created: [], closed: 0 };
+  const requests = { save: [] };
   Object.assign(fixture, { did: 'did:owner', feedback: [], analytics: [],
-    sign: (...args) => { calls.sign.push(args); const d = deferred(); requests.sign.push(d); return d.promise; },
     save: args => { calls.save.push(args); const d = deferred(); requests.save.push(d); return d.promise; },
   });
   const controls = {};
@@ -88,18 +86,18 @@ function mount({ navigateOnCreated = false } = {}) {
     }
   };
   const finishAnimation = async () => act(async () => { await new Promise(resolve => setTimeout(resolve, 220)); });
-  const finishSign = async (index = 0) => act(async () => requests.sign[index].resolve({ assetDid: `asset:${index}`, envelope: '{}' }));
   const finishSave = async (index = 0, id = 'listA') => act(async () => requests.save[index].resolve(id));
-  return { view, calls, requests, controls, submit, type, close, finishAnimation, finishSign, finishSave };
+  return { view, calls, requests, controls, submit, type, close, finishAnimation, finishSave };
 }
 
-test('rapid form submissions sign/save once and report a successful creation once', async () => {
+// Creation is one save: the list's Original is minted when its owner opens it.
+test('rapid form submissions save once and report a successful creation once', async () => {
   const f = mount(); f.type(' Weekend ');
   act(() => { f.submit(); f.submit(); });
-  assert.equal(f.calls.sign.length, 1);
-  await f.finishSign();
   assert.equal(f.calls.save.length, 1);
   assert.equal(f.calls.save[0].name, 'Weekend');
+  assert.equal('assetDid' in f.calls.save[0], false, 'creation mints no asset');
+  assert.equal('celEnvelope' in f.calls.save[0], false);
   await f.finishSave();
   assert.deepEqual(f.calls.created, [['listA', 'Weekend']]);
   assert.equal(f.controls.location.pathname, '/lists');
@@ -107,24 +105,23 @@ test('rapid form submissions sign/save once and report a successful creation onc
 });
 
 for (const method of ['header', 'footer', 'backdrop', 'escape', 'swipe']) {
-  for (const phase of ['sign', 'save']) {
+  for (const phase of ['save']) {
     for (const outcome of ['success', 'failure', 'plan limit']) {
       test(`${method} dismissal during ${phase} suppresses late ${outcome}`, async () => {
         const f = mount({ navigateOnCreated: true }); f.type('Old list'); f.submit();
-        if (phase === 'save') await f.finishSign();
         f.close(method);
         // Resolve during Panel's closing animation, before its delayed onClose.
         const feedback = [...fixture.feedback];
         const analytics = [...fixture.analytics];
         await act(async () => {
           const d = f.requests[phase][0];
-          if (outcome === 'success') d.resolve(phase === 'sign' ? { assetDid: 'asset:old', envelope: '{}' } : 'oldList');
+          if (outcome === 'success') d.resolve('oldList');
           else d.reject(new Error(outcome));
         });
         assert.deepEqual(f.calls.created, []);
         assert.deepEqual(fixture.feedback, feedback);
         assert.deepEqual(fixture.analytics, analytics);
-        assert.equal(f.calls.save.length, phase === 'save' ? 1 : 0);
+        assert.equal(f.calls.save.length, 1);
         assert.equal(f.controls.location.pathname, '/lists');
         assert.equal(f.view.queryByText('Failed to create list. Please try again.'), null);
         assert.equal(f.view.queryByText("You've reached the free plan limit of 5 lists"), null);
@@ -142,7 +139,7 @@ for (const method of ['header', 'footer', 'backdrop', 'escape', 'swipe']) {
 
 for (const method of ['header', 'backdrop', 'escape', 'swipe']) {
   test(`${method} after success closes without opening the list`, async () => {
-    const f = mount(); f.type('Created'); f.submit(); await f.finishSign(); await f.finishSave();
+    const f = mount(); f.type('Created'); f.submit(); await f.finishSave();
     f.close(method); await f.finishAnimation();
     assert.equal(f.calls.closed, 1);
     assert.equal(f.controls.location.pathname, '/lists');
@@ -151,13 +148,13 @@ for (const method of ['header', 'backdrop', 'escape', 'swipe']) {
 
 for (const button of ['Go to list', 'Share with people']) {
   test(`${button} explicitly navigates after success`, async () => {
-    const f = mount(); f.type('Created'); f.submit(); await f.finishSign(); await f.finishSave();
+    const f = mount(); f.type('Created'); f.submit(); await f.finishSave();
     fireEvent.click(f.view.getByRole('button', { name: button }));
     assert.equal(f.controls.location.pathname, '/list/listA');
     assert.deepEqual(f.controls.location.state, button === 'Share with people' ? { openShare: true } : null);
   });
   test(`dismissal blocks ${button} during the closing animation`, async () => {
-    const f = mount(); f.type('Created'); f.submit(); await f.finishSign(); await f.finishSave();
+    const f = mount(); f.type('Created'); f.submit(); await f.finishSave();
     f.close('escape');
     fireEvent.click(f.view.getByRole('button', { name: button }));
     assert.equal(f.controls.location.pathname, '/lists');
@@ -168,7 +165,7 @@ for (const button of ['Go to list', 'Share with people']) {
 test('Cancel before submitting simply closes', () => {
   const f = mount(); f.close('footer');
   assert.equal(f.calls.closed, 1);
-  assert.equal(f.calls.sign.length, 0);
+  assert.equal(f.calls.save.length, 0);
   assert.equal(f.controls.location.pathname, '/lists');
 });
 
@@ -179,11 +176,10 @@ test('pending close stays enabled and explains that an in-flight save may finish
   assert.equal(f.view.queryByRole('button', { name: 'Cancel' }), null);
 });
 
-for (const phase of ['sign', 'save']) {
+for (const phase of ['save']) {
   for (const fails of [false, true]) {
     test(`unmount/remount isolates old ${phase} ${fails ? 'failure' : 'success'} from a new attempt`, async () => {
       const f = mount({ navigateOnCreated: true }); f.type('Old'); f.submit();
-      if (phase === 'save') await f.finishSign();
       act(() => f.controls.hide());
       act(() => f.controls.navigate('/newer'));
       act(() => f.controls.open());
@@ -192,16 +188,15 @@ for (const phase of ['sign', 'save']) {
       await act(async () => {
         const d = f.requests[phase][0];
         if (fails) d.reject(new Error('late failure'));
-        else d.resolve(phase === 'sign' ? { assetDid: 'asset:old', envelope: '{}' } : 'oldList');
+        else d.resolve('oldList');
       });
       assert.deepEqual(f.calls.created, []);
       assert.deepEqual(fixture.feedback, feedback);
       assert.equal(f.controls.location.pathname, '/newer');
       assert.equal(f.view.getByRole('textbox', { name: 'List name' }).value, 'New');
       f.submit();
-      assert.equal(f.calls.sign.length, 2, 'old finally must not unlock the newer submit');
-      await f.finishSign(1);
-      await f.finishSave(phase === 'save' ? 1 : 0, 'newList');
+      assert.equal(f.calls.save.length, 2, 'old finally must not unlock the newer submit');
+      await f.finishSave(1, 'newList');
       assert.deepEqual(f.calls.created, [['newList', 'New']]);
       assert.equal(f.controls.location.pathname, '/list/newList');
     });
@@ -209,23 +204,22 @@ for (const phase of ['sign', 'save']) {
 }
 
 test('visible failure permits retry and clears the prior plan-limit message', async () => {
-  const f = mount(); f.type('Retry'); f.submit(); await f.finishSign();
+  const f = mount(); f.type('Retry'); f.submit();
   const originalError = console.error; console.error = () => {};
   try { await act(async () => f.requests.save[0].reject(new Error('plan limit'))); }
   finally { console.error = originalError; }
   assert.ok(f.view.getByText("You've reached the free plan limit of 5 lists"));
   f.submit();
   assert.equal(f.view.queryByText("You've reached the free plan limit of 5 lists"), null);
-  assert.equal(f.calls.sign.length, 2);
-  await f.finishSign(1); await f.finishSave(1);
+  assert.equal(f.calls.save.length, 2);
+  await f.finishSave(1);
   assert.equal(f.calls.created.length, 1);
 });
 
-for (const phase of ['sign', 'save']) {
+for (const phase of ['save']) {
   for (const fails of [false, true]) {
     test(`in-place identity change isolates old ${phase} ${fails ? 'failure' : 'success'}`, async () => {
       const f = mount({ navigateOnCreated: true }); f.type('Old account'); f.submit();
-      if (phase === 'save') await f.finishSign();
       fixture.did = 'did:new-owner';
       act(() => f.controls.refresh());
       assert.equal(f.view.getByRole('textbox', { name: 'List name' }).value, '');
@@ -234,13 +228,13 @@ for (const phase of ['sign', 'save']) {
       await act(async () => {
         const d = f.requests[phase][0];
         if (fails) d.reject(new Error('late old account failure'));
-        else d.resolve(phase === 'sign' ? { assetDid: 'asset:old', envelope: '{}' } : 'oldList');
+        else d.resolve('oldList');
       });
       assert.deepEqual(f.calls.created, []);
       assert.deepEqual(fixture.feedback, feedback);
       assert.equal(f.controls.location.pathname, '/lists');
-      f.submit(); assert.equal(f.calls.sign.length, 2);
-      await f.finishSign(1); await f.finishSave(phase === 'save' ? 1 : 0, 'newList');
+      f.submit(); assert.equal(f.calls.save.length, 2);
+      await f.finishSave(1, 'newList');
       assert.deepEqual(f.calls.created, [['newList', 'New account']]);
     });
   }

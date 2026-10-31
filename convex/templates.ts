@@ -8,7 +8,6 @@ import { query } from "./_generated/server";
 import { BUILTIN_TEMPLATES } from "./lib/templateCatalog";
 import { assertListQuota, grantFirstListReferral } from "./lists";
 import { itemCreated, listCreated, recordActions } from "./lib/actionRecords";
-import { upsertListEnvelope } from "./lib/listEnvelope";
 // Id type used in function arguments via v.id()
 
 const templateItemValidator = v.object({
@@ -189,9 +188,9 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
     builtinId: v.optional(v.string()),
     expectedOwnerDid: v.optional(v.string()),
     listName: v.string(),
-    // Genesis happens client-side (only the client holds the key), same as lists.createList.
-    assetDid: v.string(),
-    celEnvelope: v.optional(v.string()),
+    // Chosen by the client and kept across transport retries, so a retry
+    // returns the list the first attempt created.
+    creationKey: v.string(),
   },
   handler: async (ctx, args) => {
     if (args.expectedOwnerDid && args.expectedOwnerDid !== ctx.actor.did) throw new Error("Account changed; select the template again");
@@ -205,11 +204,11 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
       throw new Error("Not authorized to use this template");
     }
     if (!args.listName.trim() || args.listName.length > 200) throw new Error("List name must be between 1 and 200 characters");
-    // A client retains the minted asset across transport retries. Convex serializes
-    // this indexed read with insertion, so concurrent retries create one list.
-    const existing = await ctx.db.query("lists").withIndex("by_asset_did", q => q.eq("assetDid", args.assetDid)).first();
+    // Convex serializes this indexed read with insertion, so concurrent retries
+    // create one list.
+    const existing = await ctx.db.query("lists").withIndex("by_creation_key", q => q.eq("creationKey", args.creationKey)).first();
     if (existing) {
-      if (existing.ownerDid !== ctx.actor.did || existing.templateSource !== templateSource) throw new Error("Asset already used");
+      if (existing.ownerDid !== ctx.actor.did || existing.templateSource !== templateSource) throw new Error("Creation key already used");
       return existing._id;
     }
     const { owner, isFirstList } = await assertListQuota(ctx, ctx.actor.did);
@@ -218,7 +217,7 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
 
     // Create the list
     const listId = await ctx.db.insert("lists", {
-      assetDid: args.assetDid,
+      creationKey: args.creationKey,
       templateSource,
       name: args.listName,
       ownerDid: ctx.actor.did,
@@ -226,11 +225,8 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
     });
 
     const origin = { kind: "template" as const, source: templateSource };
-    const listRef = { _id: listId, assetDid: args.assetDid };
+    const listRef = { _id: listId };
     const actions = [listCreated({ ...listRef, name: args.listName }, origin)];
-    if (args.celEnvelope) {
-      await upsertListEnvelope(ctx, listId, args.assetDid, args.celEnvelope);
-    }
 
     // Create items from template
     for (const templateItem of template.items) {

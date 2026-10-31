@@ -68,7 +68,8 @@ async function seed(options) {
   const token = `e2e.${Buffer.from(JSON.stringify({ sub: key, exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url')}.fixture`;
   const lists = Array.from({ length: options.lists ?? 0 }, (_, i) => ({
     _id: `lists:mocklist${i}`, _creationTime: i + 1, name: `Test List ${i + 1}`,
-    ownerDid: user.did, assetDid: `did:cel:fixture-${i}`, createdAt: i + 1,
+    // Seeded lists are already Originals, so no page asks to re-mint them.
+    ownerDid: user.did, assetDid: `did:vh:fixture-${i}`, createdAt: i + 1,
   }));
   const items = (options.items ?? []).map((item, i) => ({
     _id: `items:mockitem${i}`, _creationTime: i + 1, listId: 'lists:mocklist0',
@@ -128,14 +129,22 @@ function query(account, path, args) {
     case 'referrals:getReferralStats': return { referralCount: 0, totalCredits: 0, earnedMonths: 0 };
     case 'referrals:getReferralCode': return { code: 'e2e-code' };
     case 'notifications:hasSubscription': return false;
-    case 'lists:getListEnvelope': return null;
+    // No device signer in E2E: lists created here stay unminted, and nothing is
+    // ever submitted. A did:cel assetDid would be a legacy list.
+    case 'originalsHost:getOriginalStatus': {
+      const lists = args.listIds.map(id => account.lists.find(l => l._id === id)).filter(Boolean);
+      return {
+        unminted: lists.filter(l => !l.assetDid).map(l => l._id),
+        legacy: lists.filter(l => l.assetDid && !l.assetDid.startsWith('did:vh:')).map(l => l._id),
+      };
+    }
+    case 'originalsHost:getAccepted': return null;
     case 'actionRecords:getListActionRecords': return account.actionRecords.filter(r => r.listId === args.listId && !r.itemId);
     case 'actionRecords:getItemActionRecords': return account.actionRecords.filter(r => r.itemId === args.itemId);
     case 'listGrants:getSharedWithMe':
     case 'listGrants:getListGrants':
     case 'invitations:getListInvitations':
     case 'invitations:getPendingInvitations':
-    case 'lists:getLegacyListIds':
     case 'publication:getUserBookmarkIds':
     case 'categories:getUserCategories':
     case 'templates:getPublicTemplates':
@@ -212,12 +221,12 @@ async function apply(account, endpoint, args) {
       if (args.expectedOwnerDid && args.expectedOwnerDid !== user.did) throw new Error('Account changed');
       const template = BUILTIN_TEMPLATES.find(t => t.id === args.builtinId);
       if (!template) throw new Error('Template not found');
-      const previous = account.lists.find(l => l.assetDid === args.assetDid);
+      const previous = account.lists.find(l => l.creationKey === args.creationKey);
       if (previous) { result = previous._id; break; }
       if (account.options.failCreateList || account.lists.length >= 5) throw new Error('PLAN_LIMIT: Free plan allows a maximum of 5 lists');
       result = `lists:created${++account.nextId}`;
       account.lists.push({ _id: result, _creationTime: Date.now(), name: args.listName,
-        assetDid: args.assetDid, ownerDid: user.did, createdAt: Date.now() });
+        creationKey: args.creationKey, ownerDid: user.did, createdAt: Date.now() });
       account.items.push(...template.items.map((item, i) => ({ ...item, _id: `items:template${++account.nextId}`,
         _creationTime: Date.now(), listId: result, checked: false, createdByDid: user.did, createdAt: Date.now(), order: i })));
       const origin = { kind: 'template', source: `builtin:${args.builtinId}` };
@@ -233,8 +242,9 @@ async function apply(account, endpoint, args) {
     case 'lists:createList': {
       if (account.options.failCreateList) throw new Error('PLAN_LIMIT: Free plan allows a maximum of 5 lists');
       result = `lists:created${++account.nextId}`;
+      // The list's Original is minted later, by the owner's device.
       account.lists.push({ _id: result, _creationTime: Date.now(), name: args.name,
-        assetDid: args.assetDid, ownerDid: user.did, createdAt: args.createdAt });
+        ownerDid: user.did, createdAt: args.createdAt });
       await recordAction(account, { action: 'list.created', subject: listSubject(account.lists.at(-1)),
         before: null, after: { name: args.name, kind: args.kind ?? 'list' } });
       break;

@@ -18,6 +18,7 @@ import {
   recordPublishedVersion,
   ListNotAuthorableError,
 } from "../../lib/originals";
+import { useOriginalsClient } from "../../hooks/useListOriginal";
 import { Panel } from "../ui/Panel";
 
 interface PublishModalProps {
@@ -34,15 +35,15 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
   const publicationStatus = useQuery(api.publication.getPublicationStatus, {
     listId: list._id,
   });
-  // Both feed the signed snapshot the publish records in the list's own log.
-  const storedEnvelope = useQuery(api.lists.getListEnvelope, { listId: list._id });
+  // Feeds the signed snapshot the publish records in the list's Original.
   const items = useQuery(api.items.getListItems, { listId: list._id });
+  const originals = useOriginalsClient();
 
   const [isPublishing, setIsPublishing] = useState(false);
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Published, but the list could not sign the event recording it.
+  // Published, but the entry recording it could not be signed.
   const [unrecorded, setUnrecorded] = useState(false);
 
   const isPublished = publicationStatus?.status === "active";
@@ -64,20 +65,19 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
       // The list is a resource under the user's DID — no separate DID needed.
       const listResourceDid = buildListResourceDid(did, list._id);
 
-      // Record the published state in the list's own event log first, so the
+      // Record the published state in the list's Original first, so the
       // publication row and the log cannot disagree about what went public.
-      // A list whose key was lost to the migration still publishes; it just
-      // cannot sign the event, and we say so rather than failing the publish.
-      let celEnvelope: string | undefined;
+      // A list that can't be signed now (no Original yet, or no live Turnkey
+      // session) still publishes, and we say it went unrecorded.
       setUnrecorded(false);
 
-      if (storedEnvelope?.envelope) {
+      if (list.assetDid?.startsWith("did:vh:")) {
         try {
-          const recorded = await recordPublishedVersion(
-            storedEnvelope.envelope,
+          await recordPublishedVersion(
+            originals,
+            { listId: list._id, ownerDid: list.ownerDid, did: list.assetDid },
             buildListSnapshot(list.name, items ?? [])
           );
-          celEnvelope = recorded.envelope;
         } catch (err) {
           if (err instanceof ListNotAuthorableError) {
             setUnrecorded(true);
@@ -85,12 +85,13 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
             throw err;
           }
         }
+      } else {
+        setUnrecorded(true);
       }
 
       await publishListMutation({
         listId: list._id,
         webvhDid: listResourceDid,
-        celEnvelope,
       });
 
       haptic('success');
@@ -345,9 +346,8 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
 
         {unrecorded && (
           <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm">
-            Published, but this list couldn't sign the event recording it — its
-            signing key isn't on this device. Make an authorable copy from the
-            list's provenance details to keep a verifiable history.
+            Published, but you weren't able to sign it, so the publish isn't in
+            the list's signed history. Sign in again to sign future publishes.
           </div>
         )}
 
