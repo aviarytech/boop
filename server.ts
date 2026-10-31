@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { anonDistinctId, captureEvent } from "./convex/lib/analytics";
+import { serveDidPath } from "./didProxy";
 
 const port = Number(process.env.PORT || 3000);
 const distDir = join(process.cwd(), "dist");
@@ -275,7 +276,8 @@ Bun.serve({
     try {
       const hostname = hostnameFromRequest(request);
       if (isAppHostname(hostname)) {
-        return serveApp(request);
+        const did = await serveDidPath(request, process.env.CONVEX_HTTP_URL || process.env.VITE_CONVEX_HTTP_URL);
+        return did ?? serveApp(request);
       }
       return serveHostedSite(request, hostname);
     } catch (error) {
