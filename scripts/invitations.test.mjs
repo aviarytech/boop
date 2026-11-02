@@ -37,7 +37,8 @@ test("future and existing accounts receive identical viewer-default invitations;
   for (const email of ["recipient@example.test", "pending@example.test"]) {
     const ctx = make();
     const invite = await create(ctx, { email: ` ${email.toUpperCase()} ` });
-    assert.deepEqual(Object.keys(invite).sort(), ["invitationId", "version"]);
+    assert.deepEqual(Object.keys(invite).sort(), ["invitationId", "outcome", "version"]);
+    assert.equal(invite.outcome, "sent");
     assert.equal(ctx.rows.listInvitations[0].email, email);
     assert.equal(ctx.rows.listInvitations[0].role, "viewer");
     assert.equal(ctx.reads.some(r => r.index === "by_email"), false);
@@ -128,20 +129,54 @@ test("existing grant role is preserved; accepted invitation binds to account eve
   await assert.rejects(() => accept(ctx, invite, differentAccount), unavailable);
 });
 
-test("request idempotency survives later state changes; duplicate create does not resend or change role", async () => {
+const locator = ({ invitationId, version }) => ({ invitationId, version });
+
+test("request idempotency survives later state changes", async () => {
   const ctx = make();
   const first = await create(ctx, { requestId: "stable_request" });
-  assert.deepEqual(await create(ctx, { requestId: "stable_request" }), first);
-  assert.deepEqual(await create(ctx, { role: "editor" }), first);
+  assert.deepEqual(await create(ctx, { requestId: "stable_request" }), locator(first));
   assert.equal(ctx.scheduled.length, 2);
-  assert.equal(ctx.rows.listInvitations[0].role, "viewer");
   await assert.rejects(() => create(ctx, { requestId: "stable_request", role: "editor" }), /already used/);
   const fresh = await call("resendInvitation", ctx, { ...manage(first), requestId: "stable_resend" });
   await call("revokeInvitation", ctx, manage(fresh));
   assert.deepEqual(await call("resendInvitation", ctx, { ...manage(first), requestId: "stable_resend" }), fresh);
-  assert.deepEqual(await create(ctx, { requestId: "stable_request" }), first);
+  assert.deepEqual(await create(ctx, { requestId: "stable_request" }), locator(first));
   assert.equal(ctx.rows.listInvitations[0].status, "revoked");
   assert.equal(ctx.scheduled.length, 4);
+});
+
+test("inviting a pending, expired or revoked recipient again issues a fresh invitation with the chosen role", async () => {
+  const ctx = make();
+  const first = await create(ctx);
+  const again = await create(ctx, { role: "editor" });
+  assert.equal(again.outcome, "sent");
+  assert.equal(again.invitationId, first.invitationId);
+  assert.equal(again.version, first.version + 1);
+  assert.equal(ctx.rows.listInvitations.length, 1);
+  assert.equal(ctx.rows.listInvitations[0].role, "editor");
+  assert.equal(ctx.scheduled.length, 4);
+  const auth = await login(ctx);
+  await assert.rejects(() => accept(ctx, first, auth), unavailable);
+  await call("revokeInvitation", ctx, manage(again));
+  const revived = await create(ctx);
+  assert.equal(revived.outcome, "sent");
+  assert.equal(ctx.rows.listInvitations[0].status, "pending");
+  assert.equal(ctx.rows.listInvitations[0].role, "viewer");
+  assert.equal((await accept(ctx, revived, auth)).role, "viewer");
+});
+
+test("inviting someone who already has access changes their role in place without an email", async () => {
+  const ctx = make(), invite = await create(ctx), auth = await login(ctx);
+  const { grantId } = await accept(ctx, invite, auth);
+  const scheduled = ctx.scheduled.length;
+  const same = await create(ctx);
+  assert.equal(same.outcome, "unchanged");
+  const upgraded = await create(ctx, { role: "editor" });
+  assert.equal(upgraded.outcome, "roleUpdated");
+  assert.deepEqual(locator(upgraded), locator(invite));
+  assert.equal(ctx.rows.listGrants.find(g => g._id === grantId).role, "editor");
+  assert.equal(ctx.rows.listInvitations[0].status, "accepted");
+  assert.equal(ctx.scheduled.length, scheduled);
 });
 
 test("owner and recipient budgets limit email abuse independently of account existence and product plan", async () => {

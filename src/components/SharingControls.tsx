@@ -35,9 +35,9 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
     if (!requests.current.has(key)) requests.current.set(key, randomId());
     return requests.current.get(key)!;
   }
-  async function run(operation: () => Promise<unknown>, success = "Changes saved.") {
+  async function run(operation: () => Promise<unknown>, success: string | ((value: unknown) => string) = "Changes saved.") {
     setBusy(true); setError(""); setNotice("");
-    try { await operation(); setNotice(success); }
+    try { const value = await operation(); setNotice(typeof success === "string" ? success : success(value)); }
     catch (cause) { setError(cause instanceof ConvexError && typeof cause.data === "string" ? cause.data : "Could not save. Check your connection and try again. If you’ve sent several invitations, wait before resending."); }
     finally { setBusy(false); }
   }
@@ -53,10 +53,20 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
     <form className="mt-6 space-y-4" onSubmit={e => {
       e.preventDefault();
       if (!canSend || busy) return;
+      const key = `create:${email.trim().toLowerCase()}:${role}`;
+      const recipient = email.trim();
       void run(async () => {
-        await create({ listId, email, role, requestId: requestId(`create:${email.trim().toLowerCase()}:${role}`) });
+        const created = await create({ listId, email, role, requestId: requestId(key) });
+        // A completed send is final; sending to the same person again is a new request.
+        requests.current.delete(key);
         setEmail("");
-      }, "Invitation recorded. Check its status below; use Resend for an existing invitation.");
+        return created;
+      }, value => {
+        const outcome = (value as { outcome?: string } | null)?.outcome;
+        if (outcome === "roleUpdated") return `${recipient} already had access. Their access is now ${role}.`;
+        if (outcome === "unchanged") return `${recipient} already has ${role} access. No email was sent.`;
+        return "Invitation recorded. Check its status below.";
+      });
     }}>
       <div><label className="block text-sm font-semibold mb-1" htmlFor="recipient-email">Recipient email</label>
         <input id="recipient-email" type="email" autoComplete="email" required maxLength={254} className={input} value={email} onChange={e => setEmail(e.target.value)} disabled={busy} placeholder="friend@example.com" /></div>

@@ -13,7 +13,7 @@ state.subscribe = listener => { state.listeners.add(listener); return () => stat
 state.notify = () => { state.revision++; for (const listener of state.listeners) listener(); };
 const pending = { invitationId: id, version: 1, inviter: "Alex", role: "viewer", expiresAt: Date.now() + 86400000 };
 function reset() {
-  Object.assign(state, { calls: [], queries: [], fail: false, mutationError: null, profile: { displayName: "Alex" }, pending: [pending], linked: pending,
+  Object.assign(state, { calls: [], queries: [], fail: false, mutationError: null, mutationResult: null, profile: { displayName: "Alex" }, pending: [pending], linked: pending,
     lists: [{ _id: "L", name: "My list", ownerDid: "did:owner" }, { _id: "N", name: "My note", kind: "note", ownerDid: "did:owner" }, { _id: "X", name: "Someone else's list", ownerDid: "did:other" }],
     publication: null, invitations: [{ ...pending, email: "friend@example.test", status: "pending", delivery: "failed" }], grants: [],
   });
@@ -31,7 +31,7 @@ await build({ entryPoints: ["src/pages/Invitations.tsx"], outfile: "tmp/invitati
       convex: `import {ConvexError} from "convex/values"; import {useSyncExternalStore} from "react"; import {getFunctionName} from "convex/server";
         export function useQuery(ref,args){const s=globalThis.__invitationUi;useSyncExternalStore(s.subscribe,()=>s.revision);const name=getFunctionName(ref);s.queries.push([name,args]);
           return {"invitations:getPendingInvitations":s.pending,"invitations:getInvitation":s.linked,"lists:getUserLists":s.lists,"invitations:getListInvitations":s.invitations,"listGrants:getListGrants":s.grants,"users:getMyPublicDisplayName":s.profile,"publication:getPublicationStatus":s.publication}[name];}
-        export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");if(s.mutationError)throw new ConvexError(s.mutationError);if(name==="users:setPublicDisplayName"){s.profile={displayName:args.displayName.trim()};s.notify();return s.profile;}return {listId:"accepted-list"};};}`,
+        export function useMutation(ref){return async args=>{const s=globalThis.__invitationUi; const name=getFunctionName(ref);s.calls.push([name,args]);if(s.fail)throw Error("network fixture");if(s.mutationError)throw new ConvexError(s.mutationError);if(s.mutationResult)return s.mutationResult;if(name==="users:setPublicDisplayName"){s.profile={displayName:args.displayName.trim()};s.notify();return s.profile;}return {listId:"accepted-list"};};}`,
     }[path] }));
   } }],
 });
@@ -84,6 +84,23 @@ test("owner chooses only owned resources; sends default viewer and retains retry
   fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
   await screen.findByText(/Invitation recorded/);
   assert.deepEqual(state.calls[1], first);
+});
+
+test("re-inviting reports a role change or no change, and a later send is a new request", async () => {
+  reset(); mount();
+  fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
+  const send = async (role, outcome) => {
+    state.mutationResult = { invitationId: id, version: 1, outcome };
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "friend@example.test" } });
+    fireEvent.change(screen.getByLabelText("Access"), { target: { value: role } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+  };
+  await send("editor", "roleUpdated");
+  await screen.findByText("friend@example.test already had access. Their access is now editor.");
+  await send("editor", "unchanged");
+  await screen.findByText("friend@example.test already has editor access. No email was sent.");
+  assert.equal(state.calls.length, 2);
+  assert.notEqual(state.calls[0][1].requestId, state.calls[1][1].requestId);
 });
 
 test("owner resend, pending-role changes and revoke use the current version", async () => {
