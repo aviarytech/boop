@@ -86,19 +86,31 @@ test("owner chooses only owned resources; sends default viewer and retains retry
   assert.deepEqual(state.calls[1], first);
 });
 
-test("re-inviting reports a role change or no change, and a later send is a new request", async () => {
-  reset(); mount();
+test("re-inviting previews the action, warns before a downgrade, and a later send is a new request", async () => {
+  reset(); state.invitations[0] = { ...state.invitations[0], status: "accepted", grantId: "G" };
+  state.grants = [{ _id: "G", recipientId: "U", role: "editor" }]; mount();
   fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
-  const send = async (role, outcome) => {
-    state.mutationResult = { invitationId: id, version: 1, outcome };
-    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "friend@example.test" } });
+  const type = role => {
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: " Friend@Example.test " } });
     fireEvent.change(screen.getByLabelText("Access"), { target: { value: role } });
-    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
   };
-  await send("editor", "roleUpdated");
-  await screen.findByText("friend@example.test already had access. Their access is now editor.");
-  await send("editor", "unchanged");
-  await screen.findByText("friend@example.test already has editor access. No email was sent.");
+  type("editor");
+  assert.equal(screen.getByRole("button", { name: "Already has editor access" }).disabled, true);
+  type("viewer");
+  assert.match(screen.getByRole("note").textContent, /This lowers their access from editor to viewer/);
+  state.mutationResult = { invitationId: id, version: 1, outcome: "roleUpdated" };
+  fireEvent.click(screen.getByRole("button", { name: "Change access to viewer" }));
+  await screen.findByText("Friend@Example.test already had access. Their access is now viewer.");
+
+  cleanup(); reset(); mount();
+  fireEvent.change(screen.getByLabelText("Your list or note"), { target: { value: "L" } });
+  for (let i = 0; i < 2; i++) {
+    state.mutationResult = { invitationId: id, version: 1 + i, outcome: "sent" };
+    fireEvent.change(screen.getByLabelText("Recipient email"), { target: { value: "friend@example.test" } });
+    assert.match(screen.getByRole("note").textContent, /Already invited/);
+    fireEvent.click(screen.getByRole("button", { name: "Resend invitation" }));
+    await screen.findByText(/Invitation recorded/);
+  }
   assert.equal(state.calls.length, 2);
   assert.notEqual(state.calls[0][1].requestId, state.calls[1][1].requestId);
 });
