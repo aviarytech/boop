@@ -10,7 +10,8 @@ const queue = (f, type, payload) => store.queueMutation(f.session.accountId, { t
 const pending = f => store.getQueuedMutations(f.session.accountId);
 const all = f => store.getOperations(f.session.accountId);
 const notifications = f => f.effects.filter(([, ref]) => getFunctionName(ref).startsWith('notificationActions:'));
-const recorded = (f, action, itemId) => (f.rows.actionRecords ?? []).map(r => JSON.parse(r.payload)).filter(p => p.action === action && (!itemId || p.subject.itemId === itemId));
+// The signed statement plus boop's attested context (shared/actionRecord.ts), as one object for assertions.
+const recorded = (f, action, itemId) => (f.rows.actionRecords ?? []).map(r => ({ ...JSON.parse(r.payload), attested: JSON.parse(r.attested) })).filter(p => p.action === action && (!itemId || p.attested.itemId === itemId));
 const meta = async (f, operationId, items = f.rows.items) => ({ operationId, accountId: f.session.accountId, expected: await Promise.all(items.map(async i => ({ id: i._id, revision: await revision(i) }))) });
 
 test('offline check then uncheck survives reload, clock skew, and a lost check acknowledgment without duplicate recurring items or proof records', async () => {
@@ -37,7 +38,7 @@ test('offline check then uncheck survives reload, clock skew, and a lost check a
   assert.equal(recorded(f, 'item.completed', 'I1').length, 1);
   assert.equal(recorded(f, 'item.reopened', 'I1').length, 1);
   assert.equal(recorded(f, 'item.created').length, 1);
-  assert.deepEqual(recorded(f, 'item.created')[0].origin, { kind: 'recurrence', sourceItemId: 'I1' });
+  assert.deepEqual(recorded(f, 'item.created')[0].attested.origin, { kind: 'recurrence', sourceItemId: 'I1' });
   assert.equal(notifications(f).length, 1);
   assert.equal(f.rows.offlineReceipts.length, 2);
   assert.equal((await pending(f)).length, 0);

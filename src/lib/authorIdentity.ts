@@ -23,7 +23,7 @@ import {
 import { currentWebvhDomain, domainFromDidSafe, forgetLegacyDidKey, userDidPath } from "./webvh";
 import type { EntrySummary, ListAuthor } from "./originalsSigning";
 
-interface CurrentAuthor {
+export interface CurrentAuthor {
   subOrgId: string;
   did: string;
   log: string;
@@ -37,6 +37,11 @@ let confirmSigning: ((display: string, summary: EntrySummary) => boolean | Promi
 /** Forget the signed-in author (logout, account switch). */
 export function clearCurrentAuthor(): void {
   current = null;
+}
+
+/** The signed-in author DID this device confirmed, or null (src/lib/actionSigning.ts). */
+export function currentAuthor(): CurrentAuthor | null {
+  return current;
 }
 
 /**

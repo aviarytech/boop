@@ -326,24 +326,25 @@ export default defineSchema({
   // `payload` is the exact canonical JSON that gets signed; never rewrite it, and
   // keep this table out of DID-rewrite migrations. See docs/action-records.md.
   actionRecords: defineTable({
-    payload: v.string(), // Canonical JSON (shared/actionRecord.ts), immutable once written
+    payload: v.string(), // Canonical JSON (shared/actionRecord.ts), the bytes a signature covers; immutable once written
     digest: v.string(), // Lowercase hex SHA-256 of payload
-    // Index columns copied from the payload; verification requires them to agree.
+    // Server-attested context the author did not sign (canonical JSON of
+    // ActionRecordAttested): server time, prior state, credential row, server ids.
+    attested: v.optional(v.string()),
+    // Index columns; verification requires them to agree with the payload where it names them.
     listId: v.id("lists"),
     itemId: v.optional(v.id("items")),
     ownerUserId: v.id("users"), // Account that authorized the action
-    // Only "unsigned" is written until a signer exists; the other states are
-    // what the provenance UI and verifier already understand.
     status: v.union(
-      v.literal("pending"), // Awaiting a signature
-      v.literal("signed"),
-      v.literal("failed"), // Signing did not complete; see error
+      v.literal("pending"), // Reserved: awaiting a signature (not written today)
+      v.literal("signed"), // Verified at receipt against the author's DID log
+      v.literal("failed"), // A signature was offered and did not verify; see error
       v.literal("unsigned"), // No signature exists; nothing is fabricated
     ),
     signature: v.optional(v.string()), // Multibase base58btc Ed25519 signature
-    verificationMethod: v.optional(v.string()), // did:key of the key bound at signing time
+    verificationMethod: v.optional(v.string()), // The author's did:webvh#orig-1 (version 2); did:key in older fixtures
     publicKeyMultibase: v.optional(v.string()),
-    signedAt: v.optional(v.number()),
+    signedAt: v.optional(v.number()), // The author's clock, copied from the payload
     error: v.optional(v.string()), // Non-secret reason code, set when failed
   })
     .index("by_list", ["listId", "itemId"])

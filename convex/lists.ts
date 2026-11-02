@@ -9,7 +9,7 @@ import { withMutationObservability } from "./lib/observability";
 import { hasScope } from "./lib/apiKeyHelpers";
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { isNote } from "./lib/noteBody";
-import { deleteActionRecords, listCreated, listRenamed, recordActions } from "./lib/actionRecords";
+import { actionSignatureEnvelope, deleteActionRecords, listCreated, listRenamed, recordActions } from "./lib/actionRecords";
 
 /**
  * Create a new list.
@@ -100,6 +100,7 @@ export const { public: createList, internal: createListInternal, replay: createL
     assetDid: v.optional(v.string()),
     celEnvelope: v.optional(v.string()),
     kind: v.optional(v.literal("note")),
+    signed: v.optional(actionSignatureEnvelope), // The author's action-record signature (lib/actionRecords.ts)
   },
   handler: async (ctx, args) => withMutationObservability("lists.createList", async () => {
     // Input validation
@@ -128,7 +129,7 @@ export const { public: createList, internal: createListInternal, replay: createL
       await ctx.db.insert("noteBodies", { listId, body: "", updatedAt: args.createdAt });
     }
 
-    await recordActions(ctx, [listCreated({ _id: listId, name: args.name, kind: args.kind })]);
+    await recordActions(ctx, [listCreated({ _id: listId, name: args.name, kind: args.kind, createdAt: args.createdAt })], args.signed);
 
     await grantFirstListReferral(ctx, owner, isFirstList);
 
@@ -147,6 +148,7 @@ export const { public: renameList, internal: renameListInternal, replay: renameL
   args: {
     listId: v.id("lists"),
     name: v.string(),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
@@ -161,7 +163,7 @@ export const { public: renameList, internal: renameListInternal, replay: renameL
 
     // The historical vcProof is left as issued; the rename is its own record.
     await ctx.db.patch(args.listId, { name: args.name });
-    await recordActions(ctx, [listRenamed(list, args.name)]);
+    await recordActions(ctx, [listRenamed(list, args.name)], args.signed);
   },
 });
 

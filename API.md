@@ -243,9 +243,11 @@ with a key.
 - `GET /api/v1/action-records?itemId=<id>` — action records for an item (`items:read`).
 - `GET /api/v1/action-records?listId=<id>` — a list's own records, e.g. created/renamed (`lists:read`).
   - response: `{ "records": [...] }`, newest first, at most 50. Each record carries the exact
-    signed `payload`, its `digest`, `status` (`pending` | `signed` | `failed` | `unsigned`) and,
-    once signed, `signature`, `publicKeyMultibase` and `verificationMethod`. See
-    [action records](docs/action-records.md) for the payload and how to verify it independently.
+    signed `payload`, its `digest`, boop's unsigned `attested` context, `status`
+    (`signed` | `failed` | `unsigned` | `pending`) and, when signed, `signature`,
+    `publicKeyMultibase`, `verificationMethod` (`<author did:webvh>#orig-1`) and `signedAt`. See
+    [action records](docs/action-records.md) for the payload and how to verify it independently
+    against the author's did:webvh.
 
 ### Writes (JWT or `X-API-Key`)
 
@@ -258,8 +260,9 @@ The existing mutation endpoints now also accept an `X-API-Key`. All require the
 
 Writes made via an API key are authorized by the key's owner account. Creating,
 completing and reopening items and creating or renaming lists each write an
-[action record](docs/action-records.md) naming that account and the API key row
-used. Records are not signed yet. A
+[action record](docs/action-records.md) naming that account, with the API key
+row attested. Records written through an API key are unsigned: only the author's
+own device, through its Turnkey session, holds the signing key. A
 caller-supplied DID or a key's `agentDid` never establishes who acted.
 
 ### Scopes

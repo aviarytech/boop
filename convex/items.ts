@@ -12,7 +12,7 @@ import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
-import { deleteActionRecords, itemCompleted, itemCreated, itemReopened, recordActions, type ListRef } from "./lib/actionRecords";
+import { actionSignatureEnvelope, deleteActionRecords, itemCompleted, itemCreated, itemReopened, recordActions, type ListRef } from "./lib/actionRecords";
 
 /**
  * Add an item to a list.
@@ -40,6 +40,7 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
     assigneeDid: v.optional(v.string()),
     assigneeDids: v.optional(v.array(v.string())),
     parentId: v.optional(v.id("items")), // For sub-items
+    signed: v.optional(actionSignatureEnvelope), // The author's action-record signature (lib/actionRecords.ts)
   },
   handler: async (ctx, args) => withMutationObservability("items.addItem", async () => {
     // Input validation
@@ -111,7 +112,7 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
 
     await changeAssignments(ctx, (await ctx.db.get(itemId))!, ctx.actor.did, { replace: args.assigneeDids ?? (args.assigneeDid ? [args.assigneeDid] : []) });
 
-    await recordActions(ctx, [itemCreated(list, itemId, args.name)]);
+    await recordActions(ctx, [itemCreated(list, itemId, args.name)], args.signed);
 
     // Notify other list members (fire-and-forget via scheduler)
     await ctx.scheduler.runAfter(0, internal.notificationActions.sendListNotificationInternal, {
@@ -244,6 +245,7 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
   args: {
     itemId: v.id("items"),
     checkedAt: v.number(),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => withMutationObservability("items.checkItem", async () => {
     const item = await ctx.db.get(args.itemId);
@@ -330,7 +332,7 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
         actions.push(itemCreated(listRef, nextId, item.name, { kind: "recurrence", sourceItemId: item._id }));
       }
     }
-    await recordActions(ctx, actions);
+    await recordActions(ctx, actions, args.signed);
   }),
 });
 
@@ -344,6 +346,7 @@ export const { public: uncheckItem, internal: uncheckItemInternal, replay: unche
   scope: "items:write",
   args: {
     itemId: v.id("items"),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -369,7 +372,7 @@ export const { public: uncheckItem, internal: uncheckItemInternal, replay: unche
       updatedAt: Date.now(),
     });
     const list = await ctx.db.get(item.listId);
-    await recordActions(ctx, [itemReopened(list ?? { _id: item.listId }, item)]);
+    await recordActions(ctx, [itemReopened(list ?? { _id: item.listId }, item)], args.signed);
   },
 });
 
@@ -555,6 +558,7 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
   scope: "items:write",
   args: {
     itemIds: v.array(v.id("items")),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => {
     const checkedAt = Date.now();
@@ -639,7 +643,7 @@ export const { public: batchCheckItems, internal: batchCheckItemsInternal, repla
         }
       }
     }
-    await recordActions(ctx, actions);
+    await recordActions(ctx, actions, args.signed);
   },
 });
 
@@ -652,6 +656,7 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal, r
   scope: "items:write",
   args: {
     itemIds: v.array(v.id("items")),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -681,7 +686,7 @@ export const { public: batchUncheckItems, internal: batchUncheckItemsInternal, r
       });
       actions.push(itemReopened(listRef, item));
     }
-    await recordActions(ctx, actions);
+    await recordActions(ctx, actions, args.signed);
   },
 });
 

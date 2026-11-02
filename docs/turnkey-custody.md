@@ -67,7 +67,7 @@ both used only through the client-side session above:
 | Key | Path | In the did:webvh | Signs |
 | --- | --- | --- | --- |
 | Author key | `m/44'/501'/0'/0'` | the only update key; `#key-0` in `authentication` | DID updates (genesis included) |
-| Assertion key | `m/44'/501'/1'/0'` | `#orig-1` in `assertionMethod`, not an update key | Originals 5 entries (`eddsa-jcs-2022`) |
+| Assertion key | `m/44'/501'/1'/0'` | `#orig-1` in `assertionMethod`, not an update key | Originals 5 entries (`eddsa-jcs-2022`) and action records (`docs/action-records.md`, domain `boop.action-record/v2`) |
 
 Every verification method's `controller` is the DID (written with the
 `{SCID}` placeholder at genesis), as Originals 5 requires. Sub-orgs created by
@@ -78,8 +78,12 @@ stamped by the session key, and the client checks every returned signature
 against the expected public key before using it.
 
 Signing is **online-only**: it needs a live Turnkey session and a clean sub-org
-audit. With the session expired, Originals signing waits for the next login.
-It is per account, not per device, so there is no per-device revocation.
+audit. With the session expired, Originals signing waits for the next login,
+and action records are written unsigned until then (never blocked). It is per
+account, not per device, so there is no per-device revocation. Action records
+are signed without a prompt; the server checks each signature against the
+served DID log before storing it, and never asks the device to sign bytes the
+device did not build itself.
 
 - `src/lib/authorDid.ts`: key lookup, the didwebvh-ts signer, genesis.
 - `src/lib/authorIdentity.ts`: after sign-in, keeps an author DID or moves the
