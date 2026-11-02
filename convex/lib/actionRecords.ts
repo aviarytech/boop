@@ -1,59 +1,127 @@
-/** The single writer of action records. Every recorded transition goes through
- * recordActions so individual, batch, template and recurring flows agree. */
+/** The single writer of action records (#237). Every recorded transition goes
+ * through recordActions so individual, batch, template and recurring flows
+ * agree, and so a signature is only ever stored over bytes this module built.
+ *
+ * Signing custody (#286): the author signs on their own device with the
+ * assertion key (`#orig-1`) of their did:webvh, through their Turnkey session.
+ * The client builds the version-2 payload from the mutation's arguments and
+ * sends the signature along (`signed`). Here the payload is rebuilt from the
+ * same arguments and this mutation's authenticated actor, the key is read from
+ * the author DID log the server serves, and the signature is checked against
+ * those bytes. A signature that does not verify is recorded as `failed` with a
+ * reason code and never stored; a write never fails because of signing.
+ */
+import { v } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import type { ActorCtx } from "./authenticated";
-import { buildActionRecord, type ActionChange } from "../../shared/actionRecord";
+import {
+  ACTION_SIGNING_KEY_FRAGMENT,
+  actionSubjectKey,
+  assertionKeyAt,
+  buildActionRecord,
+  canonicalize,
+  decodeSignature,
+  parseEd25519PublicKey,
+  verifyActionSignature,
+  type ActionChange,
+  type ActionRecordAttested,
+  type ActionSignatureEnvelope,
+} from "../../shared/actionRecord";
 
-type RecordedChange = ActionChange & { subject: { listId: Id<"lists">; itemId?: Id<"items"> } };
+/** Mutation argument: the author's signatures over the records this call will write. */
+export const actionSignatureEnvelope = v.object({
+  verificationMethod: v.string(),
+  versionId: v.string(),
+  signedAt: v.number(),
+  signatures: v.array(v.object({ subject: v.string(), signature: v.string() })),
+});
+
+/** What the server knows about an action beyond what the author signs. */
+type Attested = Omit<ActionRecordAttested, "occurredAt" | "userId" | "credential"> & { listId: Id<"lists">; itemId?: Id<"items"> };
+export type RecordedAction = { change: ActionChange; attested: Attested };
 export type ListRef = { _id: Id<"lists">; assetDid?: string };
-type Origin<A extends "item.created" | "list.created"> = NonNullable<Extract<ActionChange, { action: A }>["origin"]>;
 
-const subject = (list: ListRef) => ({ listId: list._id, ...(list.assetDid ? { listAssetDid: list.assetDid } : {}) });
+const listContext = (list: ListRef) => ({ listId: list._id, ...(list.assetDid ? { listAssetDid: list.assetDid } : {}) });
 
-export const itemCreated = (list: ListRef, itemId: Id<"items">, name: string, origin?: Origin<"item.created">): RecordedChange => ({
-  action: "item.created", subject: { ...subject(list), itemId }, before: null, after: { name, checked: false },
-  ...(origin ? { origin } : {}),
+export const itemCreated = (list: ListRef, itemId: Id<"items">, name: string, origin?: Extract<ActionRecordAttested["origin"], { kind: "recurrence" | "template" }>): RecordedAction => ({
+  change: { action: "item.created", subject: { listId: list._id }, after: { name } },
+  attested: { ...listContext(list), itemId, before: null, ...(origin ? { origin } : {}) },
 });
 
-export const itemCompleted = (list: ListRef, item: Pick<Doc<"items">, "_id" | "checked">, checkedAt: number): RecordedChange => ({
-  action: "item.completed", subject: { ...subject(list), itemId: item._id },
+export const itemCompleted = (list: ListRef, item: Pick<Doc<"items">, "_id" | "checked">, checkedAt: number): RecordedAction => ({
+  change: { action: "item.completed", subject: { itemId: item._id }, after: { checked: true } },
   // checkedAt can be client-supplied; a value JSON cannot carry must not fail the write.
-  before: { checked: item.checked }, after: { checked: true, checkedAt: Number.isFinite(checkedAt) ? checkedAt : null },
+  attested: { ...listContext(list), itemId: item._id, before: { checked: item.checked }, ...(Number.isFinite(checkedAt) ? { checkedAt } : {}) },
 });
 
-export const itemReopened = (list: ListRef, item: Pick<Doc<"items">, "_id" | "checked">): RecordedChange => ({
-  action: "item.reopened", subject: { ...subject(list), itemId: item._id },
-  before: { checked: item.checked }, after: { checked: false },
+export const itemReopened = (list: ListRef, item: Pick<Doc<"items">, "_id" | "checked">): RecordedAction => ({
+  change: { action: "item.reopened", subject: { itemId: item._id }, after: { checked: false } },
+  attested: { ...listContext(list), itemId: item._id, before: { checked: item.checked } },
 });
 
-export const listCreated = (list: ListRef & { name: string; kind?: "note" }, origin?: Origin<"list.created">): RecordedChange => ({
-  action: "list.created", subject: subject(list), before: null, after: { name: list.name, kind: list.kind ?? "list" },
-  ...(origin ? { origin } : {}),
+// A new list has no Original yet (its owner mints it later), so the author names it by their creation time.
+export const listCreated = (list: ListRef & { name: string; kind?: "note"; createdAt: number }, origin?: Extract<ActionRecordAttested["origin"], { kind: "template" | "copy" }>): RecordedAction => ({
+  change: { action: "list.created", subject: { createdAt: list.createdAt }, after: { name: list.name, kind: list.kind ?? "list" } },
+  attested: { ...listContext(list), before: null, ...(origin ? { origin } : {}) },
 });
 
-export const listRenamed = (list: ListRef & { name: string }, name: string): RecordedChange => ({
-  action: "list.renamed", subject: subject(list), before: { name: list.name }, after: { name },
+export const listRenamed = (list: ListRef & { name: string }, name: string): RecordedAction => ({
+  change: { action: "list.renamed", subject: { listId: list._id }, after: { name } },
+  attested: { ...listContext(list), before: { name: list.name } },
 });
+
+type Signer = { key: Uint8Array; publicKeyMultibase: string } | { error: string };
 
 /**
- * Persists the exact canonical payloads for this mutation's actions. Records
- * are stored unsigned until a signer exists (see docs/action-records.md), so
- * recording can never fail the write. Identity comes only from ctx.actor.
+ * The key the envelope says signed, if it is this actor's assertion key at a
+ * version of the author DID log this server serves. The log was validated when
+ * it was stored (convex/lib/authorDidLog.ts), and `author` says every version
+ * of it is an author DID.
  */
-export async function recordActions(ctx: ActorCtx<MutationCtx>, changes: RecordedChange[]): Promise<void> {
-  if (changes.length === 0) return;
+async function resolveSigner(ctx: ActorCtx<MutationCtx>, envelope: ActionSignatureEnvelope): Promise<Signer> {
+  if (!Number.isFinite(envelope.signedAt) || envelope.signatures.length > 1000) return { error: "malformed_envelope" };
+  const did = ctx.actor.did;
+  if (envelope.verificationMethod !== `${did}#${ACTION_SIGNING_KEY_FRAGMENT}`) return { error: "author_mismatch" };
+  const log = await ctx.db.query("didLogs").withIndex("by_user_did", q => q.eq("userDid", did)).first();
+  if (!log?.author) return { error: "no_author_did" };
+  const key = assertionKeyAt(log.log, { did, verificationMethod: envelope.verificationMethod, versionId: envelope.versionId });
+  if ("failure" in key) return { error: key.failure };
+  return { key: parseEd25519PublicKey(key.publicKeyMultibase)!, publicKeyMultibase: key.publicKeyMultibase };
+}
+
+/**
+ * Persists one record per action: the exact canonical payload, the attested
+ * context, and a signature only if `signed` carries one for that action that
+ * verifies over the rebuilt bytes. Identity comes only from ctx.actor.
+ */
+export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: RecordedAction[], signed?: ActionSignatureEnvelope): Promise<void> {
+  if (actions.length === 0) return;
   const occurredAt = Date.now();
-  for (const change of changes) {
-    const { payload, digest } = buildActionRecord(change, {
-      occurredAt,
-      owner: { did: ctx.actor.did, userId: ctx.actor.userId },
-      credential: ctx.actor.credential,
-    });
+  const did = ctx.actor.did;
+  const signer = signed ? await resolveSigner(ctx, signed) : null;
+  for (const { change, attested } of actions) {
+    const row = {
+      attested: canonicalize({ ...attested, occurredAt, userId: ctx.actor.userId, credential: ctx.actor.credential } satisfies ActionRecordAttested),
+      listId: attested.listId, itemId: attested.itemId, ownerUserId: ctx.actor.userId,
+    };
+    const offered = signed?.signatures.find(entry => entry.subject === actionSubjectKey(change));
+    if (!signed || !signer || !offered) {
+      await ctx.db.insert("actionRecords", { ...buildActionRecord(change, { did }), ...row, status: "unsigned" });
+      continue;
+    }
+    // A record that failed stores no claim about a key or a signing time, only why.
+    const failed = (error: string) => ctx.db.insert("actionRecords", { ...buildActionRecord(change, { did }), ...row, status: "failed", error });
+    if ("error" in signer) { await failed(signer.error); continue; }
+    const signature = decodeSignature(offered.signature);
+    if (!signature) { await failed("malformed_signature"); continue; }
+    const author = { did, verificationMethod: signed.verificationMethod, versionId: signed.versionId };
+    const built = buildActionRecord(change, author, signed.signedAt);
+    if (!verifyActionSignature(built.payload, signature, signer.key)) { await failed("bad_signature"); continue; }
     await ctx.db.insert("actionRecords", {
-      payload, digest, listId: change.subject.listId, itemId: change.subject.itemId,
-      ownerUserId: ctx.actor.userId, status: "unsigned",
+      ...built, ...row, status: "signed", signature: offered.signature,
+      verificationMethod: signed.verificationMethod, publicKeyMultibase: signer.publicKeyMultibase, signedAt: signed.signedAt,
     });
   }
 }

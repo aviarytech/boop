@@ -15,6 +15,8 @@ import { initAnalyticsIfConsented } from './lib/analyticsConsent'
 import { initSentry } from './lib/sentry'
 import { setListAuthorSource } from './lib/originals'
 import { turnkeyListAuthorSource } from './lib/authorIdentity'
+import { setActionSigner } from './lib/actionSigner'
+import { signActions } from './lib/actionSigning'
 import './index.css'
 import './pages/Landing.css'
 import App from './App.tsx'
@@ -27,6 +29,8 @@ initSentry();
 setListAuthorSource(turnkeyListAuthorSource);
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string)
+// Action records are signed on this device with the author's Turnkey assertion key (#237).
+setActionSigner(signActions)
 
 // Initialize dark mode early to avoid a flash on load
 initDarkMode();

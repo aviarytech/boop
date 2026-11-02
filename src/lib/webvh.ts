@@ -77,6 +77,20 @@ export function domainFromDid(did: string): string {
   return decodeURIComponent(parts[3]);
 }
 
+/** did:webvh mandates https; local hosts have no certificate. */
+function schemeFor(domain: string): "http" | "https" {
+  return /^(localhost|127\.0\.0\.1)(:|$)/.test(domain) ? "http" : "https";
+}
+
+/**
+ * Where anyone resolves this did:webvh: `https://{domain}/{path}/did.jsonl`.
+ * Throws for a DID that is not a did:webvh.
+ */
+export function authorDidLogUrl(did: string): string {
+  const domain = domainFromDid(did);
+  return `${schemeFor(domain)}://${domain}/${pathFromDid(did)}/did.jsonl`;
+}
+
 /**
  * Build the DID URI for a list resource under the user's DID.
  * e.g. "did:webvh:{scid}:boop.ad:user-abc123/resources/list-{listId}"
@@ -92,8 +106,5 @@ export function buildListResourceDid(userDid: string, listId: string): string {
 export function buildListResourceUrl(userDid: string, listId: string): string {
   const domain = domainFromDid(userDid);
   const path = pathFromDid(userDid);
-  // did:webvh mandates https; local hosts have no certificate, so dev links
-  // would be unopenable otherwise.
-  const scheme = /^(localhost|127\.0\.0\.1)(:|$)/.test(domain) ? "http" : "https";
-  return `${scheme}://${domain}/${path}/resources/list-${listId}`;
+  return `${schemeFor(domain)}://${domain}/${path}/resources/list-${listId}`;
 }

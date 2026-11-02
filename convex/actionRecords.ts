@@ -1,7 +1,7 @@
 /**
  * Action records (#237): reads for provenance and independent verification.
- * Records are written by lib/actionRecords.ts recordActions. No signer is wired
- * up yet; see docs/action-records.md.
+ * Records are written by lib/actionRecords.ts recordActions, which also checks
+ * the author's signature at receipt; see docs/action-records.md.
  */
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
@@ -17,6 +17,7 @@ function evidence(record: Doc<"actionRecords">) {
     _id: record._id,
     payload: record.payload,
     digest: record.digest,
+    attested: record.attested,
     status: record.status,
     listId: record.listId,
     itemId: record.itemId,

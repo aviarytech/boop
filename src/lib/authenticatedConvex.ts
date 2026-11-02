@@ -5,6 +5,7 @@ import { useQuery as convexQuery, useMutation as convexMutation, useAction as co
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { useAuth } from "../hooks/useAuth";
 import { authenticatedOperations } from "./authenticatedOperations";
+import { withActionSignatures } from "./actionSigner";
 
 const assertionFields = new Set<string>(identityAssertionFields);
 export function requiresSession(ref: FunctionReference<"query" | "mutation" | "action">): boolean {
@@ -31,8 +32,9 @@ export const useMutation: typeof convexMutation = (ref) => {
   const { token } = useAuth();
   const mutation = convexMutation(ref);
   return useMemo(() => {
+    // Recorded actions carry the author's signature (src/lib/actionSigner.ts).
     const wrap = (base: typeof mutation): typeof mutation => Object.assign(
-      (args: Record<string, unknown> = {}) => base(...[sessionArgs(ref, args, token)] as never),
+      async (args: Record<string, unknown> = {}) => base(...[await withActionSignatures(getFunctionName(ref).split(":")[1] ?? "", sessionArgs(ref, args, token))] as never),
       { withOptimisticUpdate: (update: Parameters<typeof base.withOptimisticUpdate>[0]) => wrap(base.withOptimisticUpdate(update)) },
     ) as typeof mutation;
     return wrap(mutation);

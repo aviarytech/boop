@@ -4,6 +4,7 @@ import { api } from '../../convex/_generated/api';
 import { authErrorData } from '../../convex/lib/authError';
 import { denyOperation, getOperations, prepareOperationForSync, getQueuedMutations, saveOperation, type MutationType, type QueuedMutation } from './offline';
 import type { ReplayAck } from '../../shared/replay';
+import { withActionSignatures } from './actionSigner';
 export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'error';
 export interface SyncStatus { status: SyncStatusType; message?: string; accountId?: string }
 export interface SyncSession { accountId: string; token: string }
@@ -86,7 +87,9 @@ export class SyncManager {
     const payload = Object.fromEntries(Object.entries(m.payload).filter(([key]) => !['userDid', 'createdByDid', 'checkedByDid', 'ownerDid', 'legacyDid', 'authToken', 'apiKey'].includes(key)));
     for (const key of ['itemId', 'listId']) if (typeof payload[key] === 'string') payload[key] = resolveId(payload[key]);
     if (Array.isArray(payload.itemIds)) payload.itemIds = payload.itemIds.map(resolveId);
-    return convex.mutation(endpoints[m.type], { ...payload, authToken: token, replay: { operationId: m.operationId, accountId: m.accountId, expected: m.expected.map(e => ({ ...e, id: resolveId(e.id) })) } } as never);
+    // Signed at send time, with the server ids the replay resolved to; the device is online here.
+    const signed = await withActionSignatures(m.type, payload);
+    return convex.mutation(endpoints[m.type], { ...signed, authToken: token, replay: { operationId: m.operationId, accountId: m.accountId, expected: m.expected.map(e => ({ ...e, id: resolveId(e.id) })) } } as never);
   }
   subscribe(listener: (status: SyncStatus) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   get syncing() { return this.running.size > 0; }

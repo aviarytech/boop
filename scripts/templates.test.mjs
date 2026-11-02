@@ -91,7 +91,8 @@ function makeCtx({ items = [], lists: extraLists = [], user = null, subscription
 
 
 const create = unwrap(mod.createListFromTemplate);
-const records = (ctx, action) => (ctx.rows.actionRecords ?? []).map(r => JSON.parse(r.payload)).filter(p => p.action === action);
+// The signed statement plus boop's attested context (shared/actionRecord.ts), as one object for assertions.
+const records = (ctx, action) => (ctx.rows.actionRecords ?? []).map(r => ({ ...JSON.parse(r.payload), attested: JSON.parse(r.attested) })).filter(p => p.action === action);
 const args = { builtinId: 'release-checklist', listName: 'Release checklist', creationKey: 'template-test', authToken: ownerSession.authToken, expectedOwnerDid: OWNER };
 
 test('all ten catalog runbooks have actionable, ordered steps and distinct landing copy', async () => {
@@ -137,20 +138,22 @@ test('quick-start and saved template items get one creation record each, like or
     const items = ctx.rows.items.filter(item => item.listId === listId);
     assert.ok(items.length > 0);
     const origin = { kind: 'template', source: saved ? `saved:${source.templateId}` : 'builtin:grocery' };
-    assert.deepEqual(records(ctx, 'list.created').map(r => [r.subject, r.after, r.origin]),
-      [[{ listId }, { name: args.listName, kind: 'list' }, origin]]);
+    assert.deepEqual(records(ctx, 'list.created').map(r => [r.subject, r.after, r.attested.listId, r.attested.origin]),
+      [[{ createdAt: ctx.rows.lists.find(l => l._id === listId).createdAt }, { name: args.listName, kind: 'list' }, listId, origin]]);
     for (const item of items) {
       assert.equal(item.updatedAt, item.createdAt);
       assert.equal(item.assignmentsVersion, 1);
       assert.equal(item.vcProofs, undefined, 'no new unsigned authorship placeholder');
-      const [record, ...extra] = records(ctx, 'item.created').filter(r => r.subject.itemId === item._id);
+      const [record, ...extra] = records(ctx, 'item.created').filter(r => r.attested.itemId === item._id);
       assert.deepEqual(extra, []);
-      // No Original until the owner's device mints one, so no asset DID to record.
-      assert.deepEqual(record.subject, { listId, itemId: item._id });
-      assert.deepEqual(record.after, { name: item.name, checked: false });
-      assert.deepEqual(record.origin, origin);
-      assert.deepEqual(record.owner, { did: OWNER, userId: ownerSession.user._id });
-      assert.deepEqual(record.credential, { kind: 'session', id: ownerSession.accessSession._id });
+      assert.deepEqual(record.subject, { listId });
+      assert.deepEqual(record.after, { name: item.name });
+      // Server-originated: the author DID is stated, the rest is boop's attested context.
+      // No Original until the owner's device mints one, so no asset DID is attested.
+      assert.deepEqual(record.author, { did: OWNER });
+      assert.equal(record.attested.listAssetDid, undefined);
+      assert.deepEqual(record.attested, { ...record.attested, listId, itemId: item._id, origin,
+        userId: ownerSession.user._id, credential: { kind: 'session', id: ownerSession.accessSession._id } });
     }
     assert.equal(ctx.rows.actionRecords.length, items.length + 1);
     assert.ok(ctx.rows.actionRecords.every(r => r.status === 'unsigned' && r.signature === undefined));

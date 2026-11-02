@@ -226,7 +226,7 @@ export const { public: createListFromTemplate, internal: createListFromTemplateI
 
     const origin = { kind: "template" as const, source: templateSource };
     const listRef = { _id: listId };
-    const actions = [listCreated({ ...listRef, name: args.listName }, origin)];
+    const actions = [listCreated({ ...listRef, name: args.listName, createdAt: now }, origin)];
 
     // Create items from template
     for (const templateItem of template.items) {

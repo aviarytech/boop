@@ -1,11 +1,13 @@
 import { legacyActionEvidence } from "../../shared/legacyActionEvidence";
 import {
-  parseActionRecordPayload,
-  parseEd25519PublicKey,
+  describeActionRecord,
   verifyActionRecord,
+  type ActionAuthor,
   type ActionRecordEvidence,
   type ActionType,
 } from "../../shared/actionRecord";
+import { inspectAuthorDid } from "../lib/authorDid";
+import { authorDidLogUrl } from "../lib/webvh";
 /**
  * ProvenanceInfo - Shows Originals DID/provenance chain information
  * 
@@ -18,7 +20,7 @@ import {
  * Makes the decentralized identity and provenance chain visible to users.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -414,31 +416,56 @@ const ACTION_RECORD_LABELS: Record<ActionType, string> = {
 };
 
 /**
- * verified: checked against the key the owner's own DID encodes.
- * unbound: the signature matches the key boop recorded, which proves integrity
- *   but not whose key it is. invalid: even that check fails.
+ * verified: the signature checks out under the `#orig-1` assertion key of the
+ *   author's did:webvh at the version the record names, with the DID log
+ *   fetched from the domain the DID names and validated in this browser.
+ * unresolved: that DID log could not be fetched or did not validate here, so
+ *   only boop's check at receipt stands.
+ * invalid: the stored signature does not verify.
  */
-type SignatureCheck = "verified" | "unbound" | "invalid";
+type SignatureCheck = "verified" | "unresolved" | "invalid";
 
-async function checkSignedRecord(record: ActionRecordEvidence, ownerDid: string): Promise<SignatureCheck> {
-  // Only a did:key owner DID carries its own key; other DIDs need a pinned key.
-  if (ownerDid.startsWith("did:key:") && parseEd25519PublicKey(ownerDid)
-    && (await verifyActionRecord(record, { trustedKeys: { [ownerDid]: [ownerDid] } })).verified) return "verified";
-  const recordedKey = record.publicKeyMultibase ? [record.publicKeyMultibase] : [];
-  return (await verifyActionRecord(record, { trustedKeys: { [ownerDid]: recordedKey } })).verified ? "unbound" : "invalid";
+type AuthorLogCache = Map<string, Promise<string | null>>;
+
+/** The author's did.jsonl from the domain the DID names, validated as an author DID log. One fetch per DID per panel. */
+function resolveAuthorLog(did: string, cache: AuthorLogCache): Promise<string | null> {
+  let pending = cache.get(did);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const response = await fetch(authorDidLogUrl(did));
+        if (!response.ok) return null;
+        const jsonl = await response.text();
+        const inspected = await inspectAuthorDid(jsonl);
+        return inspected.problems.length === 0 && inspected.did === did ? jsonl : null;
+      } catch {
+        return null;
+      }
+    })();
+    cache.set(did, pending);
+  }
+  return pending;
 }
 
-/** Signature checks hash and verify, so they run in an effect, keyed by record. */
+async function checkSignedRecord(record: ActionRecordEvidence, author: ActionAuthor, cache: AuthorLogCache): Promise<SignatureCheck> {
+  const log = await resolveAuthorLog(author.did, cache);
+  if (log === null) return "unresolved";
+  const result = await verifyActionRecord(record, { resolveDidLog: () => log, expected: { ownerDid: author.did } });
+  return result.verified ? "verified" : "invalid";
+}
+
+/** Signature checks fetch and verify, so they run in an effect, keyed by record. */
 function useSignatureChecks(records: StoredActionRecord[] | undefined): Record<string, SignatureCheck> {
   const [checks, setChecks] = useState<Record<string, SignatureCheck>>({});
+  const cache = useRef<AuthorLogCache>(new Map());
 
   useEffect(() => {
     let cancelled = false;
     const signed = (records ?? []).filter((record) => record.status === "signed");
     if (signed.length === 0) return;
     void Promise.all(signed.map(async (record) => {
-      const ownerDid = parseActionRecordPayload(record.payload)?.owner.did;
-      return [record._id, ownerDid ? await checkSignedRecord(record, ownerDid) : "invalid"] as const;
+      const author = describeActionRecord(record)?.author;
+      return [record._id, author ? await checkSignedRecord(record, author, cache.current) : "invalid"] as const;
     })).then((entries) => {
       if (!cancelled) setChecks(Object.fromEntries(entries));
     });
@@ -455,31 +482,37 @@ function actionRecordPresentation(
   check: SignatureCheck | undefined
 ): { status: string; detail: string; tone: string } {
   const neutral = "text-gray-500 dark:text-gray-400";
+  const bad = "text-red-600 dark:text-red-400";
   if (record.status === "pending") {
     return { status: "Pending signature", detail: "Waiting for this record to be signed.", tone: neutral };
   }
   if (record.status === "failed") {
-    return { status: "Signing failed", detail: "Signing did not complete, so this record carries no signature.", tone: "text-red-600 dark:text-red-400" };
+    return {
+      status: "Signing failed",
+      detail: `A signature was offered and did not verify${record.error ? ` (${record.error})` : ""}, so this record carries no signature.`,
+      tone: bad,
+    };
   }
   if (record.status === "unsigned") {
-    return { status: "Unsigned", detail: "No signature exists for this record.", tone: neutral };
+    return { status: "Unsigned", detail: "No signature exists for this record. It is boop's own account of what happened.", tone: neutral };
   }
   if (check === "invalid") {
-    return { status: "Signature check failed", detail: "The stored signature does not match this record. Treat it as unverified.", tone: "text-red-600 dark:text-red-400" };
+    return { status: "Signature check failed", detail: "The stored signature does not match this record. Treat it as unverified.", tone: bad };
   }
   return {
     status: "Signed",
     detail: check === "verified"
-      ? "Signature verified against the key in the authorizing account's DID."
-      : check === "unbound"
-        ? "The signature matches the key boop recorded for this account. That key is not independently verified here."
+      ? "Signature verified in this browser against the author's DID key, resolved from the DID's own domain."
+      : check === "unresolved"
+        ? "boop verified this signature when it was recorded. The author's DID could not be resolved from its domain just now, so it is not independently verified here."
         : "Checking signature…",
     tone: "text-green-600 dark:text-green-400",
   };
 }
 
 /**
- * A signed-path action record with its truthful signing status.
+ * One action record with its truthful signing status: the signed statement,
+ * then what boop attests about it (unsigned).
  */
 function ActionRecordRow({
   record,
@@ -492,12 +525,18 @@ function ActionRecordRow({
   displayNames: Record<string, { displayName: string | null }> | undefined;
   haptic: HapticFn;
 }) {
-  const payload = parseActionRecordPayload(record.payload);
-  if (!payload) {
+  const described = describeActionRecord(record);
+  if (!described) {
     return <div className="py-3 text-xs text-gray-500 dark:text-gray-400">Unreadable action record</div>;
   }
   const { status, detail, tone } = actionRecordPresentation(record, check);
-  const credential = payload.credential.kind === "apiKey" ? "API key" : "signed-in session";
+  const credential = described.credential
+    ? `${described.credential.kind === "apiKey" ? "API key" : "signed-in session"} …${described.credential.id.slice(-6)}`
+    : null;
+  const attested = [
+    credential ? `Via ${credential}` : null,
+    described.occurredAt !== undefined ? `Recorded ${formatDate(described.occurredAt)}` : null,
+  ].filter((part): part is string => part !== null);
 
   return (
     <div className="py-3">
@@ -506,21 +545,28 @@ function ActionRecordRow({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M6 3h9l3 3v15H6z" />
         </svg>
         <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
-          {ACTION_RECORD_LABELS[payload.action]}
+          {ACTION_RECORD_LABELS[described.action]}
         </span>
       </div>
       <div className={`text-sm ${tone}`}>{status}</div>
       <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{detail}</div>
       <DidRow
         label="Authorized by"
-        did={payload.owner.did}
-        displayName={displayNames?.[payload.owner.did]?.displayName ?? null}
+        did={described.ownerDid}
+        displayName={displayNames?.[described.ownerDid]?.displayName ?? null}
         haptic={haptic}
       />
-      <div className="text-xs text-gray-500 dark:text-gray-400">
-        Via {credential} …{payload.credential.id.slice(-6)} • Recorded {formatDate(payload.occurredAt)}
-        {record.signedAt !== undefined && <span> • Signed {formatDate(record.signedAt)}</span>}
-      </div>
+      {described.author && record.status === "signed" && (
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          Signed by key #{described.author.verificationMethod.split("#")[1]} of this DID (version {described.author.versionId})
+          {described.signedAt !== undefined && <span> • {formatDate(described.signedAt)}</span>}
+        </div>
+      )}
+      {attested.length > 0 && (
+        <div className="text-xs text-gray-500 dark:text-gray-400">
+          {attested.join(" • ")} <span className="italic">(boop's record, unsigned)</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -554,17 +600,18 @@ function ActionRecordList({
         ))}
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mt-2">
-        A signature shows that the key recorded with it signed this record, after an
-        operation authenticated by the named session or API key. It does not show
-        personal intent or who was using that credential.
+        A verified signature shows that the author's own key signed exactly this
+        record: the action, its subject and result, and the author's clock. Which
+        session or API key was used, and when boop received it, is boop's record and
+        is not signed. None of it shows personal intent or who was using that credential.
       </p>
     </div>
   );
 }
 
-/** Owner DIDs named by action records, for display-name lookup. */
+/** Author DIDs named by action records, for display-name lookup. */
 function actionRecordOwnerDids(records: StoredActionRecord[] | undefined): string[] {
-  return (records ?? []).flatMap((record) => parseActionRecordPayload(record.payload)?.owner.did ?? []);
+  return (records ?? []).flatMap((record) => describeActionRecord(record)?.ownerDid ?? []);
 }
 
 /**
