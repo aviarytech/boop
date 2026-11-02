@@ -233,7 +233,7 @@ async function apply(account, endpoint, args) {
         _creationTime: Date.now(), listId: result, checked: false, createdByDid: user.did, createdAt: Date.now(), order: i })));
       const origin = { kind: 'template', source: `builtin:${args.builtinId}` };
       const created = account.lists.at(-1);
-      await recordAction(account, { action: 'list.created', subject: { listAssetDid: created.assetDid },
+      await recordAction(account, { action: 'list.created', subject: { createdAt: created.createdAt },
         after: { name: created.name, kind: 'list' } }, { ...listAttested(created), origin });
       for (const item of account.items.filter(i => i.listId === result)) {
         await recordAction(account, { action: 'item.created', subject: { listId: item.listId },
@@ -266,17 +266,18 @@ async function apply(account, endpoint, args) {
       account.items.push({ _id: result, _creationTime: Date.now(), listId: args.listId,
         name: args.name, checked: false, createdByDid: user.did,
         createdAt: args.createdAt, updatedAt: args.createdAt, order: account.items.length });
-      await recordAction(account, { action: 'item.created', subject: itemSubject(account, account.items.at(-1)),
-        before: null, after: { name: args.name, checked: false } });
+      await recordAction(account, { action: 'item.created', subject: { listId: args.listId },
+        after: { name: args.name } }, itemAttested(account, account.items.at(-1)));
       break;
     }
     case 'items:checkItem':
     case 'items:uncheckItem':
       if (!item) throw new Error('Item not found');
       await recordAction(account, endpoint === 'items:checkItem'
-        ? { action: 'item.completed', subject: itemSubject(account, item), before: { checked: item.checked },
-          after: { checked: true, checkedAt: Number.isFinite(args.checkedAt) ? args.checkedAt : null } }
-        : { action: 'item.reopened', subject: itemSubject(account, item), before: { checked: item.checked }, after: { checked: false } });
+        ? { action: 'item.completed', subject: { itemId: item._id }, after: { checked: true } }
+        : { action: 'item.reopened', subject: { itemId: item._id }, after: { checked: false } },
+        { ...itemAttested(account, item), before: { checked: item.checked },
+          ...(endpoint === 'items:checkItem' && Number.isFinite(args.checkedAt) ? { checkedAt: args.checkedAt } : {}) });
       item.checked = endpoint === 'items:checkItem';
       // Mirrors convex/items.ts: the checker is the authenticated actor.
       item.checkedByDid = item.checked ? user.did : undefined;
