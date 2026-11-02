@@ -326,6 +326,15 @@ test('a signature that is not the author\'s own over exactly these bytes is reco
   assert.equal(await a.sign('checkItem', { itemId: 'I1' }, { ready: async () => false }), undefined);
   assert.equal(await a.sign('checkItem', { itemId: 'I1' }, { author: () => null }), undefined);
   assert.equal(await a.sign('checkItem', { itemId: 'I1' }, { backend: { sign: async () => { throw new Error('Turnkey down'); } } }), undefined);
+  // A Turnkey call or session check that never settles cannot hold the write: signing gives up after its budget.
+  const hung = new Promise(() => {});
+  const started = Date.now();
+  assert.equal(await a.sign('checkItem', { itemId: 'I1' }, { budgetMs: 50, backend: { sign: () => hung } }), undefined);
+  assert.equal(await a.sign('checkItem', { itemId: 'I1' }, { budgetMs: 50, ready: () => hung }), undefined);
+  assert.ok(Date.now() - started < 2000);
+  const before = f.records().length;
+  await a.call('items', 'checkItem', { itemId: 'I1', checkedAt: 11 }, { budgetMs: 50, backend: { sign: () => hung } });
+  assert.deepEqual(f.records().slice(before).map(r => r.status), ['unsigned'], 'the write still lands, unsigned');
   // A Turnkey answer that is not this key's signature is refused on the device.
   assert.equal(await a.sign('checkItem', { itemId: 'I1' }, { backend: { sign: () => b.turnkey.sign('sub-org', b.keys.assertion.address, new Uint8Array(64)) } }), undefined);
   assert.equal((await sent(undefined)).status, 'unsigned');

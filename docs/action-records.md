@@ -32,8 +32,10 @@ arguments it is sending, signs it through the Turnkey session, and attaches the
 signatures as the mutation's `signed` argument. Offline edits are signed when
 the sync queue sends them (the device is online then). Without a confirmed
 author DID, a live session and a clean sub-org audit, or if Turnkey fails, the
-action is sent unsigned and recorded as **Unsigned**. A write never fails or
-waits because of signing. Routine actions are signed without a prompt; only
+action is sent unsigned and recorded as **Unsigned**. Signing has a budget of
+5 seconds for the session check and every signature in the call
+(`SIGNING_BUDGET_MS`); past it the write goes out unsigned. A write never
+fails, and never waits longer than that, because of signing. Routine actions are signed without a prompt; only
 Originals entries show a confirmation.
 
 API-key (agent) writes carry no signature today: the agent has no author key.

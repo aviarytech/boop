@@ -11,10 +11,13 @@
  *
  * Signing is online-only and best-effort: no confirmed author DID, no live
  * session, an unclean sub-org audit or a Turnkey failure all mean the action is
- * recorded unsigned, never that it fails. Routine actions are signed without a
+ * recorded unsigned, never that it fails. It is also bounded: the whole step
+ * (session check and every signature) gets SIGNING_BUDGET_MS, after which the
+ * write goes out unsigned rather than waiting on Turnkey. Routine actions are signed without a
  * prompt, unlike Originals entries.
  */
 import { verifyAsync } from "@noble/ed25519";
+import { withTimeout } from "./authTimeout";
 import { ASSERTION_VM_FRAGMENT } from "../../shared/authorDid";
 import {
   actionRecordSigningInput,
@@ -22,6 +25,7 @@ import {
   buildActionRecord,
   clientActionChanges,
   encodeSignature,
+  type ActionChange,
   type ActionSignatureEnvelope,
 } from "../../shared/actionRecord";
 import type { AuthorKeyBackend } from "./authorDid";
@@ -33,10 +37,14 @@ export interface ActionSigningDeps {
   ready(subOrgId: string): Promise<boolean>;
   backend: AuthorKeyBackend;
   now(): number;
+  /** Test hook; production uses SIGNING_BUDGET_MS. */
+  budgetMs?: number;
 }
 
 /** Turnkey calls in flight at once for one batch. */
 const CONCURRENCY = 4;
+/** A write never waits longer than this for its signatures (session lock and audit can take up to 60 s). */
+export const SIGNING_BUDGET_MS = 5_000;
 
 async function mapBounded<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -64,25 +72,29 @@ export async function signActions(
   const author = deps.author();
   if (!author) return undefined;
   try {
-    if (!(await deps.ready(author.subOrgId))) return undefined;
-    const verificationMethod = `${author.did}#${ASSERTION_VM_FRAGMENT}`;
-    const signedAt = deps.now();
-    const key = author.keys.assertion;
-    const signatures = await mapBounded(changes, async change => {
-      const { payload } = buildActionRecord(change, { did: author.did, verificationMethod, versionId: author.versionId }, signedAt);
-      const message = actionRecordSigningInput(payload);
-      const signature = await deps.backend.sign(author.subOrgId, key.address, message);
-      // Refuse a signature that is not this key's over these bytes, as every Turnkey signature is checked.
-      if (signature.length !== 64 || !(await verifyAsync(signature, message, key.publicKey))) {
-        throw new Error("Turnkey returned a signature that does not verify for the assertion key");
-      }
-      return { subject: actionSubjectKey(change), signature: encodeSignature(signature) };
-    });
-    return { verificationMethod, versionId: author.versionId, signedAt, signatures };
+    return await withTimeout(signNow(changes, author, deps), deps.budgetMs ?? SIGNING_BUDGET_MS, "Signing action records timed out");
   } catch (err) {
     console.warn("[actionSigning] Recording unsigned; signing failed:", err);
     return undefined;
   }
+}
+
+async function signNow(changes: ActionChange[], author: CurrentAuthor, deps: ActionSigningDeps): Promise<ActionSignatureEnvelope | undefined> {
+  if (!(await deps.ready(author.subOrgId))) return undefined;
+  const verificationMethod = `${author.did}#${ASSERTION_VM_FRAGMENT}`;
+  const signedAt = deps.now();
+  const key = author.keys.assertion;
+  const signatures = await mapBounded(changes, async change => {
+    const { payload } = buildActionRecord(change, { did: author.did, verificationMethod, versionId: author.versionId }, signedAt);
+    const message = actionRecordSigningInput(payload);
+    const signature = await deps.backend.sign(author.subOrgId, key.address, message);
+    // Refuse a signature that is not this key's over these bytes, as every Turnkey signature is checked.
+    if (signature.length !== 64 || !(await verifyAsync(signature, message, key.publicKey))) {
+      throw new Error("Turnkey returned a signature that does not verify for the assertion key");
+    }
+    return { subject: actionSubjectKey(change), signature: encodeSignature(signature) };
+  });
+  return { verificationMethod, versionId: author.versionId, signedAt, signatures };
 }
 
 function defaultDeps(): ActionSigningDeps {
