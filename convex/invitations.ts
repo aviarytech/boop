@@ -86,6 +86,16 @@ async function send(ctx: MutationCtx, ownerId: Id<"users">, email: string, invit
   await budget(ctx, `invitation-recipient:${await hashApiKey(email)}`, 10, 24 * HOUR);
   await ctx.scheduler.runAfter(0, internal.invitationMail.deliver, { invitationId, version });
 }
+/** Issue a new version: earlier links stop working, delivery and expiry restart. */
+async function reissue(ctx: MutationCtx, ownerId: Id<"users">, invite: Doc<"listInvitations">, role: Doc<"listInvitations">["role"]) {
+  const version = invite.version + 1;
+  await send(ctx, ownerId, invite.email, invite._id, version);
+  const issuedAt = Date.now();
+  const expiresAt = issuedAt + WEEK;
+  await ctx.scheduler.runAt(expiresAt, internal.invitations.expireInvitation, { invitationId: invite._id, version });
+  await ctx.db.patch(invite._id, { version, role, status: "pending", issuedAt, expiresAt, delivery: "queued", recipientId: undefined, grantId: undefined });
+  return { invitationId: invite._id, version };
+}
 
 /** No recipient account lookup: existing and future accounts have identical results. */
 export const { public: createInvitation, internal: createInvitationInternal } = actorMutation({
@@ -100,8 +110,20 @@ export const { public: createInvitation, internal: createInvitationInternal } = 
     if (previous) return previous;
     await budget(ctx, `invitation-request:${ctx.actor.userId}`, 120, HOUR);
     const existing = await ctx.db.query("listInvitations").withIndex("by_list_email", q => q.eq("listId", args.listId).eq("email", email)).unique();
-    // Creating again never resends, revives or changes permissions. Use explicit management operations.
-    if (existing) return remember(ctx, ctx.actor.userId, args.requestId, fingerprint, result(existing));
+    if (existing) {
+      // Inviting someone again applies the owner's latest choice. Live accepted access
+      // changes role in place with no email; anything else gets a fresh invitation.
+      const grant = existing.status === "accepted" && existing.grantId ? await ctx.db.get(existing.grantId) : null;
+      if (grant) {
+        const change = grant.role !== intendedRole && grant.recipientId !== ctx.actor.userId;
+        if (change) await ctx.db.patch(grant._id, { role: intendedRole });
+        await remember(ctx, ctx.actor.userId, args.requestId, fingerprint, result(existing));
+        return { ...result(existing), outcome: change ? "roleUpdated" as const : "unchanged" as const };
+      }
+      const issued = await reissue(ctx, ctx.actor.userId, existing, intendedRole);
+      await remember(ctx, ctx.actor.userId, args.requestId, fingerprint, issued);
+      return { ...issued, outcome: "sent" as const };
+    }
     const now = Date.now();
     const invitationId = await ctx.db.insert("listInvitations", {
       listId: args.listId, ownerId: ctx.actor.userId, email, role: intendedRole,
@@ -109,7 +131,8 @@ export const { public: createInvitation, internal: createInvitationInternal } = 
     });
     await send(ctx, ctx.actor.userId, email, invitationId, 1);
     await ctx.scheduler.runAt(now + WEEK, internal.invitations.expireInvitation, { invitationId, version: 1 });
-    return remember(ctx, ctx.actor.userId, args.requestId, fingerprint, { invitationId, version: 1 });
+    await remember(ctx, ctx.actor.userId, args.requestId, fingerprint, { invitationId, version: 1 });
+    return { invitationId, version: 1, outcome: "sent" as const };
   },
 });
 
@@ -124,13 +147,7 @@ export const { public: resendInvitation, internal: resendInvitationInternal } = 
     await budget(ctx, `invitation-request:${ctx.actor.userId}`, 120, HOUR);
     const invite = await owned(ctx, args);
     if (invite.status === "accepted" && invite.grantId && await ctx.db.get(invite.grantId)) throw resourceUnavailable();
-    const version = invite.version + 1;
-    await send(ctx, ctx.actor.userId, invite.email, invite._id, version);
-    const issuedAt = Date.now();
-    const expiresAt = issuedAt + WEEK;
-    await ctx.scheduler.runAt(expiresAt, internal.invitations.expireInvitation, { invitationId: invite._id, version });
-    await ctx.db.patch(invite._id, { version, status: "pending", issuedAt, expiresAt, delivery: "queued", recipientId: undefined, grantId: undefined });
-    return remember(ctx, ctx.actor.userId, args.requestId, fingerprint, { invitationId: invite._id, version });
+    return remember(ctx, ctx.actor.userId, args.requestId, fingerprint, await reissue(ctx, ctx.actor.userId, invite, invite.role));
   },
 });
 

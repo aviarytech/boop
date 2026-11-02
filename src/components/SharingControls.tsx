@@ -35,12 +35,20 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
     if (!requests.current.has(key)) requests.current.set(key, randomId());
     return requests.current.get(key)!;
   }
-  async function run(operation: () => Promise<unknown>, success = "Changes saved.") {
+  async function run(operation: () => Promise<unknown>, success: string | ((value: unknown) => string) = "Changes saved.") {
     setBusy(true); setError(""); setNotice("");
-    try { await operation(); setNotice(success); }
+    try { const value = await operation(); setNotice(typeof success === "string" ? success : success(value)); }
     catch (cause) { setError(cause instanceof ConvexError && typeof cause.data === "string" ? cause.data : "Could not save. Check your connection and try again. If you’ve sent several invitations, wait before resending."); }
     finally { setBusy(false); }
   }
+  // Preview what Send will do for this email, using rows the owner already sees below.
+  const typed = email.trim().toLowerCase();
+  const match = typed ? invitations?.find(invite => invite.email === typed) : undefined;
+  const liveGrant = match?.status === "accepted" ? grants?.find(grant => grant._id === match.grantId) : undefined;
+  const currentRole = liveGrant?.role as Role | undefined;
+  const downgrade = currentRole === "editor" && role === "viewer";
+  const submitLabel = currentRole ? (currentRole === role ? `Already has ${role} access` : `Change access to ${role}`)
+    : match ? "Resend invitation" : "Send invitation";
   return <div className="mt-6">
     {!embedded && <div className="mb-5 space-y-2 text-sm" role="status">
       <p>{publication === undefined ? "Loading publication status…" : publication?.status === "active" ? "Published publicly: anyone with the link can read this list." : "Not published publicly: only the owner and people with accepted grants have access."}</p>
@@ -53,10 +61,20 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
     <form className="mt-6 space-y-4" onSubmit={e => {
       e.preventDefault();
       if (!canSend || busy) return;
+      const key = `create:${email.trim().toLowerCase()}:${role}`;
+      const recipient = email.trim();
       void run(async () => {
-        await create({ listId, email, role, requestId: requestId(`create:${email.trim().toLowerCase()}:${role}`) });
+        const created = await create({ listId, email, role, requestId: requestId(key) });
+        // A completed send is final; sending to the same person again is a new request.
+        requests.current.delete(key);
         setEmail("");
-      }, "Invitation recorded. Check its status below; use Resend for an existing invitation.");
+        return created;
+      }, value => {
+        const outcome = (value as { outcome?: string } | null)?.outcome;
+        if (outcome === "roleUpdated") return `${recipient} already had access. Their access is now ${role}.`;
+        if (outcome === "unchanged") return `${recipient} already has ${role} access. No email was sent.`;
+        return "Invitation recorded. Check its status below.";
+      });
     }}>
       <div><label className="block text-sm font-semibold mb-1" htmlFor="recipient-email">Recipient email</label>
         <input id="recipient-email" type="email" autoComplete="email" required maxLength={254} className={input} value={email} onChange={e => setEmail(e.target.value)} disabled={busy} placeholder="friend@example.com" /></div>
@@ -64,7 +82,11 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
         <select id="invitation-role" className={input} value={role} onChange={e => setRole(e.target.value as Role)} disabled={busy}>
           <option value="viewer">Viewer — read only</option><option value="editor">Editor — view and edit</option>
         </select></div>
-      <button className={primary} disabled={busy || !canSend || !email.trim()}>Send invitation</button>
+      {currentRole && <p role="note" className={`text-sm ${downgrade ? "text-amber-800 dark:text-amber-300" : "text-stone-600 dark:text-gray-400"}`}>
+        Already has {currentRole} access{downgrade ? ". This lowers their access from editor to viewer." : currentRole === role ? "." : `. This changes it to ${role}; no email is sent.`}
+      </p>}
+      {match && !currentRole && <p role="note" className="text-sm text-stone-600 dark:text-gray-400">Already invited. Sending again emails a new link and earlier links stop working.</p>}
+      <button className={primary} disabled={busy || !canSend || !email.trim() || currentRole === role}>{submitLabel}</button>
       <p className="text-sm text-stone-600 dark:text-gray-400">Expires in seven days. Emails contain no list or note content.</p>
     </form>
     {error && <p role="alert" className="mt-4 text-red-700 dark:text-red-400">{error}</p>}

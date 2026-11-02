@@ -89,8 +89,13 @@ No plan checks or product recipient cap apply.
 ## State, retries and revocation
 
 One invitation row exists per normalized email/resource, using indexed transactional
-reads. Repeating create returns the existing locator without sending another email,
-reviving a revoked invitation or changing its role. Creation/resend require a caller
+reads. Repeating create applies the owner's latest choice. If the email's invitation
+was accepted and the grant still exists, the grant's role changes in place to the one
+chosen (`outcome: "roleUpdated"`, or `"unchanged"` if it already matched) and no email is
+sent. Otherwise (pending, expired, revoked, or accepted access later revoked or left),
+the invitation is reissued like Resend with the chosen role, and earlier links stop
+working (`outcome: "sent"`). A request-ID replay returns only the locator, without
+`outcome`. Creation/resend require a caller
 request ID (8–128 alphanumeric, underscore or hyphen characters). Reusing an ID with
 the same normalized payload returns the original result even after later state
 changes; different payloads are rejected. Receipts store a hashed fingerprint and
