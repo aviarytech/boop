@@ -67,7 +67,7 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
             type="button"
             onClick={onClose}
             disabled={isDeleting}
-            className="px-4 py-2 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md font-medium hover:bg-[var(--boop-panel)] disabled:opacity-50"
+            className="px-4 py-2 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50"
           >
             Cancel
           </button>

@@ -63,7 +63,7 @@ export function ChangeCategoryDialog({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-lg hover:bg-[var(--boop-panel)] transition-colors"
+            className="px-4 py-2 text-sm text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-lg hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
           >
             Cancel
           </button>

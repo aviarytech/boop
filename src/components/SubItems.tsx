@@ -160,7 +160,7 @@ export function SubItems({
             className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
               item.checked
                 ? "bg-[var(--boop-panel)]"
-                : "bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)]"
+                : "bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
             }`}
           >
             {/* Checkbox */}

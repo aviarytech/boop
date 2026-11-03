@@ -78,7 +78,7 @@ export function RenameListDialog({ list, onClose }: RenameListDialogProps) {
           <button
             onClick={onClose}
             disabled={isRenaming}
-            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--boop-ink)] bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] rounded-xl transition-colors"
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--boop-ink)] bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors"
           >
             Cancel
           </button>

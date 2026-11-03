@@ -30,7 +30,7 @@ function RowIcon({ name, tone = 'muted' }: { name: IconName; tone?: 'muted' | 'd
       className={`flex items-center justify-center w-9 h-9 rounded-xl shrink-0 ${
         tone === 'danger'
           ? 'bg-red-100/70 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-          : 'bg-[var(--boop-panel)] text-[var(--boop-muted)]'
+          : 'bg-[var(--boop-card)] text-[var(--boop-muted)] shadow-[0_0_0_1px_var(--boop-line)]'
       }`}
     >
       <Icon name={name} className="w-[18px] h-[18px]" />

@@ -144,7 +144,7 @@ export function TagSelector({
               haptic("light");
               setShowCreateForm(true);
             }}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:bg-[var(--boop-panel)] transition-colors"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

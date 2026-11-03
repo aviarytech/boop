@@ -235,7 +235,7 @@ export function CategoryManager({ onClose }: CategoryManagerProps) {
                       </button>
                       <button
                         onClick={handleCancelEdit}
-                        className="px-3 py-1.5 text-sm text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md hover:bg-[var(--boop-panel)]"
+                        className="px-3 py-1.5 text-sm text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
                       >
                         Cancel
                       </button>

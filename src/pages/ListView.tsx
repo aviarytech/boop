@@ -810,7 +810,7 @@ export function ListView() {
                 else setIsSelectMode(true);
               }}
               className={`${TOOLBAR_BUTTON} ${isSelectMode ? "!bg-[var(--boop-accent-soft)] !text-[var(--boop-accent-ink)]" : ""}`}
-              aria-label="Select items"
+              aria-label="Select"
               aria-pressed={isSelectMode}
               title="Select items"
             >

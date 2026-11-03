@@ -219,7 +219,7 @@ function ProvenanceSection({
     <div className="border border-[var(--boop-line)] rounded-xl overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-expanded={isOpen}
       >
         <div className="flex items-center gap-2">

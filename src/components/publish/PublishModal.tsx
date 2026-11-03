@@ -195,7 +195,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
           haptic('light');
           onClose();
         }}
-        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[var(--boop-panel)] transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
       >
         Cancel
       </button>

@@ -113,7 +113,7 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
           onClose();
         }}
         disabled={isSaving}
-        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[var(--boop-panel)] disabled:opacity-50 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50 transition-colors"
       >
         Cancel
       </button>

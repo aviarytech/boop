@@ -357,7 +357,7 @@ export function ItemDetailsModal({
                     ? p
                       ? PRIORITY_COLORS[p]
                       : "bg-[var(--boop-panel)] text-[var(--boop-ink)] border-gray-400 dark:border-gray-500"
-                    : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[var(--boop-panel)]"
+                    : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
                 } disabled:opacity-50`}
               >
                 {p ? p.charAt(0).toUpperCase() + p.slice(1) : "None"}
@@ -380,7 +380,7 @@ export function ItemDetailsModal({
               className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
                 !selectedCategory
                   ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700"
-                  : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[var(--boop-panel)]"
+                  : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
               } disabled:opacity-50`}
             >
               Auto{isGroceryList && !selectedCategory ? ` (${availableCategories.find(a => a.id === autoCategory)?.name ?? "Other"})` : ""}
@@ -396,7 +396,7 @@ export function ItemDetailsModal({
                     ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700"
                     : effectiveCategory === cat.id && !selectedCategory
                       ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800"
-                      : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[var(--boop-panel)]"
+                      : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
                 } disabled:opacity-50`}
               >
                 {cat.emoji} {cat.name}

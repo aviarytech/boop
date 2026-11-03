@@ -206,7 +206,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
                   className={`px-4 py-3 rounded-xl font-medium transition-all ${
                     isCopied
                       ? "bg-amber-500 text-white"
-                      : "bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] text-[var(--boop-ink)]"
+                      : "bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] text-[var(--boop-ink)]"
                   }`}
                 >
                   {isCopied ? "Copied!" : "Copy"}

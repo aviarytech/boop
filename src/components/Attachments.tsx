@@ -282,7 +282,7 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
         <button
           onClick={handleUploadClick}
           disabled={uploadingCount > 0}
-          className="flex items-center gap-2 w-full px-3 py-2 bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] text-[var(--boop-muted)] rounded-lg text-sm transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 w-full px-3 py-2 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] text-[var(--boop-muted)] rounded-lg text-sm transition-colors disabled:opacity-50"
         >
           {uploadingCount > 0 ? (
             <>

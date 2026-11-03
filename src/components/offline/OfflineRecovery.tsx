@@ -65,7 +65,7 @@ export function OfflineRecovery() {
       setMessage(edits.length ? 'Your identifiable legacy edits were exported. Review them against your lists before re-entering them. Originals remain saved.' : 'No legacy edits could be attributed to this account. Try the original account. Unattributed edits remain retained on this device and are not displayed.');
     } catch { if (isCurrent()) setMessage('Connect and sign in to verify ownership before exporting legacy edits.'); }
   };
-  return <details className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border bg-white p-3 text-sm text-[var(--boop-ink)] shadow-lg dark:text-white">
+  return <details className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-[var(--boop-line)] bg-[var(--boop-card)] p-3 text-sm text-[var(--boop-ink)] shadow-lg">
     <summary className="cursor-pointer">{pendingCount ? `${pendingCount} saved edit(s) awaiting sync` : 'Older offline edits retained'}</summary>
     <div className="max-h-96 overflow-auto space-y-3 pt-3">
       {pendingCount > 0 && <><button className="underline mr-3" onClick={() => void manualSync()}>Retry failed edits</button><button className="underline" onClick={() => download(exportSavedEdits(pending), 'boop-saved-edits.json')}>Export saved edits</button></>}

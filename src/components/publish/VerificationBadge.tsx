@@ -34,7 +34,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
       {/* Badge button */}
       <button
         onClick={() => setShowDetails(!showDetails)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-muted)] rounded-full text-sm font-medium hover:bg-[var(--boop-panel)] transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-muted)] rounded-full text-sm font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-expanded={showDetails}
         aria-label="Identifier details"
       >
@@ -118,7 +118,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
                     // Ignore clipboard errors
                   }
                 }}
-                className="flex-1 text-xs px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded hover:bg-[var(--boop-panel)]"
+                className="flex-1 text-xs px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
               >
                 Copy DID
               </button>
@@ -135,7 +135,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                  className="flex-1 text-xs px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded hover:bg-[var(--boop-panel)]"
+                  className="flex-1 text-xs px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
                 >
                   Download Doc
                 </button>
