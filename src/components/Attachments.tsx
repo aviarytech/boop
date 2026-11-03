@@ -218,7 +218,7 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
             return (
             <div
               key={key}
-              className="relative group aspect-square bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden"
+              className="relative group aspect-square bg-[var(--boop-panel)] rounded-lg overflow-hidden"
             >
               {url ? (
                 <a
@@ -282,7 +282,7 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
         <button
           onClick={handleUploadClick}
           disabled={uploadingCount > 0}
-          className="flex items-center gap-2 w-full px-3 py-2 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-lg text-sm transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 w-full px-3 py-2 bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] text-[var(--boop-muted)] rounded-lg text-sm transition-colors disabled:opacity-50"
         >
           {uploadingCount > 0 ? (
             <>
@@ -310,7 +310,7 @@ export function Attachments({ itemId, canEdit }: AttachmentsProps) {
 
       {/* Empty state */}
       {(!attachments || attachments.length === 0) && !canEdit && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">
+        <p className="text-xs text-[var(--boop-dim)]">
           No attachments
         </p>
       )}
@@ -331,7 +331,7 @@ export function AttachmentPreview({ count }: AttachmentPreviewProps) {
   if (!count || count === 0) return null;
 
   return (
-    <div className="flex items-center gap-1 text-gray-400 dark:text-gray-500">
+    <div className="flex items-center gap-1 text-[var(--boop-dim)]">
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
       </svg>

@@ -14,12 +14,28 @@ import { supportsPushNotifications } from '../lib/notifications';
 import { biometrics } from '../lib/biometrics';
 import { checkForUpdateAndApply, clearAllCachesAndReload } from '../lib/sw-registration';
 import { Panel } from './ui/Panel';
+import { Icon, type IconName } from './ui/Icon';
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from '../../convex/_generated/api';
 import { useToast } from '../hooks/useToast';
 
 interface SettingsProps {
   onClose: () => void;
+}
+
+/** A row's icon: one muted tile so every setting reads the same. */
+function RowIcon({ name, tone = 'muted' }: { name: IconName; tone?: 'muted' | 'danger' }) {
+  return (
+    <span
+      className={`flex items-center justify-center w-9 h-9 rounded-xl shrink-0 ${
+        tone === 'danger'
+          ? 'bg-red-100/70 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+          : 'bg-[var(--boop-panel)] text-[var(--boop-muted)]'
+      }`}
+    >
+      <Icon name={name} className="w-[18px] h-[18px]" />
+    </span>
+  );
 }
 
 export function Settings({ onClose }: SettingsProps) {
@@ -131,12 +147,12 @@ export function Settings({ onClose }: SettingsProps) {
 
   const header = (
     <>
-      <h2 id="settings-title" className="text-xl font-bold text-gray-900 dark:text-gray-100">
-        ⚙️ Settings
+      <h2 id="settings-title" className="text-xl font-bold text-[var(--boop-ink)]">
+        Settings
       </h2>
       <button
         onClick={onClose}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] rounded-lg hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-label="Close settings"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +163,7 @@ export function Settings({ onClose }: SettingsProps) {
   );
 
   const footer = (
-    <div className="p-4 bg-gray-50 dark:bg-gray-900/50">
+    <div className="p-4 bg-[var(--boop-panel)]">
       <button
         onClick={onClose}
         className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors"
@@ -162,17 +178,17 @@ export function Settings({ onClose }: SettingsProps) {
     {feedbackOpen && (
       <div className="fixed inset-0 z-[150] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setFeedbackOpen(false)}>
         <div
-          className="w-full sm:max-w-md bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
+          className="w-full sm:max-w-md bg-[var(--boop-card)] rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
           onClick={e => e.stopPropagation()}
         >
-          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Send Feedback</h3>
+          <h3 className="text-lg font-bold text-[var(--boop-ink)]">Send Feedback</h3>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
+            <label className="block text-sm font-medium text-[var(--boop-ink)] mb-1">Category</label>
             <select
               value={feedbackCategory}
               onChange={e => setFeedbackCategory(e.target.value as typeof feedbackCategory)}
-              className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg border-0 focus:ring-2 focus:ring-amber-500"
+              className="w-full px-3 py-2 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded-lg border-0 focus:ring-2 focus:ring-amber-500"
             >
               <option value="bug">Bug Report</option>
               <option value="feature">Feature Request</option>
@@ -183,20 +199,20 @@ export function Settings({ onClose }: SettingsProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Your feedback</label>
+            <label className="block text-sm font-medium text-[var(--boop-ink)] mb-1">Your feedback</label>
             <textarea
               value={feedbackBody}
               onChange={e => setFeedbackBody(e.target.value)}
               placeholder="Tell us anything..."
               rows={4}
-              className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg border-0 focus:ring-2 focus:ring-amber-500 resize-none"
+              className="w-full px-3 py-2 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded-lg border-0 focus:ring-2 focus:ring-amber-500 resize-none"
             />
           </div>
 
           <div className="flex gap-3">
             <button
               onClick={() => setFeedbackOpen(false)}
-              className="flex-1 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium"
+              className="flex-1 py-2 rounded-xl border border-[var(--boop-line)] text-[var(--boop-ink)] font-medium"
             >
               Cancel
             </button>
@@ -214,18 +230,18 @@ export function Settings({ onClose }: SettingsProps) {
     {deleteConfirmOpen && (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => { if (!deleteSubmitting) setDeleteConfirmOpen(false); }}>
         <div
-          className="w-full sm:max-w-md bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
+          className="w-full sm:max-w-md bg-[var(--boop-card)] rounded-t-2xl sm:rounded-2xl p-6 space-y-4"
           onClick={e => e.stopPropagation()}
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl leading-none">⚠️</span>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Delete my data</h3>
+            <RowIcon name="alert" tone="danger" />
+            <h3 className="text-lg font-bold text-[var(--boop-ink)]">Delete my data</h3>
           </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-[var(--boop-muted)]">
             This permanently deletes your account, all lists, items, and personal data. This cannot be undone.
           </p>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-[var(--boop-ink)] mb-1">
               Type <span className="font-mono font-bold">delete</span> to confirm
             </label>
             <input
@@ -234,14 +250,14 @@ export function Settings({ onClose }: SettingsProps) {
               onChange={e => setDeleteConfirmText(e.target.value)}
               placeholder="delete"
               autoCapitalize="none"
-              className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg border-0 focus:ring-2 focus:ring-red-500"
+              className="w-full px-3 py-2 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded-lg border-0 focus:ring-2 focus:ring-red-500"
             />
           </div>
           <div className="flex gap-3">
             <button
               onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmText(''); }}
               disabled={deleteSubmitting}
-              className="flex-1 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium disabled:opacity-50"
+              className="flex-1 py-2 rounded-xl border border-[var(--boop-line)] text-[var(--boop-ink)] font-medium disabled:opacity-50"
             >
               Cancel
             </button>
@@ -267,17 +283,17 @@ export function Settings({ onClose }: SettingsProps) {
       <div className="p-6 space-y-6">
         {/* Appearance Section */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
             Appearance
           </h3>
           
           {/* Dark Mode Toggle */}
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-3">
-              <span className="text-2xl leading-none">{darkMode ? '🌙' : '☀️'}</span>
+              <RowIcon name={darkMode ? 'moon' : 'sun'} />
               <div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">Dark Mode</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="font-medium text-[var(--boop-ink)]">Dark Mode</p>
+                <p className="text-sm text-[var(--boop-muted)]">
                   {darkMode ? 'Currently in dark mode' : 'Currently in light mode'}
                 </p>
               </div>
@@ -285,7 +301,7 @@ export function Settings({ onClose }: SettingsProps) {
             <button
               onClick={() => handleToggle(darkMode, toggleDarkMode)}
               className={`relative w-14 h-8 rounded-full transition-colors ${
-                darkMode ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                darkMode ? 'bg-amber-500' : 'bg-[color-mix(in_oklch,var(--boop-ink)_20%,transparent)]'
               }`}
               role="switch"
               aria-checked={darkMode}
@@ -303,17 +319,17 @@ export function Settings({ onClose }: SettingsProps) {
         {/* Accessibility Section */}
         {supportsHaptics() && (
           <section>
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+            <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
               Accessibility
             </h3>
             
             {/* Haptic Feedback Toggle */}
             <div className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
-                <span className="text-2xl leading-none">📳</span>
+                <RowIcon name="vibrate" />
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">Haptic Feedback</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="font-medium text-[var(--boop-ink)]">Haptic Feedback</p>
+                  <p className="text-sm text-[var(--boop-muted)]">
                     Vibrate on interactions
                   </p>
                 </div>
@@ -321,7 +337,7 @@ export function Settings({ onClose }: SettingsProps) {
               <button
                 onClick={() => handleToggle(hapticsEnabled, setHapticsEnabled)}
                 className={`relative w-14 h-8 rounded-full transition-colors ${
-                  hapticsEnabled ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                  hapticsEnabled ? 'bg-amber-500' : 'bg-[color-mix(in_oklch,var(--boop-ink)_20%,transparent)]'
                 }`}
                 role="switch"
                 aria-checked={hapticsEnabled}
@@ -340,17 +356,17 @@ export function Settings({ onClose }: SettingsProps) {
         {/* Security Section */}
         {biometricsAvailable && (
           <section>
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+            <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
               Security
             </h3>
             
             {/* Biometric Lock Toggle */}
             <div className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
-                <span className="text-2xl leading-none">🔒</span>
+                <RowIcon name="lock" />
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">App Lock</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="font-medium text-[var(--boop-ink)]">App Lock</p>
+                  <p className="text-sm text-[var(--boop-muted)]">
                     Require Face ID / fingerprint on launch
                   </p>
                 </div>
@@ -358,7 +374,7 @@ export function Settings({ onClose }: SettingsProps) {
               <button
                 onClick={() => handleToggle(biometricLockEnabled, setBiometricLockEnabled)}
                 className={`relative w-14 h-8 rounded-full transition-colors ${
-                  biometricLockEnabled ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                  biometricLockEnabled ? 'bg-amber-500' : 'bg-[color-mix(in_oklch,var(--boop-ink)_20%,transparent)]'
                 }`}
                 role="switch"
                 aria-checked={biometricLockEnabled}
@@ -377,7 +393,7 @@ export function Settings({ onClose }: SettingsProps) {
         {/* Notifications Section */}
         {supportsPushNotifications() && (
           <section>
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+            <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
               Notifications
             </h3>
             
@@ -388,10 +404,10 @@ export function Settings({ onClose }: SettingsProps) {
             {/* Push Notifications Toggle */}
             <div className="flex items-center justify-between py-3">
               <div className="flex items-center gap-3">
-                <span className="text-2xl leading-none">🔔</span>
+                <RowIcon name="bell" />
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">Push Notifications</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                  <p className="font-medium text-[var(--boop-ink)]">Push Notifications</p>
+                  <p className="text-sm text-[var(--boop-muted)]">
                     {notificationPermission === 'denied' 
                       ? 'Blocked in browser settings'
                       : notificationsEnabled 
@@ -407,7 +423,7 @@ export function Settings({ onClose }: SettingsProps) {
                 }}
                 disabled={notificationsLoading || notificationPermission === 'denied'}
                 className={`relative w-14 h-8 rounded-full transition-colors ${
-                  notificationsEnabled ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                  notificationsEnabled ? 'bg-amber-500' : 'bg-[color-mix(in_oklch,var(--boop-ink)_20%,transparent)]'
                 } ${notificationsLoading || notificationPermission === 'denied' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 role="switch"
                 aria-checked={notificationsEnabled}
@@ -425,15 +441,15 @@ export function Settings({ onClose }: SettingsProps) {
             {notificationsEnabled && (
               <div className="py-3">
                 <div className="flex items-center gap-3 mb-3">
-                  <span className="text-2xl leading-none">⏰</span>
+                  <RowIcon name="clock" />
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-gray-100">Reminder Time</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="font-medium text-[var(--boop-ink)]">Reminder Time</p>
+                    <p className="text-sm text-[var(--boop-muted)]">
                       How early to remind you before due date
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2 ml-11">
+                <div className="flex flex-wrap gap-2 ml-12">
                   {[
                     { value: 15, label: '15m' },
                     { value: 30, label: '30m' },
@@ -450,7 +466,7 @@ export function Settings({ onClose }: SettingsProps) {
                       className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                         reminderMinutes === value
                           ? 'bg-amber-500 text-white'
-                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          : 'bg-[var(--boop-panel)] text-[var(--boop-ink)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]'
                       }`}
                     >
                       {label}
@@ -464,17 +480,17 @@ export function Settings({ onClose }: SettingsProps) {
 
         {/* Invite Friends Section */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
             Invite Friends
           </h3>
-          <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+          <div className="p-4 bg-[var(--boop-panel)] rounded-xl">
             <ReferralInviteCurrentUser />
           </div>
         </section>
 
         {/* Account Section */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
             Account
           </h3>
           
@@ -484,18 +500,18 @@ export function Settings({ onClose }: SettingsProps) {
               haptic('light');
               onClose();
             }}
-            className="flex items-center justify-between py-3 px-4 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors"
+            className="flex items-center justify-between py-3 px-4 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors"
           >
             <div className="flex items-center gap-3">
-              <span className="text-2xl leading-none">👤</span>
+              <RowIcon name="user" />
               <div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">Your Profile</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="font-medium text-[var(--boop-ink)]">Your Profile</p>
+                <p className="text-sm text-[var(--boop-muted)]">
                   View stats and account details
                 </p>
               </div>
             </div>
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-[var(--boop-dim)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </Link>
@@ -503,12 +519,12 @@ export function Settings({ onClose }: SettingsProps) {
             type="button"
             onClick={handleLogout}
             disabled={logoutSubmitting}
-            className="flex items-center gap-3 w-full mt-2 py-3 px-4 text-left bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-3 w-full mt-2 py-3 px-4 text-left bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg className="w-6 h-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <svg className="w-6 h-6 shrink-0 text-[var(--boop-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            <span className="font-medium text-gray-900 dark:text-gray-100">
+            <span className="font-medium text-[var(--boop-ink)]">
               {logoutSubmitting ? 'Logging out…' : 'Log out'}
             </span>
           </button>
@@ -516,21 +532,21 @@ export function Settings({ onClose }: SettingsProps) {
 
         {/* Feedback Section */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
             Feedback
           </h3>
           <button
             onClick={() => { haptic('light'); setFeedbackOpen(true); }}
-            className="flex items-center justify-between w-full py-3 px-4 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors"
+            className="flex items-center justify-between w-full py-3 px-4 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors"
           >
             <div className="flex items-center gap-3">
-              <span className="text-2xl leading-none">💬</span>
+              <RowIcon name="message" />
               <div className="text-left">
-                <p className="font-medium text-gray-900 dark:text-gray-100">Send Feedback</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">We read every message</p>
+                <p className="font-medium text-[var(--boop-ink)]">Send Feedback</p>
+                <p className="text-sm text-[var(--boop-muted)]">We read every message</p>
               </div>
             </div>
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-[var(--boop-dim)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
@@ -538,7 +554,7 @@ export function Settings({ onClose }: SettingsProps) {
 
         {/* Privacy & Data Section */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
             Privacy & Data
           </h3>
           <div className="space-y-2">
@@ -546,13 +562,13 @@ export function Settings({ onClose }: SettingsProps) {
               href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-between py-3 px-4 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors"
+              className="flex items-center justify-between py-3 px-4 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl leading-none">📄</span>
-                <p className="font-medium text-gray-900 dark:text-gray-100">Privacy Policy</p>
+                <RowIcon name="file" />
+                <p className="font-medium text-[var(--boop-ink)]">Privacy Policy</p>
               </div>
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-[var(--boop-dim)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
             </a>
@@ -561,7 +577,7 @@ export function Settings({ onClose }: SettingsProps) {
               className="flex items-center justify-between w-full py-3 px-4 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl transition-colors"
             >
               <div className="flex items-center gap-3">
-                <span className="text-2xl leading-none">🗑️</span>
+                <RowIcon name="trash" tone="danger" />
                 <div className="text-left">
                   <p className="font-medium text-red-700 dark:text-red-400">Delete my data</p>
                   <p className="text-sm text-red-500 dark:text-red-500">Permanently erase all your data</p>
@@ -574,22 +590,20 @@ export function Settings({ onClose }: SettingsProps) {
         {/* App Updates Section */}
         {'serviceWorker' in navigator && (
           <section>
-            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+            <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
               App Updates
             </h3>
             <div className="space-y-2">
               <button
                 onClick={handleCheckForUpdate}
                 disabled={updateChecking || updateStatus === 'updating'}
-                className="flex items-center justify-between w-full py-3 px-4 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors disabled:opacity-50"
+                className="flex items-center justify-between w-full py-3 px-4 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors disabled:opacity-50"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl leading-none">
-                    {updateStatus === 'current' ? '✅' : '🔄'}
-                  </span>
+                  <RowIcon name={updateStatus === 'current' ? 'checkCircle' : 'refresh'} />
                   <div className="text-left">
-                    <p className="font-medium text-gray-900 dark:text-gray-100">Check for Updates</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <p className="font-medium text-[var(--boop-ink)]">Check for Updates</p>
+                    <p className="text-sm text-[var(--boop-muted)]">
                       {updateStatus === 'checking' && 'Checking...'}
                       {updateStatus === 'updating' && 'Updating, please wait...'}
                       {updateStatus === 'current' && 'You\'re on the latest version'}
@@ -601,13 +615,13 @@ export function Settings({ onClose }: SettingsProps) {
               <button
                 onClick={handleForceRefresh}
                 disabled={updateStatus === 'updating'}
-                className="flex items-center justify-between w-full py-3 px-4 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-xl transition-colors disabled:opacity-50"
+                className="flex items-center justify-between w-full py-3 px-4 bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] rounded-xl transition-colors disabled:opacity-50"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl leading-none">🧹</span>
+                  <RowIcon name="refresh" />
                   <div className="text-left">
-                    <p className="font-medium text-gray-900 dark:text-gray-100">Force Refresh</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Clear cache and reload the app</p>
+                    <p className="font-medium text-[var(--boop-ink)]">Force Refresh</p>
+                    <p className="text-sm text-[var(--boop-muted)]">Clear cache and reload the app</p>
                   </div>
                 </div>
               </button>
@@ -617,19 +631,19 @@ export function Settings({ onClose }: SettingsProps) {
 
         {/* About Section */}
         <section>
-          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">
+          <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
             About
           </h3>
           
-          <div className="bg-stone-50 dark:bg-gray-700 rounded-xl p-4 border border-stone-200/70 dark:border-transparent">
+          <div className="bg-[var(--boop-panel)] rounded-xl p-4 border border-[var(--boop-line)]/70 dark:border-transparent">
             <div className="flex items-center gap-3 mb-3">
               <div className="boop-wordmark text-[22px] leading-none">
                 <span className="boop-dot" aria-hidden="true" />
                 <span>boop</span>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 ml-auto">v1.0.0</p>
+              <p className="text-sm text-[var(--boop-muted)] ml-auto">v1.0.0</p>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300">
+            <p className="text-sm text-[var(--boop-muted)]">
               A calm place for the things you need to do. Powered by Originals Protocol.
             </p>
           </div>

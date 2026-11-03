@@ -35,6 +35,7 @@ import { OnboardingFlow, isOnboardingDone, InviteNudge, isInviteNudgeDone, markI
 import { trackFirstListCreated } from "../lib/analytics";
 import { useBilling } from "../hooks/useBilling";
 import { ReferralInviteCurrentUser } from "../components/ReferralInvite";
+import { Icon } from "../components/ui/Icon";
 
 function IndexCard({ list, summaries, currentUserDid, showOwner, isLegacy }: {
   list: Doc<"lists">;
@@ -358,6 +359,16 @@ export function Home() {
               )}
             </div>
           )}
+          <nav aria-label="Sharing" className="flex items-center gap-4 mt-3 text-[14px]">
+            <Link to="/shared" className="inline-flex items-center gap-1.5 py-1 font-semibold text-[var(--boop-ink)] underline decoration-[var(--boop-line)] decoration-2 underline-offset-4 hover:decoration-[var(--boop-accent)]">
+              <Icon name="users" className="w-4 h-4 text-[var(--boop-muted)]" />
+              Shared with me
+            </Link>
+            <Link to="/invitations" className="inline-flex items-center gap-1.5 py-1 font-semibold text-[var(--boop-ink)] underline decoration-[var(--boop-line)] decoration-2 underline-offset-4 hover:decoration-[var(--boop-accent)]">
+              <Icon name="message" className="w-4 h-4 text-[var(--boop-muted)]" />
+              Invitations
+            </Link>
+          </nav>
         </div>
         <div className="flex items-center gap-2.5 flex-shrink-0">
           {streak > 0 && <StreakBadge streak={streak} />}
@@ -454,7 +465,7 @@ export function Home() {
                 <h2 className="text-[20px] font-bold tracking-tight text-[var(--boop-ink)]">
                   Favourites
                 </h2>
-                <span className="text-sm font-normal text-stone-500 dark:text-stone-400">({favouriteLists.length})</span>
+                <span className="text-sm font-normal text-[var(--boop-muted)]">({favouriteLists.length})</span>
               </div>
               <div className="grid gap-3 lg:grid-cols-2">
                 {favouriteLists.map((list, index) => (
@@ -490,7 +501,17 @@ export function Home() {
                 );
               })}
 
-              {ownedLists.uncategorized.length > 0 && (
+              {ownedLists.uncategorized.length > 0 && !categories.some((c) => (ownedLists.categorized.get(c._id)?.length ?? 0) > 0) && (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {ownedLists.uncategorized.map((list, index) => (
+                    <div key={list._id} className="animate-slide-up" style={{ animationDelay: `${index * 40}ms` }}>
+                      <IndexCard list={list} summaries={noteSummaries} currentUserDid={did} isLegacy={legacySet.has(list._id)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {ownedLists.uncategorized.length > 0 && categories.some((c) => (ownedLists.categorized.get(c._id)?.length ?? 0) > 0) && (
                 <CategoryHeader
                   name="Uncategorized"
                   listCount={ownedLists.uncategorized.length}
@@ -511,11 +532,13 @@ export function Home() {
           {allSharedLists.length > 0 && (
             <section>
               <div className="flex items-center gap-2 mb-4">
-                <span className="text-lg">🤝</span>
-                <h2 className="text-lg font-bold text-stone-800 dark:text-stone-200">
-                  Shared with me
+                <h2 className="text-[20px] font-bold tracking-tight text-[var(--boop-ink)]">
+                  <Link to="/shared" className="inline-flex items-center gap-2 hover:text-[var(--boop-accent)] transition-colors">
+                    <Icon name="users" className="w-5 h-5 text-[var(--boop-muted)]" />
+                    Shared with me
+                  </Link>
                 </h2>
-                <span className="text-sm font-normal text-stone-500 dark:text-stone-400">({allSharedLists.length})</span>
+                <span className="text-sm font-normal text-[var(--boop-muted)]">({allSharedLists.length})</span>
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2">

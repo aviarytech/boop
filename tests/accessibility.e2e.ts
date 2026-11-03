@@ -155,7 +155,7 @@ test.describe("Accessibility — Settings panel", () => {
     await openSettings(scenario, screen);
     await browser.keyboard.press("Escape");
     await expect(
-      screen.getByRole("heading", { name: "⚙️ Settings" }),
+      screen.getByRole("heading", { name: "Settings" }),
     ).not.toBeVisible({ timeout: 3000 });
   });
 });

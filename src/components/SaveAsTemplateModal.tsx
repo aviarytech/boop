@@ -3,6 +3,7 @@
  * Uses Panel component for slide-up drawer experience.
  */
 
+import { Icon } from "./ui/Icon";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
@@ -78,12 +79,12 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
   const header = (
     <>
       <div className="flex items-center gap-3">
-        <span className="text-2xl leading-none">📁</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)]"><Icon name="copy" className="w-5 h-5" /></span>
         <div>
-          <h2 id="save-template-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h2 id="save-template-title" className="text-lg font-bold text-[var(--boop-ink)]">
             Save as Template
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-[var(--boop-muted)]">
             Reuse this list structure later
           </p>
         </div>
@@ -93,7 +94,7 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
           haptic('light');
           onClose();
         }}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-gray-400 hover:text-[var(--boop-muted)] rounded-lg hover:bg-[var(--boop-panel)] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,7 +113,7 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
           onClose();
         }}
         disabled={isSaving}
-        className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[var(--boop-panel)] disabled:opacity-50 transition-colors"
       >
         Cancel
       </button>
@@ -148,13 +149,13 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
       {success ? (
         <div className="p-5">
           <div className="flex flex-col items-center py-8">
-            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-[var(--boop-accent-soft)] rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-[var(--boop-accent-ink)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-lg font-medium text-gray-900 dark:text-gray-100">Template Saved!</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-lg font-medium text-[var(--boop-ink)]">Template Saved!</p>
+            <p className="text-sm text-[var(--boop-muted)] mt-1">
               You can find it in Templates page
             </p>
           </div>
@@ -162,7 +163,7 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
       ) : (
         <form id="save-template-form" onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label htmlFor="templateName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="templateName" className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
               Template name
             </label>
             <input
@@ -171,14 +172,14 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g., Weekly Groceries Template"
-              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
+              className="w-full px-4 py-3 bg-[var(--boop-panel)] text-[var(--boop-ink)] border-2 border-[var(--boop-line)] rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
               disabled={isSaving}
               autoFocus
             />
           </div>
 
           <div>
-            <label htmlFor="templateDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            <label htmlFor="templateDescription" className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
               Description (optional)
             </label>
             <textarea
@@ -187,7 +188,7 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this template for?"
               rows={2}
-              className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50 resize-none"
+              className="w-full px-4 py-3 bg-[var(--boop-panel)] text-[var(--boop-ink)] border-2 border-[var(--boop-line)] rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50 resize-none"
               disabled={isSaving}
             />
           </div>
@@ -199,15 +200,15 @@ export function SaveAsTemplateModal({ listId, listName, onClose, onSuccess }: Sa
                 checked={isPublic}
                 onChange={(e) => setIsPublic(e.target.checked)}
                 disabled={isSaving}
-                className="w-5 h-5 rounded border-gray-300 dark:border-gray-600 text-amber-500 focus:ring-amber-500 dark:bg-gray-700"
+                className="w-5 h-5 rounded border-[var(--boop-line)] text-amber-500 focus:ring-amber-500 dark:bg-gray-700"
               />
-              <span className="text-sm text-gray-700 dark:text-gray-300">
+              <span className="text-sm text-[var(--boop-ink)]">
                 Make public (others can use this template)
               </span>
             </label>
           </div>
 
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-[var(--boop-muted)]">
             Only unchecked items will be included in the template.
           </p>
 

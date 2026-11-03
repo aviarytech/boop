@@ -30,13 +30,13 @@ export function PublicDisplayNameEditor({ profile }: { profile: Profile | undefi
     } finally { setBusy(false); }
   }}>
     <label htmlFor={id} className="block text-sm font-semibold">Public display name</label>
-    <p id={`${id}-help`} className="text-sm text-stone-600 dark:text-gray-400">Choose a name people you invite will recognize. This name is public: it appears in invitations, invitation emails and shared activity. Your account email stays private. Do not use an email address or its first part.</p>
+    <p id={`${id}-help`} className="text-sm text-[var(--boop-muted)]">Choose a name people you invite will recognize. This name is public: it appears in invitations, invitation emails and shared activity. Your account email stays private. Do not use an email address or its first part.</p>
     {profile === undefined ? <p role="status">Loading public name…</p> : !profile.displayName && <p className="text-sm font-semibold">Save a recognizable name before sending or resending invitations.</p>}
     <input id={id} aria-describedby={`${id}-help`} type="text" autoComplete="nickname" maxLength={80} required
-      className="min-h-11 w-full rounded-xl border border-stone-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 focus:outline-2 focus:outline-amber-600"
+      className="min-h-11 w-full rounded-xl border border-[var(--boop-line)] bg-[var(--boop-card)] px-3 py-2 focus:outline-2 focus:outline-amber-600"
       value={name} disabled={busy || profile === undefined} onChange={event => { setDraft(event.target.value); setSaved(false); setError(""); }} />
     <button type="submit" disabled={busy || profile === undefined || !name.trim()}
-      className="min-h-11 rounded-full border border-stone-300 dark:border-gray-700 px-4 py-2 text-sm font-semibold hover:bg-stone-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">{busy ? "Saving name…" : "Save public name"}</button>
+      className="min-h-11 rounded-full border border-[var(--boop-line)] px-4 py-2 text-sm font-semibold hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50 disabled:cursor-not-allowed">{busy ? "Saving name…" : "Save public name"}</button>
     {error && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{error}</p>}
     {saved && <p role="status" className="text-sm">Public name saved. Invitations are sent only when you choose Send invitation or Resend.</p>}
   </form>;

@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { PublicHeader, publicNavButton, publicNavLink } from '../components/PublicHeader'
+import { Icon } from '../components/ui/Icon'
 
 type Feature = {
   name: string
@@ -111,26 +113,27 @@ const COMPETITORS: Record<string, CompetitorData> = {
   },
 }
 
-function CheckIcon() {
-  return (
-    <svg className="w-5 h-5 text-amber-600 dark:text-amber-300 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-    </svg>
-  )
-}
-
-function XIcon() {
-  return (
-    <svg className="w-5 h-5 text-gray-400 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-    </svg>
-  )
-}
+// Cells in the data lead with a status emoji (✅ ⚠️ ❌); draw it as a glyph
+// in the page's ink instead, and keep the words.
+const STATUS = [
+  { mark: '✅', icon: 'check', tone: 'text-[var(--boop-accent)]', label: 'Yes' },
+  { mark: '⚠️', icon: 'alert', tone: 'text-[var(--boop-dim)]', label: 'Partly' },
+  { mark: '❌', icon: 'x', tone: 'text-[var(--boop-dim)]', label: 'No' },
+] as const
 
 function FeatureCell({ value }: { value: string | boolean }) {
-  if (value === true) return <span><CheckIcon /></span>
-  if (value === false) return <span><XIcon /></span>
-  return <span className="text-sm text-gray-700 dark:text-gray-300">{value}</span>
+  if (typeof value === 'boolean') {
+    const status = STATUS[value ? 0 : 2]
+    return <span className={`inline-flex ${status.tone}`}><Icon name={status.icon} className="w-5 h-5" /><span className="sr-only">{status.label}</span></span>
+  }
+  const status = STATUS.find(st => value.startsWith(st.mark))
+  const text = status ? value.slice(status.mark.length).trim() : value
+  return (
+    <span className="flex flex-col items-center gap-1 text-sm text-[var(--boop-ink)] [overflow-wrap:anywhere] sm:flex-row sm:items-start sm:justify-center sm:gap-1.5">
+      {status && <Icon name={status.icon} className={`w-4 h-4 sm:mt-0.5 ${status.tone}`} />}
+      <span className="[hyphens:auto]" lang="en">{text}</span>
+    </span>
+  )
 }
 
 export function Compare() {
@@ -170,79 +173,58 @@ export function Compare() {
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-stone-50 dark:bg-gray-950 flex items-center justify-center">
-        <div className="text-center">
-          <div
-            className="mx-auto mb-5 rounded-full"
-            style={{ width: 48, height: 48, background: 'var(--boop-accent)' }}
-            aria-hidden="true"
-          />
-          <h1 className="text-2xl font-bold text-stone-900 dark:text-gray-100 mb-2">Comparison not found</h1>
-          <a href="/" className="text-amber-600 dark:text-amber-300 underline">Back to boop</a>
-        </div>
+      <div className="min-h-screen bg-[var(--boop-bg)]">
+        <PublicHeader />
+        <main className="mx-auto max-w-3xl px-5 py-24 text-center sm:px-8">
+          <h1 className="mb-3 text-2xl font-bold text-[var(--boop-ink)]">Comparison not found</h1>
+          <a href="/" className="font-semibold text-[var(--boop-accent)] underline underline-offset-4">Back to boop</a>
+        </main>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-gray-950">
-      {/* Header */}
-      <header className="bg-amber-900 text-amber-50 py-8 px-4">
-        <div className="max-w-4xl mx-auto">
-          <a href="/" className="flex items-center gap-2 mb-6 text-amber-200 hover:text-white transition-colors text-sm">
-            &larr; Back to boop
-          </a>
-          <div className="flex items-center gap-3 mb-3">
-            <span
-              className="rounded-full"
-              style={{ width: 28, height: 28, background: 'var(--boop-accent)', display: 'inline-block' }}
-              aria-hidden="true"
-            />
-            <h1 className="text-3xl md:text-4xl font-black">{data.tagline}</h1>
-          </div>
-          <p className="text-amber-200 text-lg max-w-2xl">{data.boopHeadline}</p>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[var(--boop-bg)] text-[var(--boop-ink)]">
+      <PublicHeader>
+        <a href="/" className={`${publicNavLink} hidden sm:inline`}>&larr; Back to boop</a>
+        <a href="/pricing" className={publicNavLink}>Pricing</a>
+        <a href="/" className={publicNavButton}>Try boop Free</a>
+      </PublicHeader>
 
-      <main className="max-w-4xl mx-auto px-4 py-10">
+      <main className="mx-auto max-w-4xl px-5 py-12 sm:px-8 sm:py-16">
+        <header className="mb-10">
+          <h1 className="mb-3 text-[clamp(36px,6vw,56px)] font-extrabold leading-[1.02] tracking-[-0.03em]">{data.tagline}</h1>
+          <p className="max-w-2xl text-xl text-[var(--boop-muted)]">{data.boopHeadline}</p>
+        </header>
+
         {/* Intro blurb */}
-        <section className="mb-10">
-          <p className="text-stone-700 dark:text-gray-300 text-lg leading-relaxed mb-2">{data.competitorWeakness}</p>
-          <p className="text-amber-700 dark:text-amber-300 font-semibold">{data.competitorHeadline}</p>
+        <section className="mb-12">
+          <p className="mb-3 text-lg leading-relaxed text-[var(--boop-muted)]">{data.competitorWeakness}</p>
+          <p className="font-semibold text-[var(--boop-accent-ink)]">{data.competitorHeadline}</p>
         </section>
 
         {/* Comparison table */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-stone-900 dark:text-gray-100 mb-4">Feature Comparison</h2>
-          <div className="overflow-x-auto rounded-xl border border-amber-200 shadow-sm">
-            <table className="w-full text-sm">
+        <section className="mb-14">
+          <h2 className="mb-4 text-2xl font-bold">Feature Comparison</h2>
+          <div className="boop-sheet overflow-x-auto">
+            <table className="w-full table-fixed text-sm">
               <thead>
-                <tr className="bg-amber-900 text-amber-50">
-                  <th className="text-left px-4 py-3 font-semibold w-1/2">Feature</th>
-                  <th className="text-center px-4 py-3 font-semibold w-1/4">
-                    <span className="flex items-center justify-center gap-1.5">
-                      <span
-                        className="rounded-full"
-                        style={{ width: 10, height: 10, background: '#fff', display: 'inline-block' }}
-                        aria-hidden="true"
-                      />
-                      boop
-                    </span>
+                <tr className="border-b border-[var(--boop-line)] text-[var(--boop-muted)]">
+                  <th className="w-[40%] px-3 sm:px-4 py-3 text-left font-semibold">Feature</th>
+                  <th className="w-[30%] px-3 sm:px-4 py-3 text-center font-semibold text-[var(--boop-ink)]">
+                    <span className="boop-wordmark justify-center text-[15px]"><span className="boop-dot" aria-hidden="true" />boop</span>
                   </th>
-                  <th className="text-center px-4 py-3 font-semibold w-1/4">{data.name}</th>
+                  <th className="w-[30%] px-3 sm:px-4 py-3 text-center font-semibold">{data.name}</th>
                 </tr>
               </thead>
               <tbody>
-                {data.features.map((feature, i) => (
-                  <tr
-                    key={feature.name}
-                    className={i % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-stone-50 dark:bg-gray-900'}
-                  >
-                    <td className="px-4 py-3 text-gray-800 dark:text-gray-100 font-medium">{feature.name}</td>
-                    <td className="px-4 py-3 text-center">
+                {data.features.map((feature) => (
+                  <tr key={feature.name} className="border-b border-[var(--boop-line)] last:border-0">
+                    <td className="px-3 sm:px-4 py-3 font-medium">{feature.name}</td>
+                    <td className="px-3 sm:px-4 py-3 text-center">
                       <FeatureCell value={feature.boop} />
                     </td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 sm:px-4 py-3 text-center">
                       <FeatureCell value={feature.competitor} />
                     </td>
                   </tr>
@@ -253,32 +235,24 @@ export function Compare() {
         </section>
 
         {/* CTA */}
-        <section className="bg-amber-900 text-amber-50 rounded-2xl px-8 py-10 text-center shadow-lg">
-          <div
-            className="mx-auto mb-5 rounded-full"
-            style={{ width: 44, height: 44, background: 'var(--boop-accent)' }}
-            aria-hidden="true"
-          />
-          <h2 className="text-2xl md:text-3xl font-black mb-3">
+        <section className="rounded-[22px] bg-[var(--boop-accent-soft)] px-6 py-12 text-center sm:px-8">
+          <h2 className="mb-3 text-2xl font-extrabold tracking-[-0.02em] md:text-3xl">
             Ready to ditch {data.name}?
           </h2>
-          <p className="text-amber-200 text-lg mb-6 max-w-xl mx-auto">
+          <p className="mx-auto mb-6 max-w-xl text-lg text-[var(--boop-muted)]">
             {data.ctaSubtext}
           </p>
-          <a
-            href="/"
-            className="inline-block bg-amber-400 hover:bg-amber-300 text-amber-900 font-bold text-lg px-8 py-3 rounded-xl transition-colors shadow"
-          >
+          <a href="/" className={`${publicNavButton} px-7 py-3 text-lg`}>
             Try boop Free
           </a>
-          <p className="text-amber-300 text-sm mt-4">
+          <p className="mt-4 text-sm text-[var(--boop-muted)]">
             Free forever for up to 5 lists. No credit card needed.
           </p>
         </section>
 
         {/* Other comparisons */}
         <section className="mt-12">
-          <h3 className="text-lg font-bold text-stone-900 dark:text-gray-100 mb-4">More comparisons</h3>
+          <h3 className="mb-4 text-lg font-bold">More comparisons</h3>
           <div className="flex flex-wrap gap-3">
             {Object.values(COMPETITORS)
               .filter(c => c.slug !== data.slug)
@@ -286,7 +260,7 @@ export function Compare() {
                 <a
                   key={c.slug}
                   href={`/compare/${c.slug}`}
-                  className="px-4 py-2 bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 font-medium rounded-lg transition-colors text-sm border border-amber-200"
+                  className="rounded-xl border border-[var(--boop-line)] bg-[var(--boop-card)] px-4 py-2 text-sm font-semibold transition-colors hover:border-[var(--boop-accent)]"
                 >
                   boop vs {c.name} &rarr;
                 </a>
@@ -295,18 +269,18 @@ export function Compare() {
         </section>
       </main>
 
-      <footer className="border-t border-amber-200 py-6 px-4 text-center text-amber-600 dark:text-amber-300 text-sm mt-4">
-        <p>
+      <footer className="mt-4 border-t border-[var(--boop-line)] px-4 py-6 text-center text-sm text-[var(--boop-muted)]">
+        <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
           <a href="/" className="boop-wordmark hover:opacity-80 transition-opacity" aria-label="boop">
-            <span className="boop-dot" aria-hidden="true" style={{ width: 10, height: 10 }} />
+            <span className="boop-dot" aria-hidden="true" />
             <span>boop</span>
           </a>
-          {' · '}
-          <a href="/pricing" className="hover:text-amber-900 dark:hover:text-amber-100 transition-colors">Pricing</a>
-          {' · '}
-          <a href="/privacy" className="hover:text-amber-900 dark:hover:text-amber-100 transition-colors">Privacy</a>
-          {' · '}
-          <a href="/terms" className="hover:text-amber-900 dark:hover:text-amber-100 transition-colors">Terms</a>
+          <span aria-hidden="true">·</span>
+          <a href="/pricing" className="hover:text-[var(--boop-ink)] transition-colors">Pricing</a>
+          <span aria-hidden="true">·</span>
+          <a href="/privacy" className="hover:text-[var(--boop-ink)] transition-colors">Privacy</a>
+          <span aria-hidden="true">·</span>
+          <a href="/terms" className="hover:text-[var(--boop-ink)] transition-colors">Terms</a>
         </p>
       </footer>
     </div>

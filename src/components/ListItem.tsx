@@ -6,6 +6,7 @@
  * Supports notes, due dates, URLs, and recurrence.
  */
 
+import { Icon } from "./ui/Icon";
 import { useState, useRef, lazy, Suspense, memo } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { ItemAttribution, ItemStamp } from "./ItemAttribution";
@@ -168,7 +169,7 @@ export const ListItem = memo(function ListItem({
       onClick={isSelectMode ? onToggleSelect : undefined}
       className={`flex items-center gap-2 px-4 py-2.5 min-h-[60px] transition-all touch-manipulation ${
         isDragging 
-          ? "opacity-50 bg-gray-100 dark:bg-gray-700 scale-[1.02]" 
+          ? "opacity-50 bg-[var(--boop-panel)] scale-[1.02]" 
           : "hover:bg-[var(--boop-panel)]/60"
       } ${
         isDragOver 
@@ -205,7 +206,7 @@ export const ListItem = memo(function ListItem({
           <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-all ${
             isSelected
               ? "bg-[var(--boop-accent)] text-white"
-              : "bg-stone-200 dark:bg-stone-600"
+              : "bg-[var(--boop-panel)]"
           }`}>
             {isSelected && (
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
@@ -223,7 +224,7 @@ export const ListItem = memo(function ListItem({
       {/* Drag handle - only show if user can edit and not in select mode */}
       {canUserEdit && !isSelectMode && (
         <button
-          className="flex-shrink-0 w-6 sm:w-8 h-8 flex items-center justify-center text-[color-mix(in_oklch,var(--boop-ink)_25%,transparent)] cursor-grab active:cursor-grabbing hover:text-gray-400 dark:hover:text-gray-500 transition-colors touch-none select-none -ml-2"
+          className="flex-shrink-0 w-6 sm:w-8 h-8 flex items-center justify-center text-[color-mix(in_oklch,var(--boop-ink)_25%,transparent)] cursor-grab active:cursor-grabbing hover:text-[var(--boop-dim)] transition-colors touch-none select-none -ml-2"
           aria-label="Drag to reorder"
           onTouchStart={(e) => {
             if (itemRef.current && onTouchStart) {
@@ -306,7 +307,7 @@ export const ListItem = memo(function ListItem({
           setShowDetails(true);
         }}
         className={`flex-1 min-w-0 text-left rounded px-1 -mx-1 transition-colors ${
-          isSelectMode ? "" : "hover:bg-gray-50 dark:hover:bg-gray-700/30 cursor-pointer"
+          isSelectMode ? "" : "hover:bg-[color-mix(in_oklch,var(--boop-panel)_50%,transparent)] cursor-pointer"
         }`}
       >
         <div className="flex items-center gap-1.5">
@@ -333,8 +334,8 @@ export const ListItem = memo(function ListItem({
           </p>
           {/* Indicators for extras */}
           {item.url && (
-            <span className="text-amber-600 flex-shrink-0 inline-flex items-center text-xs leading-none" role="img" aria-label="Has link">
-              🔗
+            <span className="text-[var(--boop-muted)] flex-shrink-0 inline-flex items-center" role="img" aria-label="Has link">
+              <Icon name="link" className="w-3.5 h-3.5" />
               <span className="sr-only">Link attached</span>
             </span>
           )}
@@ -345,7 +346,7 @@ export const ListItem = memo(function ListItem({
               aria-label={`Repeats every ${item.recurrence.interval && item.recurrence.interval > 1 ? `${item.recurrence.interval} ` : ""}${item.recurrence.frequency.replace("ly", item.recurrence.interval && item.recurrence.interval > 1 ? "s" : "")}`}
               title={`Repeats every ${item.recurrence.interval && item.recurrence.interval > 1 ? `${item.recurrence.interval} ` : ""}${item.recurrence.frequency === "daily" ? (item.recurrence.interval && item.recurrence.interval > 1 ? "days" : "day") : item.recurrence.frequency === "weekly" ? (item.recurrence.interval && item.recurrence.interval > 1 ? "weeks" : "week") : (item.recurrence.interval && item.recurrence.interval > 1 ? "months" : "month")}`}
             >
-              🔁
+              <Icon name="refresh" className="w-3.5 h-3.5" />
             </span>
           )}
         </div>
@@ -356,30 +357,30 @@ export const ListItem = memo(function ListItem({
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 inline-flex items-center gap-0.5 ${
               isOverdue 
                 ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400'
+                : 'bg-[var(--boop-panel)] text-[var(--boop-muted)]'
             }`}>
-              <span className="leading-none">📅</span> {dueDateStr}
+              <Icon name="calendar" className="w-3 h-3" /> {dueDateStr}
             </span>
           )}
           {/* Notes indicator */}
           {item.description && (
-            <span className="text-[10px] text-gray-400 flex-shrink-0 inline-flex items-center leading-none" title="Has notes">📝</span>
+            <span className="text-[var(--boop-dim)] flex-shrink-0 inline-flex items-center" title="Has notes" role="img" aria-label="Has notes"><Icon name="file" className="w-3 h-3" /></span>
           )}
           {/* Assignee indicator */}
           {assigneeDids.map(assigneeDid => (
             <span
-              className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 inline-flex items-center gap-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+              className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 inline-flex items-center gap-0.5 bg-[var(--boop-panel)] text-[var(--boop-muted)]"
               key={assigneeDid}
               title={`Assigned to ${assigneeDid}`}
             >
-              <span className="leading-none">👤</span>
+              <Icon name="user" className="w-3 h-3" />
               {assigneeDid === userDid ? "You" : assigneeDid.length > 12 ? `…${assigneeDid.slice(-8)}` : assigneeDid}
             </span>
           ))}
           {/* Attachments indicator */}
           {item.attachments && item.attachments.length > 0 && (
-            <span className="text-[10px] text-gray-400 flex-shrink-0 inline-flex items-center gap-0.5" title={`${item.attachments.length} attachment${item.attachments.length > 1 ? 's' : ''}`}>
-              <span className="leading-none">📎</span> {item.attachments.length}
+            <span className="text-[10px] text-[var(--boop-dim)] flex-shrink-0 inline-flex items-center gap-0.5" title={`${item.attachments.length} attachment${item.attachments.length > 1 ? 's' : ''}`}>
+              <Icon name="paperclip" className="w-3 h-3" /> {item.attachments.length}
             </span>
           )}
           {/* Sub-items indicator */}
@@ -387,12 +388,12 @@ export const ListItem = memo(function ListItem({
             <span 
               className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 inline-flex items-center gap-0.5 ${
                 subItemProgress.checked === subItemProgress.total
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                  ? 'bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)]'
                   : 'border border-[var(--boop-line)] text-[var(--boop-muted)]'
               }`}
               title={`${subItemProgress.checked} of ${subItemProgress.total} sub-items done`}
             >
-              <span className="leading-none">📦</span> {subItemProgress.checked}/{subItemProgress.total}
+              <Icon name="list" className="w-3 h-3" /> {subItemProgress.checked}/{subItemProgress.total}
             </span>
           )}
         </div>

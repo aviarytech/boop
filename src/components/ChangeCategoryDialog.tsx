@@ -46,10 +46,10 @@ export function ChangeCategoryDialog({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up"
+        className="bg-[var(--boop-card)] rounded-2xl shadow-xl w-full max-w-sm p-6 animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        <h2 className="text-lg font-semibold text-[var(--boop-ink)] mb-4">
           Change Category
         </h2>
 
@@ -63,7 +63,7 @@ export function ChangeCategoryDialog({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            className="px-4 py-2 text-sm text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-lg hover:bg-[var(--boop-panel)] transition-colors"
           >
             Cancel
           </button>

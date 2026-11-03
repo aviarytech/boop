@@ -172,12 +172,12 @@ export function ItemDetailsModal({
 
   const header = (
     <>
-      <h2 id="item-details-title" className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <h2 id="item-details-title" className="text-lg font-semibold text-[var(--boop-ink)]">
         {canEdit ? "Edit Item" : "Item Details"}
       </h2>
       <button
         onClick={close}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg transition-colors"
+        className="p-2 text-gray-400 hover:text-[var(--boop-muted)] rounded-lg transition-colors"
         aria-label="Close panel"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -191,7 +191,7 @@ export function ItemDetailsModal({
     <div className="flex justify-end gap-2 px-5 py-4">
       <button
         onClick={close}
-        className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        className="px-4 py-2 text-sm text-[var(--boop-muted)] hover:bg-[var(--boop-panel)] rounded-lg transition-colors"
       >
         Cancel
       </button>
@@ -217,7 +217,7 @@ export function ItemDetailsModal({
       <div className="p-5 space-y-4 overflow-x-hidden">
         {/* Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
             Title
           </label>
           <input
@@ -225,21 +225,21 @@ export function ItemDetailsModal({
             value={name}
             onChange={(e) => setDraft("name", e.target.value)}
             disabled={!canEdit}
-            className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+            className="w-full px-3 py-2 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           />
         </div>
 
         {/* Description/Notes */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-            📝 Notes
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
+            Notes
           </label>
           {canEdit ? (
             <button
               type="button"
               disabled={!hasServerItem}
               onClick={() => { haptic("light"); navigate(`/note/${item._id}`); }}
-              className="w-full text-left px-3 py-2 min-h-[3.5rem] bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full text-left px-3 py-2 min-h-[3.5rem] bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               {description.trim() ? (
                 <div className="prose prose-sm dark:prose-invert max-w-none line-clamp-3">
@@ -250,7 +250,7 @@ export function ItemDetailsModal({
               )}
             </button>
           ) : description.trim() ? (
-            <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm prose prose-sm dark:prose-invert max-w-none">
+            <div className="px-3 py-2 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm prose prose-sm dark:prose-invert max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{description}</ReactMarkdown>
             </div>
           ) : (
@@ -260,8 +260,8 @@ export function ItemDetailsModal({
 
         {/* URL/Link */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-            🔗 Link (PR, URL, etc.)
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
+            Link (PR, URL, etc.)
           </label>
           <input
             type="url"
@@ -269,21 +269,21 @@ export function ItemDetailsModal({
             onChange={(e) => setDraft("url", e.target.value)}
             disabled={!canEdit}
             placeholder={canEdit ? "https://..." : "No link"}
-            className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+            className="w-full px-3 py-2 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] placeholder:text-[var(--boop-dim)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           />
         </div>
 
         {/* Assignee */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-            👤 Assignees
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
+            Assignees
           </label>
           <select
             aria-label="Add assignee"
             value=""
             onChange={(e) => { if (e.target.value) setDraft("assigneeDids", [...new Set([...assigneeDids, e.target.value])]); }}
             disabled={!canEdit}
-            className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+            className="w-full px-3 py-2 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           >
             <option value="">Add assignee…</option>
             {participantDids.filter(did => !assigneeDids.includes(did)).map((did) => {
@@ -297,7 +297,7 @@ export function ItemDetailsModal({
           </select>
           <div className="flex flex-wrap gap-2 mt-2">
             {assigneeDids.length === 0 && <span className="text-xs text-gray-500">Unassigned</span>}
-            {assigneeDids.map(did => <span key={did} className="inline-flex max-w-full min-w-0 items-center text-xs rounded-full bg-blue-100 dark:bg-blue-900/30 px-2 py-1" title={did}>
+            {assigneeDids.map(did => <span key={did} className="inline-flex max-w-full min-w-0 items-center text-xs rounded-full bg-[var(--boop-panel)] px-2 py-1" title={did}>
               <span className="min-w-0 truncate" title={participantProfiles?.[did]?.displayName ?? did}>{participantProfiles?.[did]?.displayName ?? (did.length > 28 ? `${did.slice(0, 16)}…${did.slice(-8)}` : did)}</span>
               {canEdit && <button type="button" aria-label={`Remove assignee ${did}`} className="ml-2 shrink-0" onClick={() => setDraft("assigneeDids", assigneeDids.filter(value => value !== did))}>×</button>}
             </span>)}
@@ -307,8 +307,8 @@ export function ItemDetailsModal({
         {/* Presence */}
         {participantDids.length > 1 && (
           <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-              🟢 Presence
+            <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+              Presence
             </label>
             <div className="flex flex-wrap gap-2">
               {participantDids.map((did) => {
@@ -327,11 +327,11 @@ export function ItemDetailsModal({
                     key={`presence-${did}`}
                     className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs border ${
                       isActive
-                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800"
-                        : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700"
+                        ? "bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)] border-[var(--boop-accent)]"
+                        : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)]"
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-gray-400"}`} />
+                    <span className={`w-2 h-2 rounded-full ${isActive ? "bg-[var(--boop-accent)]" : "bg-gray-400"}`} />
                     {participantProfiles?.[did]?.displayName ?? `${did.slice(0, 8)}…`}
                   </span>
                 );
@@ -342,8 +342,8 @@ export function ItemDetailsModal({
 
         {/* Priority */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            🚨 Priority
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Priority
           </label>
           <div className="flex gap-2">
             {(["", "low", "medium", "high"] as Priority[]).map((p) => (
@@ -356,8 +356,8 @@ export function ItemDetailsModal({
                   priority === p
                     ? p
                       ? PRIORITY_COLORS[p]
-                      : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-400 dark:border-gray-500"
-                    : "bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                      : "bg-[var(--boop-panel)] text-[var(--boop-ink)] border-gray-400 dark:border-gray-500"
+                    : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[var(--boop-panel)]"
                 } disabled:opacity-50`}
               >
                 {p ? p.charAt(0).toUpperCase() + p.slice(1) : "None"}
@@ -368,8 +368,8 @@ export function ItemDetailsModal({
 
         {/* Category / Aisle */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            🏷️ Category
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Category
           </label>
           <div className="flex flex-wrap gap-1.5">
             {/* "Auto" chip - clears override */}
@@ -380,10 +380,10 @@ export function ItemDetailsModal({
               className={`px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
                 !selectedCategory
                   ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700"
-                  : "bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[var(--boop-panel)]"
               } disabled:opacity-50`}
             >
-              ✨ Auto{isGroceryList && !selectedCategory ? ` (${availableCategories.find(a => a.id === autoCategory)?.name ?? "Other"})` : ""}
+              Auto{isGroceryList && !selectedCategory ? ` (${availableCategories.find(a => a.id === autoCategory)?.name ?? "Other"})` : ""}
             </button>
             {availableCategories.map((cat) => (
               <button
@@ -396,7 +396,7 @@ export function ItemDetailsModal({
                     ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700"
                     : effectiveCategory === cat.id && !selectedCategory
                       ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-500 border-amber-200 dark:border-amber-800"
-                      : "bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                      : "bg-[var(--boop-panel)] text-[var(--boop-muted)] border-[var(--boop-line)] hover:bg-[var(--boop-panel)]"
                 } disabled:opacity-50`}
               >
                 {cat.emoji} {cat.name}
@@ -407,8 +407,8 @@ export function ItemDetailsModal({
 
         {/* Due Date */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-            📅 Due Date
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
+            Due Date
           </label>
           <NaturalDateInput
             value={dueDate}
@@ -419,21 +419,21 @@ export function ItemDetailsModal({
 
         {/* Recurrence */}
         <div>
-          <label className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+          <label className="flex items-center gap-2 text-xs font-medium text-[var(--boop-muted)] mb-2">
             <input
               type="checkbox"
               checked={hasRecurrence}
               onChange={(e) => setDraft("hasRecurrence", e.target.checked)}
               disabled={!canEdit}
-              className="rounded border-gray-300 dark:border-gray-600 text-amber-500 focus:ring-amber-500"
+              className="rounded border-[var(--boop-line)] text-amber-500 focus:ring-amber-500"
             />
-            🔁 Recurring
+            Recurring
           </label>
           {hasRecurrence && (
             <div className="space-y-3 pl-1">
               {/* Frequency + Interval row */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">Every</span>
+                <span className="text-xs text-[var(--boop-muted)] flex-shrink-0">Every</span>
                 <input
                   type="number"
                   min={1}
@@ -441,13 +441,13 @@ export function ItemDetailsModal({
                   value={recurrenceInterval}
                   onChange={(e) => setDraft("recurrenceInterval", Math.max(1, parseInt(e.target.value) || 1))}
                   disabled={!canEdit}
-                  className="w-16 px-2 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-center text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                  className="w-16 px-2 py-1.5 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-center text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 />
                 <select
                   value={recurrenceFrequency}
                   onChange={(e) => setDraft("recurrenceFrequency", e.target.value as RecurrenceFrequency)}
                   disabled={!canEdit}
-                  className="flex-1 px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                  className="flex-1 px-3 py-1.5 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 >
                   <option value="daily">{recurrenceInterval === 1 ? "day" : "days"}</option>
                   <option value="weekly">{recurrenceInterval === 1 ? "week" : "weeks"}</option>
@@ -456,7 +456,7 @@ export function ItemDetailsModal({
               </div>
               {/* End date (optional) */}
               <div>
-                <label className="block text-xs text-gray-400 dark:text-gray-500 mb-1">
+                <label className="block text-xs text-[var(--boop-dim)] mb-1">
                   End date (optional)
                 </label>
                 <input
@@ -464,7 +464,7 @@ export function ItemDetailsModal({
                   value={recurrenceEndDate}
                   onChange={(e) => setDraft("recurrenceEndDate", e.target.value)}
                   disabled={!canEdit}
-                  className="w-full px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                  className="w-full px-3 py-1.5 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 />
               </div>
             </div>
@@ -474,8 +474,8 @@ export function ItemDetailsModal({
         {hasServerItem && <>
         {/* Tags */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            🏷️ Tags
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Tags
           </label>
           <TagSelector
             listId={item.listId}
@@ -489,8 +489,8 @@ export function ItemDetailsModal({
 
         {/* Sub-items */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            📦 Sub-items / Checklist
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Sub-items / Checklist
           </label>
           <SubItems
             parentId={item._id}
@@ -503,8 +503,8 @@ export function ItemDetailsModal({
 
         {/* Attachments */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            📷 Attachments
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Attachments
           </label>
           <Attachments
             itemId={item._id}
@@ -518,10 +518,10 @@ export function ItemDetailsModal({
 
         {/* Activity */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            🕘 Activity
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Activity
           </label>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-2">
+          <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-lg border border-[var(--boop-line)] bg-[var(--boop-panel)] p-2">
             {[
               { type: "created", at: item.createdAt, did: item.createdByDid, text: "Created item" },
               ...(item.checkedAt
@@ -536,12 +536,12 @@ export function ItemDetailsModal({
             ]
               .sort((a, b) => b.at - a.at)
               .map((entry, index) => (
-                <div key={`${entry.type}-${entry.at}-${index}`} className="text-xs text-gray-600 dark:text-gray-300">
-                  <span className="font-medium text-gray-800 dark:text-gray-200">
+                <div key={`${entry.type}-${entry.at}-${index}`} className="text-xs text-[var(--boop-muted)]">
+                  <span className="font-medium text-[var(--boop-ink)]">
                     {participantProfiles?.[entry.did]?.displayName ?? `${entry.did.slice(0, 8)}…`}
                   </span>{" "}
                   {entry.text}
-                  <span className="text-gray-400 dark:text-gray-500"> · {new Date(entry.at).toLocaleString()}</span>
+                  <span className="text-[var(--boop-dim)]"> · {new Date(entry.at).toLocaleString()}</span>
                 </div>
               ))}
           </div>
@@ -550,8 +550,8 @@ export function ItemDetailsModal({
         {hasServerItem && <>
         {/* Comments */}
         <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            💬 Comments
+          <label className="block text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Comments
           </label>
           <Comments
             itemId={item._id}

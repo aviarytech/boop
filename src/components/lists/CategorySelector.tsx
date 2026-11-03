@@ -65,7 +65,7 @@ export function CategorySelector({
   if (isCreating) {
     return (
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label className="block text-sm font-medium text-[var(--boop-ink)]">
           New Category
         </label>
         <input
@@ -73,7 +73,7 @@ export function CategorySelector({
           value={newCategoryName}
           onChange={(e) => setNewCategoryName(e.target.value)}
           placeholder="Category name"
-          className="w-full px-3 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+          className="w-full px-3 py-2 text-[var(--boop-ink)] bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
           autoFocus
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -89,7 +89,7 @@ export function CategorySelector({
           <button
             type="button"
             onClick={handleCancelCreate}
-            className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
+            className="px-3 py-1.5 text-sm text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md hover:bg-[var(--boop-panel)]"
           >
             Cancel
           </button>
@@ -109,7 +109,7 @@ export function CategorySelector({
     <div>
       <label
         htmlFor="category-select"
-        className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+        className="block text-sm font-medium text-[var(--boop-ink)] mb-1"
       >
         Category
       </label>
@@ -118,7 +118,7 @@ export function CategorySelector({
         value={value ?? ""}
         onChange={handleSelectChange}
         disabled={disabled}
-        className="w-full px-3 py-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
+        className="w-full px-3 py-2 text-[var(--boop-ink)] bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:bg-gray-100 dark:disabled:bg-gray-700 disabled:cursor-not-allowed"
       >
         <option value="">Uncategorized</option>
         {categories.map((category) => (

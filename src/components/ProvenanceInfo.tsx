@@ -1,4 +1,5 @@
 import { legacyActionEvidence } from "../../shared/legacyActionEvidence";
+import { Icon, type IconName } from "./ui/Icon";
 import {
   describeActionRecord,
   verifyActionRecord,
@@ -118,16 +119,16 @@ function DidRow({
   return (
     <div className="flex items-start justify-between gap-2 py-2">
       <div className="flex-1 min-w-0">
-        <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+        <div className="text-xs font-medium text-[var(--boop-muted)] mb-0.5">
           {label}
         </div>
         <div className="flex items-center gap-2">
           {displayName && (
-            <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">
+            <span className="text-sm text-[var(--boop-ink)] font-medium">
               {displayName}
             </span>
           )}
-          <code className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono break-all">
+          <code className="text-xs text-[var(--boop-muted)] bg-[var(--boop-panel)] px-1.5 py-0.5 rounded font-mono break-all">
             {truncateDid(did)}
           </code>
         </div>
@@ -136,8 +137,8 @@ function DidRow({
         onClick={handleCopy}
         className={`flex-shrink-0 p-1.5 rounded transition-colors ${
           copied
-            ? "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400"
-            : "hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            ? "bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)]"
+            : "hover:bg-[var(--boop-panel)] text-gray-400 hover:text-[var(--boop-muted)]"
         }`}
         title={copied ? "Copied!" : "Copy full DID"}
         aria-label={copied ? "Copied!" : `Copy ${label}`}
@@ -162,10 +163,10 @@ function DidRow({
 function TimestampRow({ label, timestamp }: { label: string; timestamp: number }) {
   return (
     <div className="py-2">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">
+      <div className="text-xs font-medium text-[var(--boop-muted)] mb-0.5">
         {label}
       </div>
-      <div className="text-sm text-gray-700 dark:text-gray-200">
+      <div className="text-sm text-[var(--boop-ink)]">
         {formatDate(timestamp)}
       </div>
     </div>
@@ -177,23 +178,24 @@ function OriginalVerificationRow({ state }: { state: ListVerificationState }) {
   // for one whose history simply wasn't shown.
   const [icon, text, tone] =
     state.status === "absent"
-      ? ["—", state.legacy
+      ? [null, state.legacy
           ? "Made before Originals 5. Its owner re-mints it when they open it."
           : "Not an Original yet. It's minted when its owner next opens it.",
-        "text-gray-500 dark:text-gray-400"]
+        "text-[var(--boop-muted)]"]
       : state.status === "checking"
-        ? ["⏳", "Verifying signed history…", "text-gray-500 dark:text-gray-400"]
+        ? ["clock", "Verifying signed history…", "text-[var(--boop-muted)]"]
         : state.status === "verified"
-          ? ["✅", `Signed history verified, as of version ${state.checkpoint.split("-")[0]}`, "text-green-600 dark:text-green-400"]
-          : ["⚠️", `Signed history failed verification: ${state.detail}`, "text-red-600 dark:text-red-400"];
+          ? ["checkCircle", `Signed history verified, as of version ${state.checkpoint.split("-")[0]}`, "text-[var(--boop-accent)]"]
+          : ["alert", `Signed history failed verification: ${state.detail}`, "text-red-600 dark:text-red-400"];
 
   return (
     <div className="py-2">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-        🔗 Signed History
+      <div className="text-xs font-medium text-[var(--boop-muted)] mb-1">
+        Signed History
       </div>
-      <div className={`text-sm ${tone}`}>
-        {icon} {text}
+      <div className={`text-sm flex items-start gap-1.5 ${tone}`}>
+        {icon && <Icon name={icon as IconName} className="w-4 h-4 mt-0.5" />}
+        <span>{text}</span>
       </div>
     </div>
   );
@@ -214,10 +216,10 @@ function ProvenanceSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+    <div className="border border-[var(--boop-line)] rounded-xl overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] transition-colors"
         aria-expanded={isOpen}
       >
         <div className="flex items-center gap-2">
@@ -234,7 +236,7 @@ function ProvenanceSection({
               d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" 
             />
           </svg>
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+          <span className="text-sm font-medium text-[var(--boop-ink)]">
             {title}
           </span>
         </div>
@@ -248,7 +250,7 @@ function ProvenanceSection({
         </svg>
       </button>
       {isOpen && (
-        <div className="px-4 py-2 divide-y divide-gray-100 dark:divide-gray-700/50">
+        <div className="px-4 py-2 divide-y divide-[var(--boop-line)]">
           {children}
         </div>
       )}
@@ -264,25 +266,25 @@ function AnchorStatusBadge({ status }: { status: "pending" | "inscribed" | "conf
     pending: {
       bg: "bg-yellow-100 dark:bg-yellow-900/30",
       text: "text-yellow-700 dark:text-yellow-400",
-      icon: "⏳",
+      icon: "clock" as IconName,
       label: "Pending",
     },
     inscribed: {
       bg: "bg-amber-100 dark:bg-amber-900/30",
       text: "text-amber-800 dark:text-amber-400",
-      icon: "📝",
+      icon: "pencil" as IconName,
       label: "Inscribed",
     },
     failed: {
       bg: "bg-red-100 dark:bg-red-900/30",
       text: "text-red-700 dark:text-red-400",
-      icon: "❌",
+      icon: "x" as IconName,
       label: "Failed",
     },
     confirmed: {
-      bg: "bg-green-100 dark:bg-green-900/30",
-      text: "text-green-700 dark:text-green-400",
-      icon: "✅",
+      bg: "bg-[var(--boop-accent-soft)]",
+      text: "text-[var(--boop-accent-ink)]",
+      icon: "check" as IconName,
       label: "Confirmed",
     },
   };
@@ -291,7 +293,7 @@ function AnchorStatusBadge({ status }: { status: "pending" | "inscribed" | "conf
 
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
-      <span>{config.icon}</span>
+      <Icon name={config.icon} className="w-3 h-3" />
       <span>{config.label}</span>
     </span>
   );
@@ -308,7 +310,7 @@ function BitcoinAnchorRow({ anchor }: { anchor: Doc<"bitcoinAnchors"> }) {
   return (
     <div className="py-3">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        <div className="text-xs font-medium text-[var(--boop-muted)]">
           ₿ Bitcoin Anchor
         </div>
         <AnchorStatusBadge status={anchor.status} />
@@ -316,11 +318,11 @@ function BitcoinAnchorRow({ anchor }: { anchor: Doc<"bitcoinAnchors"> }) {
       
       {anchor.txid && (
         <div className="mb-2">
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">
+          <div className="text-xs text-[var(--boop-muted)] mb-0.5">
             Transaction ID
           </div>
           <div className="flex items-center gap-2">
-            <code className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded font-mono">
+            <code className="text-xs text-[var(--boop-muted)] bg-[var(--boop-panel)] px-1.5 py-0.5 rounded font-mono">
               {truncateDid(anchor.txid, 12, 8)}
             </code>
             {explorerUrl && (
@@ -342,13 +344,13 @@ function BitcoinAnchorRow({ anchor }: { anchor: Doc<"bitcoinAnchors"> }) {
 
       {anchor.blockHeight && (
         <div className="mb-2">
-          <div className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">
+          <div className="text-xs text-[var(--boop-muted)] mb-0.5">
             Block Height
           </div>
-          <div className="text-sm text-gray-700 dark:text-gray-200">
+          <div className="text-sm text-[var(--boop-ink)]">
             #{anchor.blockHeight.toLocaleString()}
             {anchor.confirmations !== undefined && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+              <span className="text-xs text-[var(--boop-muted)] ml-2">
                 ({anchor.confirmations} confirmations)
               </span>
             )}
@@ -356,7 +358,7 @@ function BitcoinAnchorRow({ anchor }: { anchor: Doc<"bitcoinAnchors"> }) {
         </div>
       )}
 
-      <div className="text-xs text-gray-500 dark:text-gray-400">
+      <div className="text-xs text-[var(--boop-muted)]">
         Requested {formatRelativeTime(anchor.createdAt)}
         {anchor.confirmedAt && (
           <span> • Confirmed {formatRelativeTime(anchor.confirmedAt)}</span>
@@ -388,7 +390,7 @@ function VcProofRow({
         <svg className="w-4 h-4 text-[var(--boop-accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M6 3h9l3 3v15H6z" />
         </svg>
-        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+        <span className="text-xs font-medium text-[var(--boop-ink)]">
           {label}
         </span>
       </div>
@@ -398,7 +400,7 @@ function VcProofRow({
         displayName={displayName}
         haptic={haptic} 
       />
-      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+      <div className="text-xs text-[var(--boop-muted)] mt-1">
         Issued {formatDate(issuanceDate)}
       </div>
     </div>
@@ -481,7 +483,7 @@ function actionRecordPresentation(
   record: StoredActionRecord,
   check: SignatureCheck | undefined
 ): { status: string; detail: string; tone: string } {
-  const neutral = "text-gray-500 dark:text-gray-400";
+  const neutral = "text-[var(--boop-muted)]";
   const bad = "text-red-600 dark:text-red-400";
   if (record.status === "pending") {
     return { status: "Pending signature", detail: "Waiting for this record to be signed.", tone: neutral };
@@ -506,7 +508,7 @@ function actionRecordPresentation(
       : check === "unresolved"
         ? "boop verified this signature when it was recorded. The author's DID could not be resolved from its domain just now, so it is not independently verified here."
         : "Checking signature…",
-    tone: "text-green-600 dark:text-green-400",
+    tone: "text-[var(--boop-accent-ink)]",
   };
 }
 
@@ -527,7 +529,7 @@ function ActionRecordRow({
 }) {
   const described = describeActionRecord(record);
   if (!described) {
-    return <div className="py-3 text-xs text-gray-500 dark:text-gray-400">Unreadable action record</div>;
+    return <div className="py-3 text-xs text-[var(--boop-muted)]">Unreadable action record</div>;
   }
   const { status, detail, tone } = actionRecordPresentation(record, check);
   const credential = described.credential
@@ -544,12 +546,12 @@ function ActionRecordRow({
         <svg className="w-4 h-4 text-[var(--boop-accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6M6 3h9l3 3v15H6z" />
         </svg>
-        <span className="text-xs font-medium text-gray-700 dark:text-gray-200">
+        <span className="text-xs font-medium text-[var(--boop-ink)]">
           {ACTION_RECORD_LABELS[described.action]}
         </span>
       </div>
       <div className={`text-sm ${tone}`}>{status}</div>
-      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{detail}</div>
+      <div className="text-xs text-[var(--boop-muted)] mt-0.5">{detail}</div>
       <DidRow
         label="Authorized by"
         did={described.ownerDid}
@@ -557,13 +559,13 @@ function ActionRecordRow({
         haptic={haptic}
       />
       {described.author && record.status === "signed" && (
-        <div className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="text-xs text-[var(--boop-muted)]">
           Signed by key #{described.author.verificationMethod.split("#")[1]} of this DID (version {described.author.versionId})
           {described.signedAt !== undefined && <span> • {formatDate(described.signedAt)}</span>}
         </div>
       )}
       {attested.length > 0 && (
-        <div className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="text-xs text-[var(--boop-muted)]">
           {attested.join(" • ")} <span className="italic">(boop's record, unsigned)</span>
         </div>
       )}
@@ -585,8 +587,8 @@ function ActionRecordList({
 
   return (
     <div className="py-2">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-        🖊️ Action records ({records.length})
+      <div className="text-xs font-medium text-[var(--boop-muted)] mb-2">
+        Action records ({records.length})
       </div>
       <div className="space-y-2">
         {records.map((record) => (
@@ -599,7 +601,7 @@ function ActionRecordList({
           />
         ))}
       </div>
-      <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed mt-2">
+      <p className="text-xs text-[var(--boop-muted)] leading-relaxed mt-2">
         A verified signature shows that the author's own key signed exactly this
         record: the action, its subject and result, and the author's clock. Which
         session or API key was used, and when boop received it, is boop's record and
@@ -632,37 +634,37 @@ function ProvenanceTimeline({
   const sortedEvents = [...events].sort((a, b) => a.timestamp - b.timestamp);
 
   const typeIcons = {
-    created: "🆕",
-    vc_issued: "📜",
-    anchored: "⚓",
-    confirmed: "✅",
-    completed: "☑️",
-  };
+    created: "plus",
+    vc_issued: "file",
+    anchored: "link",
+    confirmed: "checkCircle",
+    completed: "check",
+  } satisfies Record<string, IconName>;
 
   return (
     <div className="py-3">
-      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3">
-        📅 Provenance Timeline
+      <div className="text-xs font-medium text-[var(--boop-muted)] mb-3">
+        Provenance Timeline
       </div>
       <div className="space-y-3">
         {sortedEvents.map((event, idx) => (
           <div key={idx} className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-full text-sm">
-              {typeIcons[event.type]}
+            <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-[var(--boop-panel)] text-[var(--boop-muted)] rounded-full">
+              <Icon name={typeIcons[event.type]} className="w-3.5 h-3.5" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-gray-700 dark:text-gray-200">
+              <div className="text-sm text-[var(--boop-ink)]">
                 {event.label}
                 {event.actor && (
-                  <span className="text-gray-500 dark:text-gray-400">
+                  <span className="text-[var(--boop-muted)]">
                     {" by "}
-                    <span className="font-medium text-gray-600 dark:text-gray-300">
+                    <span className="font-medium text-[var(--boop-muted)]">
                       {event.actorName || truncateDid(event.actor)}
                     </span>
                   </span>
                 )}
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-xs text-[var(--boop-muted)]">
                 {formatDate(event.timestamp)}
               </div>
             </div>
@@ -745,19 +747,19 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
     <ProvenanceSection title="Originals Provenance">
       {list.assetDid && (
         <DidRow
-          label="📋 List DID (Original)"
+          label="List DID (Original)"
           did={list.assetDid}
           haptic={haptic}
         />
       )}
       <DidRow 
-        label="👤 Created By" 
+        label="Created By" 
         did={list.ownerDid} 
         displayName={ownerName}
         haptic={haptic} 
       />
       <TimestampRow
-        label="📅 Created"
+        label="Created"
         timestamp={list.createdAt}
       />
 
@@ -778,7 +780,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
       {/* Bitcoin Anchors */}
       {anchors && anchors.length > 0 && (
         <div className="py-2">
-          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+          <div className="text-xs font-medium text-[var(--boop-muted)] mb-2">
             ₿ Bitcoin Anchors ({anchors.length})
           </div>
           <div className="space-y-2">
@@ -796,7 +798,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
       
       {/* Info footer */}
       <div className="py-3">
-        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+        <p className="text-xs text-[var(--boop-muted)] leading-relaxed">
           This list is backed by a decentralized identifier (DID) through{" "}
           <a 
             href="https://originalsprotocol.com" 
@@ -926,19 +928,19 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
   return (
     <ProvenanceSection title="Originals Provenance">
       <DidRow 
-        label="👤 Created By" 
+        label="Created By" 
         did={item.createdByDid}
         displayName={creatorName}
         haptic={haptic} 
       />
       <TimestampRow 
-        label="📅 Created" 
+        label="Created" 
         timestamp={item.createdAt} 
       />
       
       {item.updatedAt && item.updatedAt !== item.createdAt && (
         <TimestampRow 
-          label="✏️ Last Modified" 
+          label="Last Modified" 
           timestamp={item.updatedAt} 
         />
       )}
@@ -946,13 +948,13 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
       {item.checked && item.checkedByDid && item.checkedAt && (
         <>
           <DidRow 
-            label="✅ Completed By" 
+            label="Completed By" 
             did={item.checkedByDid}
             displayName={checkerName}
             haptic={haptic} 
           />
           <TimestampRow 
-            label="✅ Completed" 
+            label="Completed" 
             timestamp={item.checkedAt} 
           />
         </>
@@ -963,8 +965,8 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
       {/* Item VCs */}
       {item.vcProofs && item.vcProofs.length > 0 && (
         <div className="py-2">
-          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-            📜 Historical action records ({item.vcProofs.length})
+          <div className="text-xs font-medium text-[var(--boop-muted)] mb-2">
+            Historical action records ({item.vcProofs.length})
           </div>
           <div className="space-y-2">
             {item.vcProofs.map((vc, idx) => {
@@ -992,7 +994,7 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
       {/* Bitcoin Anchors */}
       {anchors && anchors.length > 0 && (
         <div className="py-2">
-          <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+          <div className="text-xs font-medium text-[var(--boop-muted)] mb-2">
             ₿ Bitcoin Anchors ({anchors.length})
           </div>
           <div className="space-y-2">
@@ -1010,7 +1012,7 @@ export function ItemProvenanceInfo({ item }: ItemProvenanceProps) {
       
       {/* Info footer */}
       <div className="py-3">
-        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+        <p className="text-xs text-[var(--boop-muted)] leading-relaxed">
           Item actions are attributed to decentralized identifiers (DIDs) for transparency and accountability.
           {item.vcProofs && item.vcProofs.length > 0 && (
             <span>

@@ -33,12 +33,12 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-stone-50 dark:bg-gray-950 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-md w-full text-center">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+        <div className="min-h-screen bg-[var(--boop-panel)] flex items-center justify-center p-4">
+          <div className="bg-[var(--boop-card)] rounded-lg shadow-md p-6 max-w-md w-full text-center">
+            <h1 className="text-xl font-bold text-[var(--boop-ink)] mb-2">
               {authErrorData(this.state.error)?.code === 'FORBIDDEN' ? 'Access no longer available' : 'Something went wrong'}
             </h1>
-            <p className="text-gray-600 dark:text-gray-300 mb-4">
+            <p className="text-[var(--boop-muted)] mb-4">
               {authErrorData(this.state.error)?.code === 'FORBIDDEN' ? 'This resource was removed or your access changed. Unsent edits remain available in saved edits for independent export.' : 'An unexpected error occurred. Please try again.'}
             </p>
             {this.state.error && !authErrorData(this.state.error) && (
@@ -55,7 +55,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <Link
                 to="/"
-                className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+                className="bg-[var(--boop-panel)] text-[var(--boop-ink)] px-4 py-2 rounded hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
                 onClick={() => this.setState({ hasError: false, error: null, eventId: null })}
               >
                 Go Home

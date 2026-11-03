@@ -34,7 +34,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
       {/* Badge button */}
       <button
         onClick={() => setShowDetails(!showDetails)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-muted)] rounded-full text-sm font-medium hover:bg-[var(--boop-panel)] transition-colors"
         aria-expanded={showDetails}
         aria-label="Identifier details"
       >
@@ -71,18 +71,18 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
 
       {/* Details dropdown */}
       {showDetails && (
-        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-4 z-10">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+        <div className="absolute right-0 mt-2 w-80 bg-[var(--boop-card)] rounded-lg shadow-lg border border-[var(--boop-line)] p-4 z-10">
+          <h3 className="text-sm font-semibold text-[var(--boop-ink)] mb-3">
             Identifier Details
           </h3>
 
           <div className="space-y-3">
             {/* DID */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+              <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
                 Decentralized Identifier (DID)
               </label>
-              <code className="block text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded break-all text-gray-700 dark:text-gray-300">
+              <code className="block text-xs bg-[var(--boop-panel)] p-2 rounded break-all text-[var(--boop-ink)]">
                 {did}
               </code>
             </div>
@@ -90,18 +90,18 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
             {/* Verification Method */}
             {parsedDocument && Array.isArray(parsedDocument.verificationMethod) && (
               <div>
-                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                <label className="block text-xs font-medium text-[var(--boop-muted)] mb-1">
                   Declared verification method (unverified)
                 </label>
-                <code className="block text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded break-all text-gray-700 dark:text-gray-300">
+                <code className="block text-xs bg-[var(--boop-panel)] p-2 rounded break-all text-[var(--boop-ink)]">
                   {String((parsedDocument.verificationMethod[0] as Record<string, unknown>)?.id ?? "Unknown")}
                 </code>
               </div>
             )}
 
             {/* Explanation */}
-            <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
-              <p className="text-xs text-gray-600 dark:text-gray-300">
+            <div className="pt-2 border-t border-[var(--boop-line)]">
+              <p className="text-xs text-[var(--boop-muted)]">
                 This list has a decentralized identifier (DID). This view does not
                 verify the DID document or the list's authenticity, ownership, or
                 authorship. Historical attribution records may be unsigned.
@@ -118,7 +118,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
                     // Ignore clipboard errors
                   }
                 }}
-                className="flex-1 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                className="flex-1 text-xs px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded hover:bg-[var(--boop-panel)]"
               >
                 Copy DID
               </button>
@@ -135,7 +135,7 @@ export function VerificationBadge({ did, didDocument }: VerificationBadgeProps) 
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                  className="flex-1 text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                  className="flex-1 text-xs px-3 py-1.5 bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded hover:bg-[var(--boop-panel)]"
                 >
                   Download Doc
                 </button>

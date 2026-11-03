@@ -57,12 +57,12 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-description"
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+        className="bg-[var(--boop-card)] rounded-lg shadow-xl max-w-md w-full p-6"
       >
-        <h2 id="confirm-dialog-title" className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+        <h2 id="confirm-dialog-title" className="text-xl font-bold text-[var(--boop-ink)] mb-2">
           {title}
         </h2>
-        <p id="confirm-dialog-description" className="text-gray-600 dark:text-gray-300 mb-4">
+        <p id="confirm-dialog-description" className="text-[var(--boop-muted)] mb-4">
           {message}
         </p>
 
@@ -73,7 +73,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={isConfirming}
-            className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
+            className="px-4 py-2 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50"
           >
             {cancelLabel}
           </button>

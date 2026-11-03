@@ -17,7 +17,7 @@ interface EmptyStateProps {
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
     <div
-      className="text-center py-14 px-6 rounded-3xl border-2 border-dashed border-stone-200 dark:border-stone-700"
+      className="text-center py-14 px-6 rounded-3xl border-2 border-dashed border-[var(--boop-line)]"
       style={{ background: 'var(--boop-panel)' }}
     >
       <div className="relative inline-block mb-6">
@@ -45,7 +45,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       </div>
 
       <h3
-        className="text-stone-900 dark:text-stone-50 mb-2"
+        className="text-[var(--boop-ink)] mb-2"
         style={{
           fontFamily: 'var(--font-sans)',
           fontWeight: 700,
@@ -55,7 +55,7 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       >
         {title}
       </h3>
-      <p className="text-stone-500 dark:text-stone-400 max-w-sm mx-auto mb-6 text-sm leading-relaxed">
+      <p className="text-[var(--boop-muted)] max-w-sm mx-auto mb-6 text-sm leading-relaxed">
         {description}
       </p>
 
@@ -104,7 +104,7 @@ export function NoItemsEmptyState() {
         aria-hidden="true"
       />
       <h3
-        className="text-stone-700 dark:text-stone-200 mb-1"
+        className="text-[var(--boop-ink)] mb-1"
         style={{
           fontFamily: 'var(--font-sans)',
           fontWeight: 700,
@@ -114,7 +114,7 @@ export function NoItemsEmptyState() {
       >
         This list is empty
       </h3>
-      <p className="text-stone-500 dark:text-stone-400 text-sm">
+      <p className="text-[var(--boop-muted)] text-sm">
         Add your first item below to get started.
       </p>
     </div>

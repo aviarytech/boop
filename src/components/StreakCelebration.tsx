@@ -6,7 +6,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import { getMilestoneMessage, getStreakEmoji } from '../lib/streaks';
+import { getMilestoneMessage } from '../lib/streaks';
+import { Icon } from './ui/Icon';
 
 interface StreakCelebrationProps {
   milestone: number;
@@ -29,7 +30,6 @@ export function StreakCelebration({ milestone, onDismiss }: StreakCelebrationPro
     return () => clearTimeout(timer);
   }, [onDismiss]);
 
-  const emoji = getStreakEmoji(milestone);
   const message = getMilestoneMessage(milestone);
 
   return (
@@ -45,7 +45,7 @@ export function StreakCelebration({ milestone, onDismiss }: StreakCelebrationPro
 
       {/* Celebration card */}
       <div
-        className={`relative bg-white dark:bg-stone-800 rounded-3xl shadow-2xl shadow-orange-500/20 px-8 py-6 mx-6 text-center border border-orange-200/60 dark:border-orange-800/40 transition-all duration-500 ${
+        className={`relative bg-[var(--boop-card)] rounded-3xl shadow-2xl px-8 py-6 mx-6 text-center border border-[var(--boop-line)] transition-all duration-500 ${
           isVisible ? 'scale-100 translate-y-0' : 'scale-75 translate-y-8'
         }`}
         onClick={(e) => {
@@ -55,21 +55,17 @@ export function StreakCelebration({ milestone, onDismiss }: StreakCelebrationPro
         }}
         style={{ pointerEvents: 'auto' }}
       >
-        {/* Confetti-like decorative elements */}
-        <div className="absolute -top-3 -left-3 text-2xl animate-bounce" style={{ animationDelay: '0ms' }}>🎉</div>
-        <div className="absolute -top-3 -right-3 text-2xl animate-bounce" style={{ animationDelay: '150ms' }}>🎊</div>
-        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-xl animate-bounce" style={{ animationDelay: '300ms' }}>🏆</div>
 
-        {/* Main emoji */}
-        <div className="text-5xl mb-3 animate-pulse">
-          {emoji}
+        {/* Seal */}
+        <div className="mx-auto mb-3 flex items-center justify-center w-14 h-14 rounded-full border-[3px] border-[var(--boop-accent)] text-[var(--boop-accent)]">
+          <Icon name="flame" className="w-7 h-7" />
         </div>
 
         {/* Message */}
-        <p className="text-lg font-bold text-stone-900 dark:text-stone-50 mb-1">
+        <p className="text-lg font-bold text-[var(--boop-ink)] mb-1">
           {message}
         </p>
-        <p className="text-sm text-stone-500 dark:text-stone-400">
+        <p className="text-sm text-[var(--boop-muted)]">
           Tap to dismiss
         </p>
       </div>

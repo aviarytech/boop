@@ -105,7 +105,7 @@ export function NestedListItem({
         {hasSubItems && depth < maxDepth && (
           <button
             onClick={toggleExpand}
-            className="flex-shrink-0 w-6 flex items-center justify-center text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors z-10"
+            className="flex-shrink-0 w-6 flex items-center justify-center text-[var(--boop-dim)] hover:text-[var(--boop-muted)] transition-colors z-10"
             aria-label={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
           >
             <svg
@@ -148,13 +148,13 @@ export function NestedListItem({
           {/* Show progress indicator if has subtasks */}
           {hasSubItems && (
             <div className="flex items-center gap-2 px-3 pb-0.5 text-xs">
-              <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div className="flex-1 h-1 bg-[var(--boop-panel)] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[var(--boop-accent)] rounded-full transition-all duration-300"
                   style={{ width: `${totalSubItems > 0 ? (checkedSubItems / totalSubItems) * 100 : 0}%` }}
                 />
               </div>
-              <span className="text-gray-500 dark:text-gray-400 flex-shrink-0 tabular-nums">
+              <span className="text-[var(--boop-muted)] flex-shrink-0 tabular-nums">
                 {checkedSubItems}/{totalSubItems}
               </span>
             </div>

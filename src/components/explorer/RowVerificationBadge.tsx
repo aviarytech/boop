@@ -1,18 +1,19 @@
 import type { ExplorerVerification } from "../../lib/explorer";
+import { Icon } from "../ui/Icon";
 
 export function RowVerificationBadge({ verification }: { verification: ExplorerVerification }) {
   if (verification === "none") return null;
 
   const config = {
-    verified: { icon: "✓", label: "Verified", color: "text-green-600 dark:text-green-400" },
-    anchored: { icon: "⛓", label: "Anchored", color: "text-amber-700 dark:text-amber-300" },
-    pending: { icon: "⏳", label: "Pending", color: "text-stone-500 dark:text-stone-400" },
+    verified: { icon: "checkCircle", label: "Verified", color: "text-[var(--boop-accent)]" },
+    anchored: { icon: "link", label: "Anchored", color: "text-[var(--boop-accent-ink)]" },
+    pending: { icon: "clock", label: "Pending", color: "text-[var(--boop-dim)]" },
   } as const;
 
   const { icon, label, color } = config[verification];
   return (
     <span className={`inline-flex items-center gap-1 text-xs font-semibold ${color}`}>
-      <span aria-hidden="true">{icon}</span>
+      <Icon name={icon} className="w-3.5 h-3.5" />
       <span>{label}</span>
     </span>
   );

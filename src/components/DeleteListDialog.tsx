@@ -51,10 +51,10 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
         aria-modal="true"
         aria-labelledby="delete-dialog-title"
         aria-describedby="delete-dialog-description"
-        className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6"
+        className="bg-[var(--boop-card)] rounded-lg shadow-xl max-w-md w-full p-6"
       >
-        <h2 id="delete-dialog-title" className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Delete {subject === "note" ? "Note" : "List"}</h2>
-        <p id="delete-dialog-description" className="text-gray-600 dark:text-gray-300 mb-4">
+        <h2 id="delete-dialog-title" className="text-xl font-bold text-[var(--boop-ink)] mb-2">Delete {subject === "note" ? "Note" : "List"}</h2>
+        <p id="delete-dialog-description" className="text-[var(--boop-muted)] mb-4">
           Are you sure you want to delete "{list.name}"? This will permanently delete the {subject}{subject === "list" ? " and all its items" : ""}. This action cannot be undone. Everyone loses access. Independent copies and exports remain and cannot be recalled.
         </p>
 
@@ -67,7 +67,7 @@ export function DeleteListDialog({ list, onClose, onDeleted }: DeleteListDialogP
             type="button"
             onClick={onClose}
             disabled={isDeleting}
-            className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
+            className="px-4 py-2 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-md font-medium hover:bg-[var(--boop-panel)] disabled:opacity-50"
           >
             Cancel
           </button>

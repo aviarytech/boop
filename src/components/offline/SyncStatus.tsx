@@ -28,11 +28,11 @@ export function SyncStatus() {
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+      className="flex items-center gap-2 text-sm text-[var(--boop-ink)]"
     >
       {/* Connection indicator dot */}
       <span
-        className={`w-2 h-2 rounded-full ${isOnline ? "bg-green-500" : "bg-red-500"}`}
+        className={`w-2 h-2 rounded-full ${isOnline ? "bg-[var(--boop-accent)]" : "bg-red-500"}`}
         aria-hidden="true"
       />
       <span>{isOnline ? "Online" : "Offline"}</span>
@@ -40,7 +40,7 @@ export function SyncStatus() {
       {/* Pending changes section */}
       {pendingCount > 0 && (
         <>
-          <span className="text-gray-400" aria-hidden="true">
+          <span className="text-[var(--boop-dim)]" aria-hidden="true">
             |
           </span>
           <span>
@@ -64,7 +64,7 @@ export function SyncStatus() {
       {/* Error status */}
       {syncStatus.status === "error" && syncStatus.message && (
         <>
-          <span className="text-gray-400" aria-hidden="true">
+          <span className="text-[var(--boop-dim)]" aria-hidden="true">
             |
           </span>
           <span className="text-red-600 dark:text-red-400" title={syncStatus.message}>

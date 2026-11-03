@@ -17,6 +17,7 @@ import { CategorySelector } from "./lists/CategorySelector";
 import { Panel } from "./ui/Panel";
 import { trackListCreated, trackFirstListCreated, trackFeatureGateHit, trackInviteSent } from "../lib/analytics";
 import { ReferralInviteCurrentUser } from "./ReferralInvite";
+import { Icon } from "./ui/Icon";
 
 interface CreateListModalProps {
   onClose: () => void;
@@ -138,12 +139,16 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
   const header = (
     <>
       <div className="flex items-center gap-3">
-        <span className="text-2xl leading-none">{createdListId ? "🎉" : "✨"}</span>
+        {createdListId && (
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)] shrink-0">
+            <Icon name="check" className="w-[18px] h-[18px]" />
+          </span>
+        )}
         <div>
-          <h2 id="create-list-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h2 id="create-list-dialog-title" className="text-lg font-bold text-[var(--boop-ink)]">
             {createdListId ? "List created!" : "Create New List"}
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-[var(--boop-muted)]">
             {createdListId ? name : "Give your list a name"}
           </p>
         </div>
@@ -153,7 +158,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
           haptic('light');
           handleClose();
         }}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] rounded-lg hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,7 +173,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
       <button
         type="button"
         onClick={() => { haptic('light'); handleGoToList(); }}
-        className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
       >
         Go to list
       </button>
@@ -188,7 +193,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
           haptic('light');
           handleClose();
         }}
-        className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50 transition-colors"
       >
         {isCreating ? "Close" : "Cancel"}
       </button>
@@ -240,7 +245,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
       /* Form */
       <form id="create-list-form" onSubmit={handleSubmit} className="p-5 space-y-4">
         <div>
-          <label htmlFor="listName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="listName" className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
             List name
           </label>
           <input
@@ -249,7 +254,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., Groceries, Weekend Tasks"
-            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
+            className="w-full px-4 py-3 bg-[var(--boop-panel)] text-[var(--boop-ink)] border-2 border-[var(--boop-line)] rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
             disabled={isCreating}
             autoFocus
           />
@@ -262,7 +267,7 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
         />
 
         {isCreating && (
-          <p role="status" className="text-sm text-gray-500 dark:text-gray-400">
+          <p role="status" className="text-sm text-[var(--boop-muted)]">
             You can close this dialog. A list already being saved may still be created.
           </p>
         )}
@@ -279,12 +284,12 @@ function CreateListDialog({ did, onClose, onListCreated }: CreateListModalProps 
         {planLimitHit && (
           <div className="px-4 py-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm space-y-4">
             <div className="flex items-center gap-2 font-semibold">
-              <span>🚀</span>
+              <Icon name="info" className="w-4 h-4" />
               <span>You've reached the free plan limit of 5 lists</span>
             </div>
 
             {/* Referral CTA */}
-            <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-700">
+            <div className="p-3 bg-[var(--boop-card)] rounded-lg border border-amber-200 dark:border-amber-700">
               <ReferralInviteCurrentUser compact />
             </div>
 

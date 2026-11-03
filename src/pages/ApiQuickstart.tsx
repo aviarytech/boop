@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { trackQuickstartViewed, trackLandingCtaClicked } from '../lib/analytics';
+import { PublicHeader, publicNavButton } from '../components/PublicHeader';
 import './ApiQuickstart.css';
 
 const API_BASE =
@@ -35,20 +36,17 @@ export function ApiQuickstart() {
   }, []);
 
   return (
+    <>
+    <PublicHeader>
+      <Link
+        to={appHref}
+        className={publicNavButton}
+        onClick={() => trackLandingCtaClicked('signup', 'quickstart_nav')}
+      >
+        Get boop — free
+      </Link>
+    </PublicHeader>
     <div className="boop-quickstart">
-      <nav className="qs-nav">
-        <div className="qs-wrap qs-nav-inner">
-          <Link to="/" className="qs-wordmark"><span className="qs-dot" />boop</Link>
-          <Link
-            to={appHref}
-            className="qs-btn"
-            onClick={() => trackLandingCtaClicked('signup', 'quickstart_nav')}
-          >
-            Get boop — free
-          </Link>
-        </div>
-      </nav>
-
       <main className="qs-wrap qs-main">
         <div className="qs-label">boop mission control</div>
         <h1>An agent completing a task in 5 minutes, with curl.</h1>
@@ -166,5 +164,6 @@ export BOOP_TOKEN="eyJ…"`}</Code>
         </div>
       </footer>
     </div>
+    </>
   );
 }

@@ -6,6 +6,7 @@
  * Published lists are verifiable and can be viewed by anyone.
  */
 
+import { Icon } from "../ui/Icon";
 import { useState } from "react";
 import { useMutation, useQuery } from "../../lib/authenticatedConvex";
 import { api } from "../../../convex/_generated/api";
@@ -149,19 +150,19 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
   const header = (
     <>
       <div className="flex items-center gap-3">
-        <span className="text-2xl leading-none">{isPublished ? "🌐" : "📤"}</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)]"><Icon name="globe" className="w-5 h-5" /></span>
         <div>
-          <h2 id="publish-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h2 id="publish-dialog-title" className="text-lg font-bold text-[var(--boop-ink)]">
             {isPublished ? "Published List" : "Publish publicly"}
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
+          <p className="text-xs text-[var(--boop-muted)] truncate max-w-[200px]">
             {list.name}
           </p>
         </div>
       </div>
       <button
         onClick={onClose}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-gray-400 hover:text-[var(--boop-muted)] rounded-lg hover:bg-[var(--boop-panel)] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,7 +195,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
           haptic('light');
           onClose();
         }}
-        className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[var(--boop-panel)] transition-colors"
       >
         Cancel
       </button>
@@ -250,8 +251,8 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
       <div className="p-5 space-y-4">
         {isPublished ? (
           <>
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
-              <div className="flex items-center gap-2 text-green-800 dark:text-green-400">
+            <div className="p-4 bg-[var(--boop-accent-soft)] rounded-xl">
+              <div className="flex items-center gap-2 text-[var(--boop-accent-ink)]">
                 <svg
                   className="w-5 h-5"
                   fill="none"
@@ -267,13 +268,13 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
                 </svg>
                 <span className="font-medium">This list is published</span>
               </div>
-              <p className="mt-1 text-sm text-green-700 dark:text-green-500">
+              <p className="mt-1 text-sm text-[var(--boop-accent-ink)]">
                 Anyone with the link can read this list. Only the owner and accepted editors can edit.
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
                 Public URL
               </label>
               <div className="flex gap-2">
@@ -281,13 +282,13 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
                   type="text"
                   value={publicUrl ?? ""}
                   readOnly
-                  className="flex-1 px-4 py-3 text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm"
+                  className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-xl text-sm"
                 />
                 <button
                   onClick={handleCopy}
                   className={`px-4 py-3 rounded-xl font-medium transition-all ${
                     isCopied
-                      ? "bg-green-500 text-white"
+                      ? "bg-amber-500 text-white"
                       : "bg-amber-500 hover:bg-amber-600 text-white"
                   }`}
                 >
@@ -296,8 +297,8 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
               </div>
             </div>
 
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+            <div className="p-4 bg-[var(--boop-panel)] rounded-xl">
+              <p className="text-sm text-[var(--boop-muted)]">
                 <span className="font-medium">DID:</span>{" "}
                 <span className="font-mono text-xs break-all">
                   {publicationStatus.webvhDid}
@@ -307,7 +308,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
           </>
         ) : (
           <>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-sm text-[var(--boop-muted)]">
               Publishing makes this list publicly viewable. Anyone with the link
               can see the list contents and verify who added each item. Editing requires an accepted editor invitation; publishing does not grant editing access.
             </p>
@@ -340,7 +341,7 @@ export function PublishModal({ list, onClose }: PublishModalProps) {
           </>
         )}
 
-        <p className="text-sm text-gray-600 dark:text-gray-400">
+        <p className="text-sm text-[var(--boop-muted)]">
           Named access is separate from publication. Removing a grant does not stop public reading while publication is active. Unpublishing ends public access; accepted viewers and editors keep their private access.
         </p>
 

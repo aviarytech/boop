@@ -6,11 +6,11 @@ import { useState, useRef, useEffect } from 'react';
 import { useSettings } from '../../hooks/useSettings';
 import type { SortOption } from '../../lib/storage';
 
-const sortOptions: { value: SortOption; label: string; icon: string }[] = [
-  { value: 'newest', label: 'Newest first', icon: '🆕' },
-  { value: 'oldest', label: 'Oldest first', icon: '📅' },
-  { value: 'name-asc', label: 'A → Z', icon: '🔤' },
-  { value: 'name-desc', label: 'Z → A', icon: '🔠' },
+const sortOptions: { value: SortOption; label: string }[] = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'name-asc', label: 'A → Z' },
+  { value: 'name-desc', label: 'Z → A' },
 ];
 
 export function SortDropdown() {
@@ -69,7 +69,7 @@ export function SortDropdown() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg overflow-hidden z-50 animate-dropdown">
+        <div className="absolute right-0 mt-2 w-48 bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-xl shadow-lg overflow-hidden z-50 animate-dropdown">
           <ul role="listbox" aria-label="Sort options">
             {sortOptions.map((option) => (
               <li key={option.value}>
@@ -82,7 +82,7 @@ export function SortDropdown() {
                   className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
                     listSort === option.value
                       ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400'
-                      : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      : 'text-[var(--boop-ink)] hover:bg-[var(--boop-panel)]'
                   }`}
                   role="option"
                   aria-selected={listSort === option.value}

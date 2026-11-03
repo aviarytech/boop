@@ -9,6 +9,7 @@ import { trackTemplate } from '../lib/analytics';
 import { applyTemplateMetadata } from '../lib/templateMetadata';
 import { REFERRAL_CODE_KEY } from './InviteLanding';
 import { listCreationErrorMessage } from '../lib/planLimit';
+import { PublicHeader, publicNavLink } from '../components/PublicHeader';
 import './ApiQuickstart.css';
 
 export function TemplateGallery({ activation = false }: { activation?: boolean }) {
@@ -94,11 +95,11 @@ export function TemplateGallery({ activation = false }: { activation?: boolean }
     }
   }, [template, did, accountRecord, isLoading, search, activation]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <div className="boop-quickstart">
-    <nav className="qs-nav"><div className="qs-wrap qs-nav-inner">
-      <Link className="qs-wordmark" to="/"><span className="qs-dot" />boop</Link>
-      <Link to={did ? '/templates/saved' : '/login'}>{did ? 'My templates' : 'Sign in'}</Link>
-    </div></nav>
+  return <>
+    <PublicHeader>
+      <Link className={publicNavLink} to={did ? '/templates/saved' : '/login'}>{did ? 'My templates' : 'Sign in'}</Link>
+    </PublicHeader>
+    <div className="boop-quickstart">
     <main className="qs-wrap qs-main">
       {slug && !template ? <><h1>Template not found</h1><Link to="/templates">Browse agent runbooks</Link></> : template ? <>
         <Link to="/templates">← All agent runbooks</Link>
@@ -112,7 +113,7 @@ export function TemplateGallery({ activation = false }: { activation?: boolean }
         {error && <div role="alert" className="mt-4"><p>{error}</p><Link to="/pricing">View plan limits</Link></div>}
         <section><h2>What you’ll have at the end</h2><p>{template.outcome}</p></section>
         <section><h2>The runbook</h2><ol className="space-y-6">
-          {template.items.map((item, index) => <li key={item.order} className="border-t border-stone-300 pt-5">
+          {template.items.map((item, index) => <li key={item.order} className="border-t border-[var(--boop-line)] pt-5">
             <h3 className="font-semibold">{index + 1}. {item.name}</h3><p className="mt-2">{item.description}</p>
           </li>)}
         </ol></section>
@@ -121,12 +122,13 @@ export function TemplateGallery({ activation = false }: { activation?: boolean }
         <div className="qs-label">Work together, step by step</div>
         <h1>Agent runbooks for work you can review.</h1>
         <p className="qs-lede">Ten ready-to-use checklists. Give an agent a bounded task, keep the evidence with the work, and make the human review explicit.</p>
-        <div>{AGENT_RUNBOOKS.map((entry, index) => <article key={entry.id} className="border-t border-stone-300 py-7">
+        <div>{AGENT_RUNBOOKS.map((entry, index) => <article key={entry.id} className="border-t border-[var(--boop-line)] py-7">
           <p className="qs-label">{String(index + 1).padStart(2, '0')} · {entry.items.length} steps</p>
           <h2><Link to={`/templates/${entry.id}`}>{entry.name} →</Link></h2>
           <p>{entry.description}</p>
         </article>)}</div>
       </>}
     </main>
-  </div>;
+  </div>
+  </>;
 }

@@ -84,7 +84,7 @@ export function Sites() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1
-            className="text-stone-900 dark:text-stone-50"
+            className="text-[var(--boop-ink)]"
             style={{
               fontFamily: "var(--font-sans)",
               fontWeight: 700,

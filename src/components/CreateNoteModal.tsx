@@ -64,15 +64,15 @@ export function CreateNoteModal({ onClose }: { onClose: () => void }) {
       <div className="flex items-center gap-3">
         <span className="text-2xl leading-none" aria-hidden="true">¶</span>
         <div>
-          <h2 id="create-note-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h2 id="create-note-dialog-title" className="text-lg font-bold text-[var(--boop-ink)]">
             New note
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Give your note a title</p>
+          <p className="text-xs text-[var(--boop-muted)]">Give your note a title</p>
         </div>
       </div>
       <button
         onClick={() => { haptic('light'); onClose(); }}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] rounded-lg hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -88,7 +88,7 @@ export function CreateNoteModal({ onClose }: { onClose: () => void }) {
         type="button"
         onClick={() => { haptic('light'); onClose(); }}
         disabled={isCreating}
-        className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50 transition-colors"
       >
         Cancel
       </button>
@@ -107,7 +107,7 @@ export function CreateNoteModal({ onClose }: { onClose: () => void }) {
     <Panel isOpen onClose={onClose} header={header} footer={footer} ariaLabelledBy="create-note-dialog-title">
       <form id="create-note-form" onSubmit={handleSubmit} className="p-5 space-y-4">
         <div>
-          <label htmlFor="noteTitle" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          <label htmlFor="noteTitle" className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
             Note title
           </label>
           <input
@@ -116,7 +116,7 @@ export function CreateNoteModal({ onClose }: { onClose: () => void }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g., Why boop signs every list"
-            className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
+            className="w-full px-4 py-3 bg-[var(--boop-panel)] text-[var(--boop-ink)] border-2 border-[var(--boop-line)] rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
             disabled={isCreating}
             autoFocus
           />

@@ -120,16 +120,16 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
   const header = (
     <>
       <div>
-        <h2 id="share-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+        <h2 id="share-dialog-title" className="text-lg font-bold text-[var(--boop-ink)]">
           Share list
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 truncate max-w-[200px]">
+        <p className="text-sm text-[var(--boop-muted)] truncate max-w-[200px]">
           {list.name}
         </p>
       </div>
       <button
         onClick={onClose}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-gray-400 hover:text-[var(--boop-muted)] rounded-lg hover:bg-[var(--boop-panel)] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,30 +168,30 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
     >
       <div className="p-5 space-y-5">
         <section aria-labelledby="share-people-title" className="space-y-3">
-          <h3 id="share-people-title" className="font-semibold text-gray-900 dark:text-gray-100">Share with people</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <h3 id="share-people-title" className="font-semibold text-[var(--boop-ink)]">Share with people</h3>
+          <p className="text-sm text-[var(--boop-muted)]">
             Invite someone by email as a viewer or editor. They must accept the invitation. Adding or removing named access does not change public publication.
           </p>
           <OwnerInvitations key={list._id} listId={list._id} embedded />
         </section>
-        <section aria-labelledby="share-public-title" className="space-y-5 border-t border-gray-200 dark:border-gray-700 pt-5">
-          <h3 id="share-public-title" className="font-semibold text-gray-900 dark:text-gray-100">Publish publicly</h3>
+        <section aria-labelledby="share-public-title" className="space-y-5 border-t border-[var(--boop-line)] pt-5">
+          <h3 id="share-public-title" className="font-semibold text-[var(--boop-ink)]">Publish publicly</h3>
         {publicationStatus === undefined ? <p role="status">Loading publication status…</p> : isPublished ? (
           <>
-            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
-              <div className="flex items-center gap-2 text-green-800 dark:text-green-400">
+            <div className="p-4 bg-[var(--boop-accent-soft)] rounded-xl">
+              <div className="flex items-center gap-2 text-[var(--boop-accent-ink)]">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
                 <span className="font-medium">This list is published publicly</span>
               </div>
-              <p className="mt-1 text-sm text-green-700 dark:text-green-500">
+              <p className="mt-1 text-sm text-[var(--boop-accent-ink)]">
                 Anyone with the link can read this list. Only the owner and accepted editors can edit.
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
                 Public read link
               </label>
               <div className="flex gap-2">
@@ -199,14 +199,14 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
                   type="text"
                   value={publicUrl ?? ""}
                   readOnly
-                  className="flex-1 px-4 py-3 text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm"
+                  className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-xl text-sm"
                 />
                 <button
                   onClick={handleCopy}
                   className={`px-4 py-3 rounded-xl font-medium transition-all ${
                     isCopied
-                      ? "bg-green-500 text-white"
-                      : "bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                      ? "bg-amber-500 text-white"
+                      : "bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] text-[var(--boop-ink)]"
                   }`}
                 >
                   {isCopied ? "Copied!" : "Copy"}
@@ -228,7 +228,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
 
             <button
               onClick={() => setShowDid(v => !v)}
-              className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              className="flex items-center gap-1 text-xs text-[var(--boop-dim)] hover:text-[var(--boop-muted)] transition-colors"
             >
               <svg className={`w-3 h-3 transition-transform ${showDid ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -237,8 +237,8 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
             </button>
 
             {showDid && (
-              <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
+              <div className="p-4 bg-[var(--boop-panel)] rounded-xl">
+                <p className="text-sm text-[var(--boop-muted)]">
                   <span className="font-medium">DID:</span>{" "}
                   <span className="font-mono text-xs break-all">
                     {resourceDid}
@@ -249,8 +249,8 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
           </>
         ) : (
           <>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Publish this list with a verifiable <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 rounded">did:webvh</code> identity.
+            <p className="text-sm text-[var(--boop-muted)]">
+              Publish this list with a verifiable <code className="text-xs bg-[var(--boop-panel)] px-1 rounded">did:webvh</code> identity.
               Anyone with the link can read the list. Publishing does not grant editing access.
             </p>
 
@@ -290,7 +290,7 @@ export function ShareModal({ list, onClose }: ShareModalProps) {
           </>
         )}
 
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-[var(--boop-muted)]">
             Removing a named grant does not stop public reading while publication is active. To end public access, unpublish the list. Accepted viewers and editors keep their private access.
           </p>
         </section>

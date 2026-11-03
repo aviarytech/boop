@@ -50,9 +50,9 @@ export function RenameListDialog({ list, onClose }: RenameListDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="rename-dialog-title"
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-sm w-full p-6 animate-slide-up"
+        className="bg-[var(--boop-card)] rounded-2xl shadow-xl max-w-sm w-full p-6 animate-slide-up"
       >
-        <h3 id="rename-dialog-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">
+        <h3 id="rename-dialog-title" className="text-lg font-bold text-[var(--boop-ink)] mb-4">
           Rename list
         </h3>
 
@@ -66,7 +66,7 @@ export function RenameListDialog({ list, onClose }: RenameListDialogProps) {
             if (e.key === "Enter") handleRename();
           }}
           autoFocus
-          className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+          className="w-full px-4 py-3 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-xl text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
           placeholder="List name"
         />
 
@@ -78,7 +78,7 @@ export function RenameListDialog({ list, onClose }: RenameListDialogProps) {
           <button
             onClick={onClose}
             disabled={isRenaming}
-            className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-xl transition-colors"
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-[var(--boop-ink)] bg-[var(--boop-panel)] hover:bg-[var(--boop-panel)] rounded-xl transition-colors"
           >
             Cancel
           </button>
