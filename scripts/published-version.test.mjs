@@ -48,10 +48,10 @@ async function camping() {
   return { owner, host, list: { listId: host.listId, ownerDid: owner.did, did } };
 }
 
-/** The bytes the head entry commits to for list-metadata, from what the host serves. */
+/** The bytes the head entry commits to for the Original's one resource, from what the host serves. */
 async function publishedSnapshot(host) {
   const head = JSON.parse(host.logLines().at(-1));
-  const digest = head.state.asset.resources.find((r) => r.id === "list-metadata").digest;
+  const digest = head.state.asset.resource.digest;
   const accepted = await host.client.query(api.originalsHost.getAccepted, { listId: host.listId });
   const bytes = accepted.resources.find((r) => r.digest === digest).bytes;
   return JSON.parse(new TextDecoder().decode(bytes));

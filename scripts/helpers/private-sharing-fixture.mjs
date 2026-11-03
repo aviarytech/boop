@@ -37,7 +37,7 @@ export function fixture(modules, { published = false } = {}) {
     pendingInvitations: [{ _id: "invite", listId: "L", recipientId: "U-pending", role: "editor" }],
     publications: published ? [{ _id: "P", listId: "L", webvhDid: "did:webvh:public", status: "active", publishedAt: 1 }] : [],
     // L has its Original; N and X are legacy did:cel assets awaiting re-mint.
-    originalLogs: [{ _id: "OL", listId: "L", did: "did:vh:source", log: "source-owner-log\n", head: "1-source", updatedAt: 1 }],
+    originalLogs: [{ _id: "OL", listId: "L", did: "did:vh:source", log: `${JSON.stringify({ versionId: "1-source", state: { asset: { resource: { mediaType: "application/json", size: 4, digest: "zsource" } } } })}\n`, head: "1-source", updatedAt: 1 }],
     originalResources: [{ _id: "OR", did: "did:vh:source", digest: "zsource", bytes: new ArrayBuffer(4) }],
     listEnvelopes: [],
     noteBodies: [{ _id: "BODY", listId: "N", body: "Private note body", updatedAt: 1 }],
