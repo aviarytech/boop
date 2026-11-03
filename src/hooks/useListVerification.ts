@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { useQuery } from "../lib/authenticatedConvex";
-import { isLegacyAssetDid, verifyList } from "../lib/originals";
+import { verifyList } from "../lib/originals";
 import { useOriginalsClient } from "./useListOriginal";
 
 export type ListVerificationState =
@@ -47,7 +47,9 @@ export function useListVerification(list: Doc<"lists"> | null | undefined): List
   }, [client, head, listId]);
 
   if (hosted === undefined || !list) return { status: "checking" };
-  if (hosted === null) return { status: "absent", legacy: isLegacyAssetDid(list.assetDid) };
+  // assetDid is set only with an accepted genesis, so a list that has one but
+  // no Original under Originals 6 was minted earlier (CEL or Originals 5).
+  if (hosted === null) return { status: "absent", legacy: !!list.assetDid };
   return result?.head === head ? result.state : { status: "checking" };
 }
 

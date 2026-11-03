@@ -178,7 +178,7 @@ function OriginalVerificationRow({ state }: { state: ListVerificationState }) {
   const [icon, text, tone] =
     state.status === "absent"
       ? ["—", state.legacy
-          ? "Made before Originals 5. Its owner re-mints it when they open it."
+          ? "Made before Originals 6. Its owner re-mints it when they open it."
           : "Not an Original yet. It's minted when its owner next opens it.",
         "text-gray-500 dark:text-gray-400"]
       : state.status === "checking"

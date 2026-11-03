@@ -35,6 +35,23 @@ export type Judgement =
 
 const VERSION_ID = /^(\d+)-(.+)$/;
 
+/**
+ * True when a hosted log is written under Originals 6, where an Original has
+ * exactly one resource (`state.asset.resource`, originals-spec #53). A log
+ * from Originals 5 lists `state.asset.resources` and no longer verifies, so
+ * its list is legacy and is re-minted. Only the genesis line is read.
+ */
+export function isCurrentOriginalLog(log: string): boolean {
+  const end = log.indexOf("\n");
+  try {
+    const genesis = JSON.parse(end === -1 ? log : log.slice(0, end)) as { state?: { asset?: { resource?: unknown } } };
+    const resource = genesis.state?.asset?.resource;
+    return typeof resource === "object" && resource !== null && !Array.isArray(resource);
+  } catch {
+    return false;
+  }
+}
+
 function lines(log: string): string[] {
   return log.split("\n").filter((line) => line.length > 0);
 }
@@ -98,7 +115,7 @@ export async function judgeSubmission(state: HostedState, submission: Submission
   const log = `${[...prior, submission.entry].join("\n")}\n`;
   const report = await verifyOriginal({ log, authors, bytes: Object.fromEntries(supplied), now });
   // Bytes the entry introduces must arrive with it, unless an earlier entry
-  // already brought the same digest (a resource set back to an older state).
+  // already brought the same digest (the resource set back to an older version).
   const introduced = report.resources.versions.filter((rv) => rv.versionId === parsed.versionId);
   const bytesOk = introduced.every((rv) =>
     rv.bytes === "verified" || (rv.bytes === "missing" && prior.some((line) => line.includes(rv.digest))));

@@ -1,7 +1,7 @@
 /**
  * Blocks a legacy list until its owner re-mints it.
  *
- * Originals 5 reads nothing written under CEL, so a list made before it has no
+ * Originals 6 reads nothing written under CEL or Originals 5, so a list made before it has no
  * history the app can verify or extend. Re-minting signs a new genesis from the
  * list's current state — the items stay as they are, the list gets a new DID,
  * and the old history is not carried over. There is no "later": leaving goes

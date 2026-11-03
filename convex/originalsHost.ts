@@ -1,5 +1,5 @@
 /**
- * Convex as the shared host for list Originals (Originals SDK 5, P6.4–P6.8).
+ * Convex as the shared host for list Originals (Originals SDK 6, P6.4–P6.8).
  *
  * Every device signs entries itself — boop never signs for anyone — and
  * submits them here. The host appends an entry only when it extends the
@@ -10,21 +10,37 @@
  *
  * Verification runs in the action; the commit is a mutation that compares and
  * swaps the head, so two devices racing on one head get exactly one append.
+ *
+ * A list's log written under Originals 5 no longer verifies, so the host
+ * treats that list as having no Original: it is legacy, its owner re-mints it,
+ * and the old row stays beside the new one as history (like listEnvelopes).
  */
 
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, type QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { actorAction, actorQuery } from "./lib/authenticated";
-import { judgeSubmission, type HostAnswer } from "./lib/originalsSubmission";
+import { isCurrentOriginalLog, judgeSubmission, type HostAnswer } from "./lib/originalsSubmission";
+
+/** The list's Original under Originals 6, ignoring any earlier log kept as history. */
+async function currentOriginal(ctx: Pick<QueryCtx, "db">, listId: Id<"lists">): Promise<Doc<"originalLogs"> | null> {
+  const rows = await ctx.db.query("originalLogs").withIndex("by_list", (q) => q.eq("listId", listId)).collect();
+  return rows.find((row) => isCurrentOriginalLog(row.log)) ?? null;
+}
+
+/** True when a list has a log written before Originals 6, which must be re-minted. */
+async function hasEarlierOriginal(ctx: Pick<QueryCtx, "db">, listId: Id<"lists">): Promise<boolean> {
+  const rows = await ctx.db.query("originalLogs").withIndex("by_list", (q) => q.eq("listId", listId)).collect();
+  return rows.some((row) => !isCurrentOriginalLog(row.log));
+}
 
 export const hostState = internalQuery({
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
     const list = await ctx.db.get(args.listId);
     if (!list) return null;
-    const row = await ctx.db.query("originalLogs").withIndex("by_list", (q) => q.eq("listId", args.listId)).first();
+    const row = await currentOriginal(ctx, args.listId);
     const didLog = await ctx.db.query("didLogs").withIndex("by_user_did", (q) => q.eq("userDid", list.ownerDid)).first();
     return {
       ownerDid: list.ownerDid,
@@ -49,7 +65,7 @@ export const commitEntry = internalMutation({
     resources: v.array(v.object({ digest: v.string(), bytes: v.bytes() })),
   },
   handler: async (ctx, args): Promise<{ committed: true } | { committed: false; head: string | null }> => {
-    const row = await ctx.db.query("originalLogs").withIndex("by_list", (q) => q.eq("listId", args.listId)).first();
+    const row = await currentOriginal(ctx, args.listId);
     if (args.expectedHead === null) {
       // Two devices minting at once: the first genesis stands.
       if (row) return { committed: false, head: row.head };
@@ -66,8 +82,9 @@ export const commitEntry = internalMutation({
       await ctx.db.patch(row._id, { log: args.log, head: args.head, updatedAt: now });
     } else {
       await ctx.db.insert("originalLogs", { listId: args.listId, did: args.did, log: args.log, head: args.head, updatedAt: now });
-      // Genesis names the list's Original. A legacy did:cel value is replaced:
-      // that is the re-mint, and the old envelope row stays as history.
+      // Genesis names the list's Original. A legacy did:cel or Originals 5
+      // value is replaced: that is the re-mint, and the old envelope or log
+      // row stays as history.
       await ctx.db.patch(args.listId, { assetDid: args.did });
     }
     return { committed: true };
@@ -121,7 +138,7 @@ export const { public: getAccepted, internal: getAcceptedInternal } = actorQuery
   scope: "lists:read",
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
-    const row = await ctx.db.query("originalLogs").withIndex("by_list", (q) => q.eq("listId", args.listId)).first();
+    const row = await currentOriginal(ctx, args.listId);
     if (!row) return null;
     const list = await ctx.db.get(args.listId);
     const didLog = list
@@ -139,7 +156,7 @@ export const { public: getAccepted, internal: getAcceptedInternal } = actorQuery
   },
 });
 
-/** Which of these lists have no Original under Originals 5, and which of those are legacy CEL assets. */
+/** Which of these lists have no Original under Originals 6, and which of those had an earlier one (CEL or Originals 5). */
 export const { public: getOriginalStatus, internal: getOriginalStatusInternal } = actorQuery({
   resources: (args) => ({ lists: [...args.listIds] }),
   scope: "lists:read",
@@ -150,9 +167,9 @@ export const { public: getOriginalStatus, internal: getOriginalStatusInternal } 
     for (const listId of args.listIds) {
       const list = await ctx.db.get(listId);
       if (!list) continue;
-      const row = await ctx.db.query("originalLogs").withIndex("by_list", (q) => q.eq("listId", listId)).first();
-      if (row) continue;
-      (list.assetDid ? legacy : unminted).push(listId);
+      if (await currentOriginal(ctx, listId)) continue;
+      // An earlier Original (CEL in assetDid, or an Originals 5 log) is legacy.
+      (list.assetDid || await hasEarlierOriginal(ctx, listId) ? legacy : unminted).push(listId);
     }
     return { unminted, legacy };
   },

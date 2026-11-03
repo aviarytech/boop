@@ -201,7 +201,7 @@ test('a legacy did:cel list says it is re-minted on open, never that its history
   globalThis.__verifyList = () => { throw new Error('nothing to verify'); };
   const { container } = openList({ _id: 'L', assetDid: 'did:cel:old', name: 'List', ownerDid: 'did:owner', createdAt: 1 });
   assert.match(container.textContent, /Signed History/);
-  assert.match(container.textContent, /Made before Originals 5\. Its owner re-mints it when they open it\./);
+  assert.match(container.textContent, /Made before Originals 6\. Its owner re-mints it when they open it\./);
   assert.doesNotMatch(container.textContent, /verified/i);
 });
 

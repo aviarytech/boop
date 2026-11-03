@@ -6,9 +6,9 @@ import type { SigningInput, SigningOutput } from "didwebvh-ts";
 import { getFunctionName } from "convex/server";
 import { keySigner } from "@originals/sdk/originals";
 import * as originals from "../../src/lib/originals";
-import { judgeSubmission, type HostedState } from "../../convex/lib/originalsSubmission";
+import { isCurrentOriginalLog, judgeSubmission, type HostedState } from "../../convex/lib/originalsSubmission";
 
-export { originals, judgeSubmission };
+export { originals, judgeSubmission, isCurrentOriginalLog };
 
 async function multikey(secret: Uint8Array): Promise<string> {
   const publicKey = await getPublicKeyAsync(secret);

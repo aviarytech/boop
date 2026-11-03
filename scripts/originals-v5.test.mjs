@@ -1,4 +1,4 @@
-// Lists as Originals 5, end to end with real keys: a did:webvh author minted
+// Lists as Originals (SDK 6), end to end with real keys: a did:webvh author minted
 // the way boop mints them (didwebvh-ts), a device key in its assertionMethod,
 // and the client wrapper (src/lib/originals.ts) talking to the same judging
 // code the Convex host runs (convex/lib/originalsSubmission.ts).
@@ -26,7 +26,7 @@ async function load(entry, name) {
 }
 
 const fixture = await load("scripts/helpers/originals-v5-fixture.ts", "fixture");
-const { originals, judgeSubmission, makeAuthor, makeHost } = fixture;
+const { originals, judgeSubmission, isCurrentOriginalLog, makeAuthor, makeHost } = fixture;
 
 test("a list mints as a did:vh Original the host accepts and a reader verifies", async () => {
   const owner = await makeAuthor();
@@ -162,9 +162,24 @@ test("an author whose update key is also its assertion key cannot sign (5.x key 
   }));
 });
 
-test("legacy asset DIDs are recognised for re-mint", () => {
-  assert.equal(originals.isLegacyAssetDid("did:cel:zabc"), true);
-  assert.equal(originals.isLegacyAssetDid("did:peer:4zabc"), true);
-  assert.equal(originals.isLegacyAssetDid("did:vh:zabc"), false);
-  assert.equal(originals.isLegacyAssetDid(undefined), false);
+test("an Original is one resource, and the host tells an Originals 5 log from a current one", async () => {
+  const owner = await makeAuthor();
+  const host = makeHost({ ownerDid: owner.did, authorLog: owner.log, judgeSubmission });
+  originals.setListAuthorSource(async () => owner.listAuthor);
+  await originals.mintList(host.client, {
+    listId: host.listId, ownerDid: owner.did, name: "Note",
+    content: { kind: "note", body: "# Hello" },
+  });
+  const [genesis] = host.logLines();
+  const asset = JSON.parse(genesis).state.asset;
+  assert.equal(asset.resource.mediaType, "text/markdown");
+  assert.equal(asset.resources, undefined);
+  assert.equal(isCurrentOriginalLog(`${genesis}\n`), true);
+
+  // The same genesis in the Originals 5 shape: a list of resources with ids.
+  const v5 = JSON.parse(genesis);
+  v5.state.asset = { ...asset, resources: [{ id: "note-body", ...asset.resource }] };
+  delete v5.state.asset.resource;
+  assert.equal(isCurrentOriginalLog(`${JSON.stringify(v5)}\n`), false, "an Originals 5 list is legacy and re-minted");
+  assert.equal(isCurrentOriginalLog("not json\n"), false);
 });

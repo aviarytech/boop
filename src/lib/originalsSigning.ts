@@ -1,5 +1,5 @@
 /**
- * Originals 5 signing without the key (#286 PR b).
+ * Originals signing without the key (#286 PR b; Originals SDK 6).
  *
  * `keySigner` from `@originals/sdk/originals` holds raw key bytes. boop's
  * assertion key lives in Turnkey and is only usable through the author's
@@ -7,7 +7,7 @@
  * `signBytes` callback: the same request checks, the same refusals, and the
  * same signed bytes (`proofHashData` for eddsa-jcs-2022).
  *
- * The types are SDK 5's own. The hashing is ported, not imported, so the
+ * The types are the SDK's own. The hashing is ported, not imported, so the
  * signed bytes are computed here rather than by the caller. Ported from:
  *   @originals/sdk/dist/originals/signer.js  (summarize, describeEntry, checkRequest, keySigner)
  *   @originals/vh/dist/crypto/index.js       (proofConfig, proofHashData)
@@ -196,11 +196,11 @@ export function describeEntry(summary: EntrySummary): string {
     `Operation: ${summary.operation}`,
     `Author: ${summary.author.did}${s.role === "editor" ? " (unchanged; an editor entry carries its parent's author)" : ""}`,
   ];
-  if (summary.changes.length === 0) lines.push("Resources: no change");
+  // One resource per Original (P4.1, P14.4; originals-spec #53): at most one transition.
+  if (summary.changes.length === 0) lines.push("Resource: no new version");
   for (const c of summary.changes) {
-    if (c.from === null) lines.push(`Resource ${c.resource}: added ${c.to}`);
-    else if (c.to === null) lines.push(`Resource ${c.resource}: removed (was ${c.from}; its earlier versions stay in history)`);
-    else lines.push(`Resource ${c.resource}: ${c.from} -> ${c.to}`);
+    if (c.from === null) lines.push(`Resource: first version ${c.to}`);
+    else lines.push(`Resource: new version ${c.from} -> ${c.to}`);
   }
   if (summary.nameChanged) lines.push(`Name: changed to ${JSON.stringify(summary.name)}`);
   if (summary.metadataChanged) lines.push("Metadata: changed");
@@ -208,7 +208,7 @@ export function describeEntry(summary: EntrySummary): string {
     const grants = summary.editors ?? [];
     lines.push(`Editor grants: changed${grants.length === 0 ? " (none remain)" : ""}`);
     for (const g of grants) {
-      lines.push(`  ${g.did}: name ${g.name ? "yes" : "no"}, metadata ${g.metadata ? "yes" : "no"}, resources ${g.resources.length > 0 ? g.resources.join(", ") : "none"}`);
+      lines.push(`  ${g.did}: name ${g.name ? "yes" : "no"}, metadata ${g.metadata ? "yes" : "no"}, resource ${g.resource ? "yes" : "no"}`);
     }
   }
   return lines.join("\n");

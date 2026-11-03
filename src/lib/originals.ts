@@ -1,5 +1,8 @@
 /**
- * Lists as Originals (Originals SDK 5).
+ * Lists as Originals (Originals SDK 6).
+ *
+ * An Original is exactly one resource with many versions (originals-spec
+ * #53): a list's is its JSON snapshot, a note's its markdown body.
  *
  * Each list is an Original: a did:vh asset log signed by its owner's
  * did:webvh. Entries are signed with the owner's Turnkey assertion key through
@@ -12,8 +15,9 @@
  * Turnkey session there is no signer: lists still work, they just have no
  * Original yet, and `mintList` throws ListNotAuthorableError.
  *
- * Nothing written under CEL (did:cel) is read. A legacy list is re-minted from
- * its current state as a new Original; its old history is not carried over.
+ * Nothing written under CEL (did:cel) or Originals 5 is read: neither verifies
+ * under Originals 6. A legacy list is re-minted from its current state as a new
+ * Original; its old history is not carried over.
  */
 
 import type { ConvexReactClient } from "convex/react";
@@ -22,7 +26,6 @@ import {
   MemoryStore,
   OriginalsSDK,
   type OriginalsSigner,
-  type OriginalView,
   type SharedHost,
   type SubmitResult,
 } from "@originals/sdk/originals";
@@ -70,7 +73,7 @@ export class ListNotAuthorableError extends Error {
   }
 }
 
-/** A list's published state, as committed to by the `list-metadata` resource. */
+/** A list's published state, as committed to by its Original's resource. */
 export interface ListSnapshot {
   name: string;
   items: Array<{ name: string; checked: boolean }>;
@@ -83,8 +86,6 @@ export function buildListSnapshot(
   return { name, items: items.map(({ name, checked }) => ({ name, checked })) };
 }
 
-const LIST_RESOURCE = "list-metadata";
-const NOTE_RESOURCE = "note-body";
 const encoder = new TextEncoder();
 
 function snapshotBytes(snapshot: ListSnapshot): Uint8Array {
@@ -155,13 +156,13 @@ export interface MintInput {
 export async function mintList(client: OriginalsClient, input: MintInput): Promise<string> {
   const who = await requireAuthor(input.ownerDid);
   const sdk = sdkFor(who);
-  const resources = input.content.kind === "list"
-    ? [{ id: LIST_RESOURCE, mediaType: "application/json", bytes: snapshotBytes(input.content.snapshot) }]
-    : [{ id: NOTE_RESOURCE, mediaType: "text/markdown", bytes: encoder.encode(input.content.body) }];
+  const resource = input.content.kind === "list"
+    ? { mediaType: "application/json", bytes: snapshotBytes(input.content.snapshot) }
+    : { mediaType: "text/markdown", bytes: encoder.encode(input.content.body) };
   const draft = await sdk.prepareCreate({
     name: input.name,
     metadata: { app: "boop", kind: input.content.kind },
-    resources,
+    resource,
     author: who.author,
   });
   // Genesis has no parent to submit against, so it is committed locally (signed
@@ -182,7 +183,7 @@ export async function mintList(client: OriginalsClient, input: MintInput): Promi
 export interface RecordedVersion {
   /** The checkpoint that commits to the published state. */
   checkpoint: string;
-  /** The list-metadata resource's version; genesis is 1. */
+  /** The resource's version; genesis is 1. */
   version: number;
   /** False when the published state matched the current version and nothing was appended. */
   appended: boolean;
@@ -204,12 +205,12 @@ export async function recordPublishedVersion(
   const head = (await sdk.sync(list.did, host)).original;
 
   const bytes = snapshotBytes(snapshot);
-  const current = latestVersion(head, LIST_RESOURCE);
+  const current = head.resources.at(-1);
   if (current?.digest === resourceDigest(bytes)) {
     return { checkpoint: head.checkpoint, version: current.version, appended: false };
   }
 
-  const change = { resources: [{ id: LIST_RESOURCE, bytes, mediaType: "application/json" }] };
+  const change = { resource: { bytes, mediaType: "application/json" } };
   const draft = await sdk.prepareEdit(list.did, { ...change, parent: head.checkpoint, author: who.author });
   let saved: SubmitResult = await sdk.submit(await sdk.sign(draft, who.signer), host);
   if (saved.status === "stale-parent") {
@@ -220,19 +221,15 @@ export async function recordPublishedVersion(
     });
     if (saved.status === "stale-parent") throw new Error("The list changed on another device; publish again");
   }
-  const published = latestVersion(saved.original, LIST_RESOURCE)!;
+  const published = saved.original.resources.at(-1)!;
   return { checkpoint: saved.checkpoint, version: published.version, appended: true };
-}
-
-function latestVersion(view: OriginalView, resource: string) {
-  return view.resources.filter((r) => r.resource === resource).at(-1);
 }
 
 export interface ListVerification {
   did: string;
   /**
    * Valid as of a checkpoint (history, author binding, identity evidence) and
-   * every resource's bytes served and matching its signed digest. The host is
+   * every resource version's bytes served and matching its signed digest. The host is
    * the only copy of the bytes, so missing content is a failure here.
    */
   verified: boolean;
@@ -270,9 +267,4 @@ export async function verifyList(client: OriginalsClient, listId: Id<"lists">): 
       error: err instanceof Error ? err.message : String(err),
     };
   }
-}
-
-/** True for an asset DID minted before Originals 5, which must be re-minted. */
-export function isLegacyAssetDid(assetDid: string | undefined): boolean {
-  return !!assetDid && !assetDid.startsWith("did:vh:");
 }
