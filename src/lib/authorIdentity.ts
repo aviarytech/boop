@@ -58,7 +58,7 @@ export function setOriginalsSigningConfirm(confirm: typeof confirmSigning): void
  * nobody signed in, no author DID yet, or no live Turnkey session (Originals
  * signing is online-only and waits for the next login).
  *
- * Shape (src/lib/originalsSigning.ts, compatible with @originals/sdk 5.1.0):
+ * Shape (src/lib/originalsSigning.ts, compatible with @originals/sdk 6.0.0):
  *   { author: { did, verificationMethod: `${did}#orig-1`, versionId },
  *     signer: OriginalsSigner (eddsa-jcs-2022, Turnkey signRawPayload),
  *     evidence: { did, log, source: "supplied", obtainedAt } }

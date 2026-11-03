@@ -2,8 +2,8 @@
  * A list's Original, as its page sees it.
  *
  * A list with no Original yet is minted silently when its owner opens it
- * while signed in. A legacy did:cel list cannot be read under Originals 5,
- * so its owner is asked to re-mint it (RemintListModal) before going on.
+ * while signed in. A legacy list (did:cel, or minted under Originals 5) cannot
+ * be read under Originals 6, so its owner is asked to re-mint it (RemintListModal) before going on.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +30,7 @@ export type ListOriginalState =
   | "minted"
   | "unminted" // no Original yet, and this viewer can't mint it now
   | "minting"
-  | "legacy" // a did:cel list waiting for its owner to re-mint it
+  | "legacy" // a did:cel or Originals 5 list waiting for its owner to re-mint it
   | "unauthorable"; // owner, but no live Turnkey session to sign with
 
 export function useListOriginal(

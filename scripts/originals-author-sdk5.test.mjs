@@ -1,4 +1,4 @@
-// #286 PR b, end to end against the real Originals SDK 5: a re-genesised
+// #286 PR b, end to end against the real Originals SDK (6): a re-genesised
 // author did:webvh whose Turnkey assertion key signs Originals entries that a
 // reader holding only the DID log verifies.
 //
@@ -7,9 +7,9 @@
 // mints and resolves the DID, src/lib/originalsSigning.ts signs, SDK 5 builds,
 // verifies and packages the Original.
 //
-// main is on @originals/sdk 4, so SDK 5 comes from ORIGINALS_SDK5_DIR (a
-// directory with @originals/sdk@5 in node_modules) or, once #298 lands, from
-// the installed package. Without either these tests are skipped, not passed.
+// The SDK is the installed package, or ORIGINALS_SDK5_DIR (a directory with
+// @originals/sdk 6 or later in node_modules). Without it these tests are
+// skipped, not passed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
@@ -23,7 +23,7 @@ async function loadSdk5() {
     const pkg = join(root, "node_modules/@originals/sdk");
     try {
       const { version } = JSON.parse(await readFile(join(pkg, "package.json"), "utf8"));
-      if (Number(version.split(".")[0]) < 5) continue;
+      if (Number(version.split(".")[0]) < 6) continue;
       return { version, sdk: await import(pathToFileURL(join(pkg, "dist/originals/index.js")).href) };
     } catch { /* not installed here */ }
   }
@@ -33,7 +33,7 @@ async function loadSdk5() {
 const loaded = await loadSdk5();
 // Chosen up front, not with `{ skip }`: bun's node:test runs skipped tests anyway.
 const sdk5Test = loaded ? test : test.skip;
-if (!loaded) console.log("originals-author-sdk5: skipped, needs @originals/sdk 5 (set ORIGINALS_SDK5_DIR, or rebase onto #298)");
+if (!loaded) console.log("originals-author-sdk5: skipped, needs @originals/sdk 6 (set ORIGINALS_SDK5_DIR)");
 
 const outdir = "tmp/originals-author-sdk5-test";
 await mkdir(outdir, { recursive: true });
@@ -56,7 +56,7 @@ async function createAndEdit(author) {
   const sdk = sdkFor(author.listAuthor.evidence);
   const created = await sdk.create({
     name: "Groceries",
-    resources: [{ id: "list.json", mediaType: "application/json", bytes: bytes('{"items":["Milk"]}') }],
+    resource: { mediaType: "application/json", bytes: bytes('{"items":["Milk"]}') },
     author: author.listAuthor.author,
     signer: author.listAuthor.signer,
   });
@@ -64,7 +64,7 @@ async function createAndEdit(author) {
   const did = created.original.did;
   const edited = await sdk.edit(did, {
     parent: created.original.checkpoint,
-    resources: [{ id: "list.json", bytes: bytes('{"items":["Milk","Eggs"]}') }],
+    resource: { bytes: bytes('{"items":["Milk","Eggs"]}') },
     author: author.listAuthor.author,
     signer: author.listAuthor.signer,
   });
@@ -115,6 +115,7 @@ sdk5Test("the signer signs exactly the bytes SDK 5 keySigner signs, and refuses 
   assert.equal(requests.length, 2);
   for (const request of requests) {
     assert.deepEqual(await author.listAuthor.signer.sign(request), await reference.sign(request), "Ed25519 is deterministic, so equal bytes signed means equal signatures");
+    assert.equal(originalsSigning.describeEntry(request.summary), loaded.sdk.describeEntry(request.summary), "the signer shows the SDK's own text");
   }
 
   const [create, edit] = requests;
@@ -142,7 +143,7 @@ sdk5Test("SDK 5 refuses an author DID whose assertion key is also its update key
   assert.ok((await authorDidLog.checkDidLog(shared.jsonl, pinned(shared.keys))).authorProblems.some(p => /also an update key/.test(p)), "the server's check refuses it too");
   const sdk = sdkFor(shared.listAuthor.evidence);
   await assert.rejects(() => sdk.create({
-    name: "Shared", resources: [{ id: "a", mediaType: "text/plain", bytes: bytes("a") }],
+    name: "Shared", resource: { mediaType: "text/plain", bytes: bytes("a") },
     author: shared.listAuthor.author, signer: shared.listAuthor.signer,
   }), err => /update key/i.test(err.message) || /AUTHOR_VM/.test(err.code ?? ""));
 });
@@ -154,7 +155,7 @@ sdk5Test("SDK 5 refuses to sign with a pre-#286 DID (controller \"\", one key in
   const sdk = sdkFor({ did: legacy.did, log: legacy.jsonl, source: "supplied", obtainedAt: new Date().toISOString() });
   const versionId = JSON.parse(legacy.jsonl.split("\n").at(-1)).versionId;
   await assert.rejects(() => sdk.create({
-    name: "Old", resources: [{ id: "a", mediaType: "text/plain", bytes: bytes("a") }],
+    name: "Old", resource: { mediaType: "text/plain", bytes: bytes("a") },
     author: { did: legacy.did, verificationMethod, versionId }, signer,
   }), err => /controller|update key/i.test(err.message) || /AUTHOR_VM/.test(err.code ?? ""));
 });

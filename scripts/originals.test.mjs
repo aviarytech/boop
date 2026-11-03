@@ -63,7 +63,7 @@ test("each list mints its own did:vh Original, named by its genesis", async () =
 test("a note's genesis commits to its markdown body, not list metadata", async () => {
   const { host } = await minted({ kind: "note", body: "" }, "Why boop signs");
   const entry = JSON.parse(host.logLines()[0]);
-  assert.deepEqual(entry.state.asset.resources.map((r) => [r.id, r.mediaType]), [["note-body", "text/markdown"]]);
+  assert.equal(entry.state.asset.resource.mediaType, "text/markdown", "an Original is one resource: the note's body");
   assert.deepEqual(entry.state.asset.metadata, { app: "boop", kind: "note" });
 
   const ok = await originals.verifyList(host.client, host.listId);

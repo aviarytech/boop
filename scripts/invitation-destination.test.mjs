@@ -39,7 +39,7 @@ await build({ stdin: { contents: 'export { Invitations } from "./src/pages/Invit
       path.endsWith('/observability') ? 'export const recordLatencyMs=()=>{};export const setGaugeMetric=()=>{};' :
       path.endsWith('/analytics') ? 'export const trackSignupStarted=()=>{};export const trackSignupCompleted=()=>{};export const trackListShared=()=>{};export const trackInviteSent=()=>{};' :
       path.endsWith('/share') ? 'export const shareList=async()=>{};export const shareItem=async()=>{};export const canShare=async()=>false;' :
-      'export const verifyList=async()=>null;export const isLegacyAssetDid=d=>!!d&&!d.startsWith("did:vh:");export const mintList=async()=>{};export const buildListSnapshot=(name,items)=>({name,items});export const recordPublishedVersion=async()=>({});export const setListAuthorSource=()=>{};export const getListAuthor=async()=>null;export class ListNotAuthorableError extends Error {}',
+      'export const verifyList=async()=>null;export const mintList=async()=>{};export const buildListSnapshot=(name,items)=>({name,items});export const recordPublishedVersion=async()=>({});export const setListAuthorSource=()=>{};export const getListAuthor=async()=>null;export class ListNotAuthorableError extends Error {}',
     }));
   } }],
 });
