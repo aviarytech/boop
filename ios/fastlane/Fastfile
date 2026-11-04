@@ -61,10 +61,13 @@ platform :ios do
       xcargs: "DEVELOPMENT_TEAM=#{ENV['APPLE_TEAM_ID']}"
     )
 
+    # Wait for processing: a build can only join a group once Apple has processed it.
+    # "Developers" is an internal group, so no Beta App Review submission is needed.
     upload_to_testflight(
       api_key: api_key,
-      skip_waiting_for_build_processing: true,
-      changelog: "Latest build from main"
+      changelog: "Latest build from main",
+      groups: ["Developers"],
+      submit_beta_review: false
     )
   end
 end
