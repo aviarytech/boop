@@ -6,7 +6,7 @@ test.describe("Settings panel", () => {
   test("1. settings panel opens when gear icon is clicked", async ({ screen, scenario }) => {
     await openSettings(scenario, screen);
     await expect(
-      screen.getByRole("heading", { name: "⚙️ Settings" }),
+      screen.getByRole("heading", { name: "Settings" }),
     ).toBeVisible();
   });
 
@@ -78,7 +78,7 @@ test.describe("Settings panel", () => {
     await screen.getByRole("button", { name: "Done" }).click();
 
     await expect(
-      screen.getByRole("heading", { name: "⚙️ Settings" }),
+      screen.getByRole("heading", { name: "Settings" }),
     ).not.toBeVisible({ timeout: 3000 });
   });
 });

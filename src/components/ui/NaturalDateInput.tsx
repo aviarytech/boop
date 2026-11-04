@@ -164,14 +164,14 @@ export function NaturalDateInput({
           onChange={(e) => handleInputChange(e.target.value)}
           disabled={disabled}
           placeholder={placeholder}
-          className="w-full px-3 py-2 pr-20 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+          className="w-full px-3 py-2 pr-20 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] placeholder:text-[var(--boop-dim)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
           {inputText && !disabled && (
             <button
               type="button"
               onClick={handleClear}
-              className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              className="p-1 text-gray-400 hover:text-[var(--boop-muted)] transition-colors"
               aria-label="Clear date"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -183,7 +183,7 @@ export function NaturalDateInput({
             type="button"
             onClick={() => setShowDatePicker(!showDatePicker)}
             disabled={disabled}
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+            className="p-1 text-gray-400 hover:text-[var(--boop-muted)] transition-colors"
             aria-label="Toggle date picker"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,8 +196,8 @@ export function NaturalDateInput({
       {/* Parsed date preview */}
       {parsedDate && (
         <div className="flex items-center gap-2 text-xs">
-          <span className="text-green-600 dark:text-green-400">✓</span>
-          <span className="text-gray-600 dark:text-gray-400">
+          <span className="text-[var(--boop-accent-ink)]">✓</span>
+          <span className="text-[var(--boop-muted)]">
             {parsedDate.toLocaleDateString("en-US", {
               weekday: "long",
               year: "numeric",
@@ -216,7 +216,7 @@ export function NaturalDateInput({
             value={value}
             onChange={(e) => handleDatePickerChange(e.target.value)}
             disabled={disabled}
-            className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+            className="w-full px-3 py-2 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-lg text-sm text-[var(--boop-ink)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
           />
         </div>
       )}

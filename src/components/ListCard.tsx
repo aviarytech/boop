@@ -65,15 +65,19 @@ export const ListCard = memo(function ListCard({ list, currentUserDid, showOwner
 
       {/* Progress bar + done count */}
       <div className="relative flex items-center gap-2.5">
-        <div className="flex-1 h-[4px] rounded-full overflow-hidden bg-[var(--boop-line)]">
-          <div
-            className="h-full rounded-full transition-[width] duration-300"
-            style={{
-              width: `${pct}%`,
-              background: 'var(--boop-accent)',
-            }}
-          />
-        </div>
+        {total > 0 ? (
+          <div className="flex-1 h-[4px] rounded-full overflow-hidden bg-[var(--boop-line)]">
+            <div
+              className="h-full rounded-full transition-[width] duration-300"
+              style={{
+                width: `${pct}%`,
+                background: 'var(--boop-accent)',
+              }}
+            />
+          </div>
+        ) : (
+          <div className="flex-1" />
+        )}
         <span
           className="text-[13px] text-[var(--boop-muted)] tabular-nums"
         >

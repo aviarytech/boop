@@ -13,6 +13,7 @@ import type { Id, Doc } from "../../convex/_generated/dataModel";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useSettings } from "../hooks/useSettings";
 import { PriorityFocusSkeleton } from "../components/ui/Skeleton";
+import { Icon } from "../components/ui/Icon";
 import { EmptyState } from "../components/ui/EmptyState";
 
 type HighPriorityItem = {
@@ -78,7 +79,8 @@ function PriorityItem({
 
           {/* Priority badge */}
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 flex-shrink-0">
-            🔥 High
+            <Icon name="flame" className="w-3 h-3" />
+            High
           </span>
         </div>
 
@@ -137,7 +139,7 @@ function PriorityItem({
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
+              className="inline-flex items-center gap-1 text-[var(--boop-accent)] hover:text-[var(--boop-accent-deep)] transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
               <svg
@@ -227,6 +229,7 @@ export function PriorityFocus() {
             <Link
               to="/d"
               onClick={() => haptic("light")}
+              aria-label="Back to lists"
               className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
             >
               <svg
@@ -243,8 +246,8 @@ export function PriorityFocus() {
                 />
               </svg>
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              🎯 Priority Focus
+            <h1 className="text-[28px] font-extrabold tracking-[-0.02em] text-[var(--boop-ink)]">
+              Priority Focus
             </h1>
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -274,7 +277,6 @@ export function PriorityFocus() {
             <section key={group.listId}>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                  <span>📋</span>
                   <Link
                     to={`/list/${group.listId}`}
                     className="hover:text-amber-600 dark:hover:text-amber-400 transition-colors"

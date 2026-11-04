@@ -3,18 +3,19 @@
  */
 
 import { Link } from "react-router-dom";
+import { Icon } from "../components/ui/Icon";
 
 export function JoinList() {
   return (
-    <div className="max-w-md mx-auto text-center py-12 bg-stone-50 dark:bg-gray-900 rounded-lg shadow p-6">
-      <div className="text-5xl mb-4">🔗</div>
-      <h2 className="text-xl font-semibold text-stone-900 dark:text-gray-100 mb-2">
+    <div className="boop-sheet max-w-md mx-auto mt-12 text-center p-8">
+      <Icon name="link" className="mx-auto mb-4 w-10 h-10 text-[var(--boop-accent)]" />
+      <h2 className="text-xl font-semibold text-[var(--boop-ink)] mb-2">
         This legacy invite link is no longer supported
       </h2>
-      <p className="text-stone-600 dark:text-gray-300 mb-4">
+      <p className="text-[var(--boop-muted)] mb-4">
         Ask the owner to invite your email as a viewer or editor through Share with people. Accept the invitation to get named access. A public list link allows reading only; it does not grant editing.
       </p>
-      <Link to="/" className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-medium">
+      <Link to="/" className="text-[var(--boop-accent)] hover:text-[var(--boop-accent-deep)] font-medium">
         Go to your lists
       </Link>
     </div>

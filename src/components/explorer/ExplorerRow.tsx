@@ -3,6 +3,7 @@ import type { ExplorerRow as ExplorerRowType } from "../../lib/explorer";
 import type { ColumnPrefs } from "../../lib/explorerColumns";
 import { KindBadge } from "./KindBadge";
 import { LayerBadge } from "./LayerBadge";
+import { Icon } from "../ui/Icon";
 import { RowVerificationBadge } from "./RowVerificationBadge";
 
 interface Props {
@@ -25,7 +26,6 @@ function destinationFor(row: ExplorerRowType): string {
 }
 
 export function ExplorerRow({ row, columns }: Props) {
-  const Icon = row.source === "list" ? "📝" : "🌐";
 
   return (
     <Link
@@ -33,9 +33,7 @@ export function ExplorerRow({ row, columns }: Props) {
       data-row-id={row.id}
       className="grid grid-cols-[24px_1fr_auto_auto] md:grid-cols-[24px_1fr_auto_auto_auto_auto_auto] gap-3 items-center px-4 py-3 border-b border-stone-100 dark:border-gray-800 hover:bg-stone-50 dark:hover:bg-gray-900/50 transition-colors"
     >
-      <span aria-hidden="true" className="text-base">
-        {Icon}
-      </span>
+      <Icon name={row.source === "list" ? "list" : "globe"} className="w-4 h-4 text-[var(--boop-muted)]" />
       <div className="min-w-0">
         <div className="font-semibold text-sm text-stone-900 dark:text-stone-100 truncate">
           {row.title}

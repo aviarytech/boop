@@ -49,8 +49,8 @@ export function NoteView() {
   if (identityLoading || list === undefined || note === undefined) {
     return (
       <div className="max-w-3xl mx-auto">
-        <div className="animate-pulse h-8 w-56 bg-stone-200 dark:bg-gray-800 rounded mb-4" />
-        <div className="animate-pulse h-64 w-full bg-stone-200 dark:bg-gray-800 rounded" />
+        <div className="animate-pulse h-8 w-56 bg-[var(--boop-panel)] rounded mb-4" />
+        <div className="animate-pulse h-64 w-full bg-[var(--boop-panel)] rounded" />
       </div>
     );
   }
@@ -60,7 +60,7 @@ export function NoteView() {
   if (!list || !note) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <p className="text-stone-600 dark:text-stone-400">This note isn't available.</p>
+        <p className="text-[var(--boop-muted)]">This note isn't available.</p>
         <UnsentNoteDrafts documentKey={draftKey} aliases={draftAliases} />
         <Link to="/d" className="rounded-full px-4 py-2 text-sm font-semibold bg-amber-500 text-white">
           Back to lists
@@ -136,7 +136,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
           <Link
             to="/d"
             onClick={() => haptic('light')}
-            className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
+            className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-xl transition-colors"
             aria-label="Back to lists"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +147,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1
-                className="text-gray-900 dark:text-gray-100 break-words min-w-0"
+                className="text-[var(--boop-ink)] break-words min-w-0"
                 style={{
                   fontFamily: 'var(--font-sans)',
                   fontWeight: 700,
@@ -162,12 +162,12 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
               <ListVerificationBadge anchorStatus="none" did={list.assetDid} signature={badgeSignature(verification)} />
             </div>
             <div
-              className="flex items-center gap-2 text-[12px] mt-1 text-stone-500 dark:text-stone-400 flex-wrap"
+              className="flex items-center gap-2 text-[12px] mt-1 text-[var(--boop-muted)] flex-wrap"
               style={{ fontFamily: MONO }}
             >
               {meta.map((part, i) => (
                 <span key={i} className="inline-flex items-center gap-2">
-                  {i > 0 && <span className="text-stone-300 dark:text-stone-600">·</span>}
+                  {i > 0 && <span className="text-[var(--boop-dim)]">·</span>}
                   <span>{part}</span>
                 </span>
               ))}
@@ -184,7 +184,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
 
           <div className="flex items-center gap-2 flex-shrink-0">
             {!editingUnavailable && (
-              <div className="inline-flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-0.5">
+              <div className="inline-flex items-center bg-[var(--boop-panel)] rounded-full p-0.5">
                 <ModeButton active={mode === "edit"} label="Edit" onClick={() => pickMode("edit")}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </ModeButton>
@@ -229,7 +229,7 @@ function LoadedNote({ list, note, draftKey, draftAliases }: { list: Doc<"lists">
           autoFocus
           aria-label="Note body"
           placeholder="Start writing…  (markdown supported)"
-          className="w-full min-h-[60vh] resize-none bg-transparent text-base leading-relaxed text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-none font-mono"
+          className="w-full min-h-[60vh] resize-none bg-transparent text-base leading-relaxed text-[var(--boop-ink)] placeholder-stone-400 focus:outline-none font-mono"
         />
       ) : (
         <div className="w-full prose prose-stone dark:prose-invert max-w-none">
@@ -279,8 +279,8 @@ function ModeButton({ active, label, onClick, children }: {
       title={label}
       className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
         active
-          ? "bg-white dark:bg-gray-600 text-amber-600 dark:text-amber-400 shadow-sm"
-          : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          ? "bg-[var(--boop-card)] text-amber-600 dark:text-amber-400 shadow-sm"
+          : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
       }`}
     >
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">{children}</svg>

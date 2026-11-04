@@ -14,6 +14,7 @@ import { trackTemplate } from "../lib/analytics";
 import { getRunbook } from "../../convex/lib/templateCatalog";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
+import { Icon } from "../components/ui/Icon";
 
 type Template = Doc<"listTemplates">;
 
@@ -101,9 +102,9 @@ export function Templates() {
   if (userLoading || !did) {
     return (
       <div className="max-w-3xl mx-auto animate-pulse space-y-4">
-        <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3" />
-        <div className="h-32 bg-gray-200 dark:bg-gray-700 rounded" />
-        <div className="h-32 bg-gray-200 dark:bg-gray-700 rounded" />
+        <div className="h-8 bg-[var(--boop-panel)] rounded w-1/3" />
+        <div className="h-32 bg-[var(--boop-panel)] rounded" />
+        <div className="h-32 bg-[var(--boop-panel)] rounded" />
       </div>
     );
   }
@@ -111,22 +112,22 @@ export function Templates() {
   return (
     <div className="max-w-3xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Link
-          to="/d"
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </Link>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-          <span>📁</span> Templates
-        </h1>
-      </div>
+      <Link
+        to="/d"
+        className="inline-flex items-center gap-1.5 -ml-1 text-[15px] font-medium text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-colors"
+      >
+        <Icon name="chevronLeft" className="w-5 h-5" />
+        Back to lists
+      </Link>
+      <h1
+        className="mt-5 mb-2 text-[var(--boop-ink)]"
+        style={{ fontWeight: 780, fontVariationSettings: '"wdth" 86', fontSize: 'clamp(30px, 4.6vw, 40px)', letterSpacing: '-0.035em', lineHeight: 1.05 }}
+      >
+        Templates
+      </h1>
 
       {error && (
-        <div className="mb-6 px-4 py-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-800 dark:text-amber-300 text-sm space-y-3">
+        <div className="mb-6 px-4 py-4 bg-[var(--boop-accent-soft)] rounded-xl text-[var(--boop-accent-ink)] text-sm space-y-3">
           <div>{error}</div>
           <Link
             to="/pricing"
@@ -137,10 +138,10 @@ export function Templates() {
         </div>
       )}
 
-      <p className="mb-6"><Link to="/templates" className="underline">Explore agent runbooks and step-by-step previews →</Link></p>
+      <p className="mb-8"><Link to="/templates" className="text-[15px] font-semibold text-[var(--boop-accent)] hover:text-[var(--boop-accent-deep)]">Explore agent runbooks and step-by-step previews <Icon name="arrowRight" className="inline w-4 h-4 align-[-3px]" /></Link></p>
       {/* Built-in Templates */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        <h2 className="text-[20px] font-bold tracking-tight text-[var(--boop-ink)] mb-3">
           Quick Start Templates
         </h2>
         <div className="space-y-3">
@@ -157,14 +158,14 @@ export function Templates() {
 
       {/* My Templates */}
       <section className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        <h2 className="text-[20px] font-bold tracking-tight text-[var(--boop-ink)] mb-3">
           My Templates
         </h2>
         
         {userTemplates.length === 0 ? (
-          <div className="text-center py-8 bg-gray-50 dark:bg-gray-800/50 rounded-2xl">
-            <p className="text-gray-500 dark:text-gray-400 mb-2">No templates yet</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500">
+          <div className="text-center py-8 bg-[var(--boop-panel)] rounded-2xl">
+            <p className="text-[var(--boop-muted)] mb-2">No templates yet</p>
+            <p className="text-sm text-[var(--boop-dim)]">
               Save a list as a template to reuse it later
             </p>
           </div>
@@ -187,7 +188,7 @@ export function Templates() {
       {/* Public Templates */}
       {publicTemplates.filter((t) => t.ownerDid !== did).length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+          <h2 className="text-[20px] font-bold tracking-tight text-[var(--boop-ink)] mb-3">
             Public Templates
           </h2>
           <div className="space-y-3">
@@ -217,18 +218,18 @@ interface BuiltinTemplateCardProps {
 
 function BuiltinTemplateCard({ template, isCreating, onUse }: BuiltinTemplateCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+    <div className="bg-[var(--boop-card)] rounded-xl p-4 shadow-sm border border-[var(--boop-line)]">
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
           <span className="text-2xl">{template.emoji}</span>
           <div>
-            <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            <h3 className="font-medium text-[var(--boop-ink)]">
               {template.name}
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-sm text-[var(--boop-muted)] mt-1">
               {template.description}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+            <p className="text-xs text-[var(--boop-dim)] mt-2">
               {template.items.length} item{template.items.length !== 1 ? "s" : ""}
             </p>
           </div>
@@ -256,20 +257,20 @@ interface TemplateCardProps {
 
 function TemplateCard({ template, isOwner, isCreating, onUse, onDelete }: TemplateCardProps) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+    <div className="bg-[var(--boop-card)] rounded-xl p-4 shadow-sm border border-[var(--boop-line)]">
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-3">
-          <span className="text-2xl">📄</span>
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] shrink-0"><Icon name="file" className="w-[18px] h-[18px]" /></span>
           <div>
-            <h3 className="font-medium text-gray-900 dark:text-gray-100">
+            <h3 className="font-medium text-[var(--boop-ink)]">
               {template.name}
             </h3>
             {template.description && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-sm text-[var(--boop-muted)] mt-1">
                 {template.description}
               </p>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+            <p className="text-xs text-[var(--boop-dim)] mt-2">
               {template.items.length} item{template.items.length !== 1 ? "s" : ""}
               {template.isPublic && " • Public"}
             </p>
@@ -287,7 +288,7 @@ function TemplateCard({ template, isOwner, isCreating, onUse, onDelete }: Templa
           {isOwner && onDelete && (
             <button
               onClick={onDelete}
-              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+              className="p-1.5 text-[var(--boop-dim)] hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

@@ -139,10 +139,10 @@ export function SubItems({
     <div className="space-y-2">
       {/* Progress indicator if there are sub-items */}
       {totalCount > 0 && (
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+        <div className="flex items-center gap-2 text-xs text-[var(--boop-muted)]">
+          <div className="flex-1 h-1.5 bg-[var(--boop-panel)] rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-green-500 to-emerald-600 rounded-full transition-all duration-300"
+              className="h-full bg-[var(--boop-accent)] rounded-full transition-all duration-300"
               style={{ width: `${totalCount > 0 ? (checkedCount / totalCount) * 100 : 0}%` }}
             />
           </div>
@@ -159,8 +159,8 @@ export function SubItems({
             key={item._id}
             className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
               item.checked
-                ? "bg-gray-50 dark:bg-gray-800/50"
-                : "bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800"
+                ? "bg-[var(--boop-panel)]"
+                : "bg-[var(--boop-panel)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))]"
             }`}
           >
             {/* Checkbox */}
@@ -169,8 +169,8 @@ export function SubItems({
                 onClick={() => handleToggleCheck(item)}
                 className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center transition-all active:scale-90 ${
                   item.checked
-                    ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                    : "bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
+                    ? "bg-amber-500 text-white"
+                    : "bg-[var(--boop-card)] border border-[var(--boop-line)] hover:border-gray-400 dark:hover:border-gray-500"
                 }`}
                 aria-label={item.checked ? "Uncheck sub-item" : "Check sub-item"}
               >
@@ -188,8 +188,8 @@ export function SubItems({
               <div
                 className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center ${
                   item.checked
-                    ? "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                    : "bg-gray-100 dark:bg-gray-700"
+                    ? "bg-amber-500 text-white"
+                    : "bg-[var(--boop-panel)]"
                 }`}
               >
                 {item.checked && (
@@ -208,8 +208,8 @@ export function SubItems({
             <span
               className={`flex-1 text-xs transition-all ${
                 item.checked
-                  ? "line-through text-gray-400 dark:text-gray-500"
-                  : "text-gray-700 dark:text-gray-300"
+                  ? "line-through text-[var(--boop-dim)]"
+                  : "text-[var(--boop-ink)]"
               }`}
             >
               {item.name}
@@ -219,7 +219,7 @@ export function SubItems({
             {canEdit && (
               <button
                 onClick={() => handleRemove(item._id)}
-                className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 rounded transition-colors"
+                className="flex-shrink-0 w-5 h-5 flex items-center justify-center text-[var(--boop-dim)] hover:text-red-500 dark:hover:text-red-400 rounded transition-colors"
                 aria-label="Remove sub-item"
               >
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -244,7 +244,7 @@ export function SubItems({
                 placeholder="Add sub-item..."
                 autoFocus
                 disabled={isAdding}
-                className="flex-1 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+                className="flex-1 px-3 py-1.5 bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-lg text-xs text-[var(--boop-ink)] placeholder:text-[var(--boop-dim)] focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
                 onBlur={() => {
                   // Close input if empty after blur
                   if (!newItemName.trim()) {
@@ -265,7 +265,7 @@ export function SubItems({
                   setShowInput(false);
                   setNewItemName("");
                 }}
-                className="flex-shrink-0 px-2 py-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xs transition-colors"
+                className="flex-shrink-0 px-2 py-1.5 text-gray-400 hover:text-[var(--boop-muted)] text-xs transition-colors"
               >
                 Cancel
               </button>
@@ -276,7 +276,7 @@ export function SubItems({
                 haptic("light");
                 setShowInput(true);
               }}
-              className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-lg transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -289,7 +289,7 @@ export function SubItems({
 
       {/* Empty state for viewers */}
       {!canEdit && totalCount === 0 && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 italic">No sub-items</p>
+        <p className="text-xs text-[var(--boop-dim)] italic">No sub-items</p>
       )}
     </div>
   );

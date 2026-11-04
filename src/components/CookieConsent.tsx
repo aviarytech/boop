@@ -52,18 +52,18 @@ export function CookieConsent() {
       aria-label="Cookie consent"
       className="fixed bottom-3 left-3 right-3 z-50 safe-area-inset-bottom sm:right-auto sm:left-4 sm:w-[min(24rem,calc(100vw-2rem))]"
     >
-      <div className="bg-white/95 dark:bg-gray-900/95 border border-gray-200 dark:border-gray-700 rounded-lg shadow-md p-3 backdrop-blur">
+      <div className="bg-[color-mix(in_oklch,var(--boop-card)_95%,transparent)] border border-[var(--boop-line)] rounded-xl shadow-[0_16px_32px_-20px_oklch(25%_0.04_200/0.35)] p-3 backdrop-blur">
         <div className="mb-3">
-          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <p className="text-sm font-semibold text-[var(--boop-ink)]">
             Analytics consent
           </p>
-          <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-400">
+          <p className="mt-1 text-xs leading-5 text-[var(--boop-muted)]">
             We use PostHog to improve boop. No data is sold or shared.{' '}
             <a
               href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline text-amber-700 dark:text-amber-300 hover:text-amber-800"
+              className="underline text-[var(--boop-accent)] hover:text-[var(--boop-accent-deep)]"
             >
               Privacy
             </a>
@@ -72,19 +72,19 @@ export function CookieConsent() {
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={handleMaybeLater}
-            className="px-2 py-1.5 border border-transparent text-xs font-medium text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+            className="px-2 py-1.5 border border-transparent text-xs font-medium text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-colors"
           >
             Maybe later
           </button>
           <button
             onClick={handleDecline}
-            className="px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="px-2.5 py-1.5 rounded-lg border border-[var(--boop-line)] text-xs font-medium text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] transition-colors"
           >
             No thanks
           </button>
           <button
             onClick={handleAccept}
-            className="px-3 py-1.5 rounded-md border border-transparent bg-gray-900 hover:bg-gray-800 text-white text-xs font-semibold transition-colors dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-200"
+            className="px-3 py-1.5 rounded-lg border border-transparent bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors"
           >
             Allow
           </button>

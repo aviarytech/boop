@@ -36,18 +36,18 @@ export const NoteCard = memo(function NoteCard({ list, summary: storedSummary, c
     <Link
       to={`/n/${list._id}`}
       onClick={() => haptic('light')}
-      className="group block relative overflow-hidden bg-white dark:bg-stone-800/70 rounded-[18px] p-[18px] border border-stone-200/70 dark:border-stone-700/50 hover:border-amber-300/60 dark:hover:border-amber-700/50 hover:-translate-y-[1px] transition-all duration-150 active:scale-[0.99]"
+      className="group block relative overflow-hidden bg-[var(--boop-card)] rounded-[18px] p-[18px] border border-[var(--boop-line)]/70 hover:border-amber-300/60 dark:hover:border-amber-700/50 hover:-translate-y-[1px] transition-all duration-150 active:scale-[0.99]"
       aria-label={`Open note: ${list.name}`}
     >
       <div className="relative mb-2 min-w-0">
         <div
-          className="mb-1 text-[11px] text-stone-500 dark:text-stone-400 lowercase truncate"
+          className="mb-1 text-[11px] text-[var(--boop-muted)] lowercase truncate"
           style={{ fontFamily: MONO }}
         >
           {tag}
         </div>
         <h3
-          className="text-stone-900 dark:text-stone-50 truncate"
+          className="text-[var(--boop-ink)] truncate"
           style={{
             fontFamily: 'var(--font-sans)',
             fontWeight: 700,
@@ -61,23 +61,23 @@ export const NoteCard = memo(function NoteCard({ list, summary: storedSummary, c
       </div>
 
       {summary?.excerpt ? (
-        <p className="text-[13.5px] leading-snug text-stone-600 dark:text-stone-300 line-clamp-2 mb-3">
+        <p className="text-[13.5px] leading-snug text-[var(--boop-muted)] line-clamp-2 mb-3">
           {summary.excerpt}
         </p>
       ) : (
-        <p className="text-[13.5px] leading-snug text-stone-400 dark:text-stone-500 italic mb-3">
+        <p className="text-[13.5px] leading-snug text-[var(--boop-dim)] italic mb-3">
           {summary ? "Nothing written yet" : " "}
         </p>
       )}
 
       <div
-        className="flex items-center gap-2 text-[11px] text-stone-500 dark:text-stone-400 tabular-nums"
+        className="flex items-center gap-2 text-[11px] text-[var(--boop-muted)] tabular-nums"
         style={{ fontFamily: MONO }}
       >
         {summary ? (
           <>
             <span>{summary.wordCount} {summary.wordCount === 1 ? "word" : "words"}</span>
-            <span className="text-stone-300 dark:text-stone-600">·</span>
+            <span className="text-[var(--boop-dim)]">·</span>
             <span>edited {shortRelativeTime(summary.updatedAt)}</span>
           </>
         ) : (

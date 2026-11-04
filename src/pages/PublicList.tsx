@@ -119,7 +119,7 @@ export function PublicList() {
                 <div className="flex-shrink-0 pt-0.5">
                   {item.checked ? (
                     <svg
-                      className="w-5 h-5 text-green-600 dark:text-green-400"
+                      className="w-5 h-5 text-[var(--boop-accent)]"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"

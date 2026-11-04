@@ -15,6 +15,7 @@ import { useSettings } from "../hooks/useSettings";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { buildListResourceDid, buildListResourceUrl } from "../lib/webvh";
 import { trackInviteSent } from "../lib/analytics";
+import { Icon } from "./ui/Icon";
 
 const ONBOARDING_KEY = "poo_onboarding_v1";
 const DEMO_CREATED_KEY = "boop:onboarding_demo_created";
@@ -262,7 +263,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         />
       </div>
       <h1
-        className="text-stone-900 dark:text-stone-50 mb-3"
+        className="text-[var(--boop-ink)] mb-3"
         style={{
           fontFamily: 'var(--font-sans)',
           fontWeight: 800,
@@ -273,18 +274,18 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       >
         Welcome to boop.
       </h1>
-      <p className="text-stone-600 dark:text-stone-300 text-base mb-2 leading-relaxed">
+      <p className="text-[var(--boop-muted)] text-base mb-2 leading-relaxed">
         A calm place for the things you need to do.
       </p>
-      <p className="text-stone-500 dark:text-stone-400 text-sm mb-10 leading-relaxed">
+      <p className="text-[var(--boop-muted)] text-sm mb-10 leading-relaxed">
         Let's get you set up in under 60 seconds. We'll create your first
         list and show you how to share it with someone.
       </p>
       <button
         onClick={onNext}
-        className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-amber-500/30 hover:bg-amber-500 active:bg-amber-700 transition-all"
+        className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-lg hover:bg-amber-500 active:bg-amber-700 transition-all"
       >
-        Let's go 🚀
+        Let's go
       </button>
     </div>
   );
@@ -305,7 +306,7 @@ function CreateListStep({
 }) {
   return (
     <div className="text-center max-w-sm w-full">
-      <div className="text-6xl mb-5">✨</div>
+      <div className="mx-auto mb-5 flex items-center justify-center w-16 h-16 rounded-full border-[3px] border-amber-500 text-amber-600"><Icon name="sparkles" className="w-7 h-7" /></div>
       <h2 className="text-2xl font-black text-amber-900 mb-2">
         Name your first list
       </h2>
@@ -331,9 +332,9 @@ function CreateListStep({
         <button
           type="submit"
           disabled={!value.trim() || isCreating}
-          className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base shadow-lg shadow-amber-500/25 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-500 transition-all"
+          className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-500 transition-all"
         >
-          {isCreating ? "Creating..." : "Create List ✨"}
+          {isCreating ? "Creating..." : "Create List"}
         </button>
       </form>
     </div>
@@ -362,7 +363,7 @@ function AddItemsStep({
   return (
     <div className="max-w-sm w-full">
       <div className="text-center mb-6">
-        <div className="text-5xl mb-4">📝</div>
+        <div className="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full border-[3px] border-amber-500 text-amber-600"><Icon name="list" className="w-7 h-7" /></div>
         <h2 className="text-2xl font-black text-amber-900 mb-2">
           Add a few items
         </h2>
@@ -409,7 +410,7 @@ function AddItemsStep({
 
       <button
         onClick={onNext}
-        className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base shadow-lg shadow-amber-500/25 hover:bg-amber-500 transition-all"
+        className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base hover:bg-amber-500 transition-all"
       >
         {addedItems.length === 0 ? "Skip this step →" : "Next →"}
       </button>
@@ -458,16 +459,16 @@ export function InviteNudge({
 
   return createPortal(
     <div className="fixed inset-x-0 bottom-0 z-[150] p-4 safe-area-inset-bottom animate-slide-up">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-amber-200 dark:border-amber-800 p-5">
+      <div className="bg-[var(--boop-card)] rounded-2xl shadow-2xl border border-amber-200 dark:border-amber-800 p-5">
         <div className="flex items-start gap-3">
-          <span className="text-3xl leading-none mt-0.5">🤝</span>
+          <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)] shrink-0"><Icon name="users" className="w-[18px] h-[18px]" /></span>
           <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-1">
+            <h3 className="font-bold text-[var(--boop-ink)] mb-1">
               Invite someone to collaborate
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            <p className="text-sm text-[var(--boop-muted)] mb-4">
               Share{" "}
-              <span className="font-medium text-gray-700 dark:text-gray-300">
+              <span className="font-medium text-[var(--boop-ink)]">
                 "{listName}"
               </span>{" "}
               with a friend or teammate. Real-time sync, no account needed.
@@ -475,13 +476,13 @@ export function InviteNudge({
             <div className="flex gap-2">
               <button
                 onClick={handleInvite}
-                className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl font-semibold text-sm shadow-lg shadow-amber-500/25 hover:bg-amber-400 transition-all"
+                className="flex-1 py-2.5 bg-amber-500 text-white rounded-xl font-semibold text-sm hover:bg-amber-400 transition-all"
               >
                 Invite someone →
               </button>
               <button
                 onClick={handleDismiss}
-                className="px-4 py-2.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-sm font-medium transition-colors"
+                className="px-4 py-2.5 text-[var(--boop-muted)] hover:text-[var(--boop-ink)] text-sm font-medium transition-colors"
               >
                 Later
               </button>
@@ -520,7 +521,7 @@ function ShareStep({
       <div className="text-center mb-6">
         {shareUrl ? (
           <>
-            <div className="text-5xl mb-4">🎉</div>
+            <div className="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full border-[3px] border-amber-500 text-amber-600"><Icon name="check" className="w-7 h-7" /></div>
             <h2 className="text-2xl font-black text-amber-900 mb-2">
               You're all set!
             </h2>
@@ -531,7 +532,7 @@ function ShareStep({
           </>
         ) : (
           <>
-            <div className="text-5xl mb-4">🤝</div>
+            <div className="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full border-[3px] border-amber-500 text-amber-600"><Icon name="users" className="w-7 h-7" /></div>
             <h2 className="text-2xl font-black text-amber-900 mb-2">
               Publish publicly
             </h2>
@@ -567,7 +568,7 @@ function ShareStep({
 
           <button
             onClick={onFinish}
-            className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base shadow-lg shadow-amber-500/25 hover:bg-amber-500 transition-all"
+            className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base hover:bg-amber-500 transition-all"
           >
             Open my list →
           </button>
@@ -577,15 +578,15 @@ function ShareStep({
           <div className="p-4 bg-white/60 rounded-2xl border border-amber-100">
             <ul className="space-y-2 text-sm text-amber-800/80">
               <li className="flex items-center gap-2">
-                <span className="text-amber-500">✓</span>
+                <Icon name="check" className="w-4 h-4 text-amber-500" />
                 Anyone with the link can read; editing needs an editor invitation
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-amber-500">✓</span>
+                <Icon name="check" className="w-4 h-4 text-amber-500" />
                 Real-time sync — changes appear instantly
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-amber-500">✓</span>
+                <Icon name="check" className="w-4 h-4 text-amber-500" />
                 Unpublish to end public reading; named access stays
               </li>
             </ul>
@@ -598,7 +599,7 @@ function ShareStep({
           <button
             onClick={onPublish}
             disabled={isPublishing}
-            className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base shadow-lg shadow-amber-500/25 disabled:opacity-50 hover:bg-amber-500 transition-all"
+            className="w-full py-4 bg-amber-600 text-white rounded-2xl font-bold text-base disabled:opacity-50 hover:bg-amber-500 transition-all"
           >
             {isPublishing ? (
               <span className="flex items-center justify-center gap-2">
@@ -609,7 +610,7 @@ function ShareStep({
                 Publishing...
               </span>
             ) : (
-              "Publish publicly 🌐"
+              "Publish publicly"
             )}
           </button>
 

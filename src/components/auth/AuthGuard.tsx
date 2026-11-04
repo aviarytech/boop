@@ -52,10 +52,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
   // Show loading state while checking auth
   if (isLoading || (isAuthenticated && account === undefined)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--boop-bg)] flex items-center justify-center">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-blue-600"></div>
-          <p className="mt-2 text-gray-500">Loading...</p>
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[var(--boop-line)] border-t-[var(--boop-accent)]"></div>
+          <p className="mt-2 text-[var(--boop-muted)]">Loading...</p>
         </div>
       </div>
     );

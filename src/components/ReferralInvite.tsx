@@ -10,6 +10,7 @@ import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import type { Id } from "../../convex/_generated/dataModel";
 import { buildReferralInviteUrl } from "../lib/inviteLinks";
+import { Icon } from "./ui/Icon";
 
 interface ReferralInviteProps {
   /** Convex user ID — caller resolves this from their context */
@@ -85,7 +86,7 @@ export function ReferralInvite({ userId, compact = false }: ReferralInviteProps)
   if (compact) {
     return (
       <div className="space-y-2">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
+        <p className="text-sm text-[var(--boop-muted)]">
           Invite a friend → both of you get <strong>1 month Pro free</strong>.
         </p>
         {referralUrl ? (
@@ -93,7 +94,7 @@ export function ReferralInvite({ userId, compact = false }: ReferralInviteProps)
             <input
               readOnly
               value={referralUrl}
-              className="flex-1 px-3 py-2 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg border border-gray-200 dark:border-gray-700 truncate"
+              className="flex-1 px-3 py-2 text-xs bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded-lg border border-[var(--boop-line)] truncate"
             />
             <button
               onClick={handleCopy}
@@ -118,20 +119,20 @@ export function ReferralInvite({ userId, compact = false }: ReferralInviteProps)
   return (
     <div className="space-y-3">
       {proActive && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-          <span className="text-base">🌟</span>
-          <p className="text-xs text-amber-800 dark:text-amber-300">
+        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--boop-accent-soft)] rounded-lg">
+          <Icon name="star" className="w-4 h-4 text-[var(--boop-accent)]" />
+          <p className="text-xs text-[var(--boop-accent-ink)]">
             <strong>Pro active via referral</strong> — expires {proExpiryDate}
           </p>
         </div>
       )}
       <div className="flex items-center gap-2">
-        <span className="text-xl">🎁</span>
+        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--boop-card)] text-[var(--boop-accent)] shrink-0"><Icon name="gift" className="w-[18px] h-[18px]" /></span>
         <div>
-          <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
+          <p className="font-semibold text-[var(--boop-ink)] text-sm">
             Invite a friend, get 1 month Pro free
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-[var(--boop-muted)]">
             Both you and your friend unlock 30 days of Pro — free.
             {(stats?.totalReferrals ?? 0) > 0 && (
               <span className="ml-1 text-amber-600 dark:text-amber-400 font-medium">
@@ -148,7 +149,7 @@ export function ReferralInvite({ userId, compact = false }: ReferralInviteProps)
             <input
               readOnly
               value={referralUrl}
-              className="flex-1 px-3 py-2 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg border border-gray-200 dark:border-gray-700 truncate"
+              className="flex-1 px-3 py-2 text-xs bg-[var(--boop-panel)] text-[var(--boop-ink)] rounded-lg border border-[var(--boop-line)] truncate"
             />
             <button
               onClick={handleCopy}

@@ -5,6 +5,7 @@
  * so a one-word fix costs one tap and no context switch.
  */
 
+import { Icon, type IconName } from "./ui/Icon";
 import { useEffect, useRef, useState } from "react";
 import type { Category } from "../lib/categories";
 import { OTHER_CATEGORY_ID } from "../lib/categories";
@@ -88,14 +89,14 @@ export function CategoryHeaderMenu({
         aria-label={editing === "name" ? "Category name" : "Category emoji"}
         className={`${
           editing === "emoji" ? "w-12 text-center text-lg" : "flex-1 text-sm font-semibold"
-        } bg-white dark:bg-gray-800 border border-amber-400 dark:border-amber-600 rounded-lg px-2 py-1 text-gray-800 dark:text-gray-200`}
+        } bg-[var(--boop-card)] border border-amber-400 dark:border-amber-600 rounded-lg px-2 py-1 text-[var(--boop-ink)]`}
       />
     );
   }
 
   return (
     <div ref={containerRef} className="relative ml-auto flex items-center gap-2">
-      <span className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+      <span className="text-xs text-[var(--boop-dim)] tabular-nums">
         {itemCount} {itemCount === 1 ? "item" : "items"}
       </span>
 
@@ -107,7 +108,7 @@ export function CategoryHeaderMenu({
         }}
         aria-label={`Edit ${category.name} category`}
         aria-expanded={open}
-        className="p-1 -mr-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-amber-100/60 dark:hover:bg-gray-600 transition-colors"
+        className="p-1 -mr-1 rounded-lg text-[var(--boop-dim)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-card)] transition-colors"
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
           <circle cx="4" cy="10" r="1.6" />
@@ -119,13 +120,13 @@ export function CategoryHeaderMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-xl bg-white dark:bg-gray-800 shadow-xl ring-1 ring-black/5 dark:ring-white/10"
+          className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-xl bg-[var(--boop-card)] shadow-xl ring-1 ring-[var(--boop-line)]"
         >
-          <MenuItem icon="😀" label="Change emoji" onClick={() => beginEdit("emoji")} />
-          {!isProtected && <MenuItem icon="✏️" label="Rename" onClick={() => beginEdit("name")} />}
+          <MenuItem icon="sparkles" label="Change emoji" onClick={() => beginEdit("emoji")} />
+          {!isProtected && <MenuItem icon="pencil" label="Rename" onClick={() => beginEdit("name")} />}
           {!isProtected && !isFirst && (
             <MenuItem
-              icon="↑"
+              icon="arrowUp"
               label="Move up"
               onClick={() => {
                 haptic("light");
@@ -136,7 +137,7 @@ export function CategoryHeaderMenu({
           )}
           {!isProtected && !isLast && (
             <MenuItem
-              icon="↓"
+              icon="arrowDown"
               label="Move down"
               onClick={() => {
                 haptic("light");
@@ -147,7 +148,7 @@ export function CategoryHeaderMenu({
           )}
           {!isProtected && (
             <MenuItem
-              icon="🗑"
+              icon="trash"
               label="Delete"
               destructive
               onClick={() => {
@@ -169,7 +170,7 @@ function MenuItem({
   onClick,
   destructive,
 }: {
-  icon: string;
+  icon: IconName;
   label: string;
   onClick: () => void;
   destructive?: boolean;
@@ -179,13 +180,13 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700 ${
+      className={`flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--boop-panel)] ${
         destructive
           ? "text-red-600 dark:text-red-400"
-          : "text-gray-700 dark:text-gray-200"
+          : "text-[var(--boop-ink)]"
       }`}
     >
-      <span className="w-4 text-center">{icon}</span>
+      <Icon name={icon} className={`w-4 h-4 ${destructive ? "" : "text-[var(--boop-muted)]"}`} />
       {label}
     </button>
   );

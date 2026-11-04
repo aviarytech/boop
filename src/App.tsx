@@ -144,7 +144,6 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main id="main-content" className="container mx-auto px-4 py-6 safe-area-inset-bottom flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain" style={{ touchAction: "pan-y pinch-zoom" }}>
-        <div className="mb-3 flex justify-end gap-5 text-[14px]"><Link to="/shared" className="inline-block py-2 font-semibold text-[var(--boop-ink)] underline decoration-[var(--boop-line)] decoration-2 underline-offset-4 hover:decoration-[var(--boop-accent)]">Shared with me</Link><Link to="/invitations" className="inline-block py-2 font-semibold text-[var(--boop-ink)] underline decoration-[var(--boop-line)] decoration-2 underline-offset-4 hover:decoration-[var(--boop-accent)]">Invitations</Link></div>
         <ErrorBoundary>{children}</ErrorBoundary>
       </main>
 

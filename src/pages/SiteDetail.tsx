@@ -107,7 +107,7 @@ export function SiteDetail() {
     <div className="min-h-full pb-28 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-stone-900 dark:text-stone-100">
+          <h1 className="text-[28px] font-extrabold tracking-[-0.02em] text-[var(--boop-ink)]">
             Your link
           </h1>
           <a

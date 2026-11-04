@@ -53,7 +53,7 @@ export function Explorer() {
     <div className="space-y-6 pb-24">
       <header>
         <h1
-          className="text-stone-900 dark:text-stone-50"
+          className="text-[var(--boop-ink)]"
           style={{
             fontFamily: "var(--font-sans)",
             fontWeight: 700,

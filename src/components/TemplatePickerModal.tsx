@@ -16,6 +16,7 @@ import { getRunbook } from "../../convex/lib/templateCatalog";
 import { listCreationErrorMessage } from "../lib/planLimit";
 import { BUILTIN_TEMPLATES, type BuiltinTemplate } from "../lib/builtinTemplates";
 import { Panel } from "./ui/Panel";
+import { Icon } from "./ui/Icon";
 
 interface TemplatePickerModalProps {
   onClose: () => void;
@@ -102,12 +103,11 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
   const header = (
     <>
       <div className="flex items-center gap-3">
-        <span className="text-2xl leading-none">📁</span>
         <div>
-          <h2 id="template-picker-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h2 id="template-picker-title" className="text-lg font-bold text-[var(--boop-ink)]">
             {selectedTemplate ? "Customize Template" : "Choose a Template"}
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-[var(--boop-muted)]">
             {selectedTemplate 
               ? "Customize the name or create with defaults"
               : "Start with a template or blank list"
@@ -120,7 +120,7 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
           haptic('light');
           onClose();
         }}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] rounded-lg hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,7 +139,7 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
           onClose();
         }}
         disabled={isCreating}
-        className="flex-1 px-4 py-3 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+        className="flex-1 px-4 py-3 text-[var(--boop-ink)] bg-[var(--boop-panel)] rounded-xl font-medium hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] disabled:opacity-50 transition-colors"
       >
         Cancel
       </button>
@@ -184,7 +184,7 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
                 haptic('light');
                 setSelectedTemplate(null);
               }}
-              className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              className="flex items-center gap-2 text-sm text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -195,13 +195,13 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
             <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 flex items-start gap-3">
               <span className="text-2xl leading-none">{selectedTemplate.emoji}</span>
               <div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">{selectedTemplate.name}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">{selectedTemplate.items.length} items</p>
+                <p className="font-medium text-[var(--boop-ink)]">{selectedTemplate.name}</p>
+                <p className="text-sm text-[var(--boop-muted)]">{selectedTemplate.items.length} items</p>
               </div>
             </div>
 
             <div>
-              <label htmlFor="listName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label htmlFor="listName" className="block text-sm font-medium text-[var(--boop-ink)] mb-2">
                 List name
               </label>
               <input
@@ -210,19 +210,19 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 placeholder={selectedTemplate.name}
-                className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
+                className="w-full px-4 py-3 bg-[var(--boop-panel)] text-[var(--boop-ink)] border-2 border-[var(--boop-line)] rounded-xl focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all disabled:opacity-50"
                 disabled={isCreating}
               />
             </div>
 
             <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <p className="text-sm font-medium text-[var(--boop-ink)] mb-2">
                 Items included:
               </p>
-              <ul className="bg-gray-50 dark:bg-gray-900 rounded-xl p-3 max-h-40 overflow-y-auto space-y-1">
+              <ul className="bg-[var(--boop-panel)] rounded-xl p-3 max-h-40 overflow-y-auto space-y-1">
                 {selectedTemplate.items.map((item, idx) => (
-                  <li key={idx} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span className="w-4 h-4 rounded border border-gray-300 dark:border-gray-600" />
+                  <li key={idx} className="flex items-center gap-2 text-sm text-[var(--boop-muted)]">
+                    <span className="w-4 h-4 rounded border border-[var(--boop-line)]" />
                     <span>{item.name}</span>
                     {item.priority && (
                       <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -256,33 +256,33 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
                 haptic('light');
                 onCreateBlank();
               }}
-              className="w-full flex items-center gap-4 p-4 bg-amber-50 dark:bg-amber-900/20 border-2 border-dashed border-amber-300 dark:border-amber-700 rounded-xl hover:border-amber-400 dark:hover:border-amber-600 transition-colors text-left"
+              className="w-full flex items-center gap-4 p-4 bg-[var(--boop-accent-soft)] border-2 border-dashed border-[color-mix(in_oklch,var(--boop-accent)_45%,transparent)] rounded-xl hover:border-[var(--boop-accent)] transition-colors text-left"
             >
-              <span className="text-2xl leading-none">✨</span>
+              <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--boop-card)] text-[var(--boop-accent)] shrink-0"><Icon name="plus" className="w-[18px] h-[18px]" /></span>
               <div>
-                <p className="font-medium text-gray-900 dark:text-gray-100">Blank List</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Start from scratch</p>
+                <p className="font-medium text-[var(--boop-ink)]">Blank List</p>
+                <p className="text-sm text-[var(--boop-muted)]">Start from scratch</p>
               </div>
             </button>
 
             {/* Built-in templates */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+              <h3 className="text-sm font-semibold text-[var(--boop-ink)] mb-3">
                 Quick Start Templates
               </h3>
-              <div className="grid gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
                 {BUILTIN_TEMPLATES.map((template) => (
                   <button
                     key={template.id}
                     onClick={() => handleSelectBuiltin(template)}
-                    className="w-full flex items-center gap-4 p-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-md transition-all text-left"
+                    className="w-full flex items-center gap-4 p-4 bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-xl hover:border-[var(--boop-accent)] transition-all text-left"
                   >
                     <span className="text-2xl leading-none">{template.emoji}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 dark:text-gray-100">{template.name}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{template.description}</p>
+                      <p className="font-medium text-[var(--boop-ink)]">{template.name}</p>
+                      <p className="text-sm text-[var(--boop-muted)] truncate">{template.description}</p>
                     </div>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">{template.items.length} items</span>
+                    <span className="text-xs text-[var(--boop-dim)]">{template.items.length} items</span>
                   </button>
                 ))}
               </div>
@@ -291,25 +291,25 @@ export function TemplatePickerModal({ onClose, onCreateBlank }: TemplatePickerMo
             {/* User's saved templates */}
             {userTemplates && userTemplates.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                <h3 className="text-sm font-semibold text-[var(--boop-ink)] mb-3">
                   My Templates
                 </h3>
-                <div className="grid gap-3">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
                   {userTemplates.map((template) => (
                     <button
                       key={template._id}
                       onClick={() => handleCreateFromSaved(template._id, template.name)}
                       disabled={isCreating}
-                      className="w-full flex items-center gap-4 p-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-md transition-all text-left disabled:opacity-50"
+                      className="w-full flex items-center gap-4 p-4 bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-xl hover:border-[var(--boop-accent)] transition-all text-left disabled:opacity-50"
                     >
-                      <span className="text-2xl leading-none">📄</span>
+                      <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] shrink-0"><Icon name="file" className="w-[18px] h-[18px]" /></span>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900 dark:text-gray-100">{template.name}</p>
+                        <p className="font-medium text-[var(--boop-ink)]">{template.name}</p>
                         {template.description && (
-                          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{template.description}</p>
+                          <p className="text-sm text-[var(--boop-muted)] truncate">{template.description}</p>
                         )}
                       </div>
-                      <span className="text-xs text-gray-400 dark:text-gray-500">{template.items.length} items</span>
+                      <span className="text-xs text-[var(--boop-dim)]">{template.items.length} items</span>
                     </button>
                   ))}
                 </div>

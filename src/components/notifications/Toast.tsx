@@ -8,6 +8,7 @@
 import { useEffect } from "react";
 import { useToast, type Toast as ToastType } from "../../hooks/useToast";
 import { registerGlobalToast, unregisterGlobalToast } from "../../lib/toast";
+import { Icon } from "../ui/Icon";
 
 // ============================================================================
 // Single Toast Component
@@ -19,18 +20,19 @@ interface ToastItemProps {
 }
 
 function ToastItem({ toast, onDismiss }: ToastItemProps) {
-  const bgColor = {
-    info: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800",
-    warning: "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-200 dark:border-yellow-800",
-    error: "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-200 dark:border-red-800",
+  const tone = {
+    info: { box: "bg-[var(--boop-card)] text-[var(--boop-ink)] border-[var(--boop-line)]", icon: "info" as const, iconColor: "text-[var(--boop-accent)]" },
+    warning: { box: "bg-[var(--boop-card)] text-[var(--boop-ink)] border-[oklch(75%_0.13_75/0.6)]", icon: "alert" as const, iconColor: "text-[oklch(58%_0.14_65)] dark:text-[oklch(80%_0.13_75)]" },
+    error: { box: "bg-red-50 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-200 dark:border-red-800", icon: "alert" as const, iconColor: "text-current" },
   }[toast.type];
 
   return (
     <div
       role="alert"
       aria-live="polite"
-      className={`rounded-lg border px-4 py-3 shadow-lg ${bgColor} flex items-start gap-3 max-w-sm`}
+      className={`rounded-xl border px-4 py-3 shadow-lg ${tone.box} flex items-start gap-3 max-w-sm`}
     >
+      <Icon name={tone.icon} className={`w-[18px] h-[18px] mt-px ${tone.iconColor}`} />
       <span className="flex-1 text-sm">{toast.message}</span>
       <button
         onClick={() => onDismiss(toast.id)}

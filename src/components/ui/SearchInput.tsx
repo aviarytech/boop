@@ -43,7 +43,7 @@ export function SearchInput({
       {/* Search icon */}
       <div
         className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${
-          isFocused ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'
+          isFocused ? 'text-amber-500' : 'text-[var(--boop-dim)]'
         }`}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -72,7 +72,7 @@ export function SearchInput({
       {value && (
         <button
           onClick={() => onChange('')}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] transition-colors"
           aria-label="Clear search"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

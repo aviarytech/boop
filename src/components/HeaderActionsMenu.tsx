@@ -5,6 +5,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { Icon, type IconName } from "./ui/Icon";
 
 interface HeaderActionsMenuProps {
   canShare: boolean;
@@ -100,148 +101,92 @@ export function HeaderActionsMenu({
           haptic('light');
           setIsOpen(!isOpen);
         }}
-        className="inline-flex items-center justify-center p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all active:scale-95"
+        className={TOOLBAR_BUTTON}
         aria-label="More actions"
         aria-expanded={isOpen}
         aria-haspopup="true"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+        <svg className="w-[18px] h-[18px]" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.75" /><circle cx="12" cy="12" r="1.75" /><circle cx="12" cy="19" r="1.75" />
         </svg>
       </button>
 
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50 animate-slide-up"
+          className="absolute right-0 top-full mt-2 w-56 bg-[var(--boop-card)] rounded-xl shadow-lg border border-[var(--boop-line)] py-1.5 z-50 animate-slide-up"
         >
-          {/* Keyboard shortcuts - hidden on mobile via CSS, visible in dropdown on desktop */}
           {onKeyboardShortcuts && (
-            <button
-              onClick={() => handleAction(onKeyboardShortcuts)}
-              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
-            >
-              <span className="text-base leading-none">⌨️</span>
-              <span>Keyboard shortcuts</span>
-              <span className="ml-auto text-xs text-gray-400 dark:text-gray-500">?</span>
-            </button>
+            <MenuItem icon="keyboard" label="Keyboard shortcuts" hint="?" onClick={() => handleAction(onKeyboardShortcuts)} />
           )}
-
-          {/* Rename */}
           {canRename && (
-            <button
-              onClick={() => handleAction(onRename)}
-              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
-            >
-              <span className="text-base leading-none">✏️</span>
-              <span>Rename {subject}</span>
-            </button>
+            <MenuItem icon="pencil" label={`Rename ${subject}`} onClick={() => handleAction(onRename)} />
           )}
-
-          {/* Change category */}
           {canChangeCategory && onChangeCategory && (
-            <button
-              onClick={() => handleAction(onChangeCategory)}
-              disabled={!isOnline}
-              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors ${
-                !isOnline 
-                  ? "text-gray-400 dark:text-gray-500 cursor-not-allowed" 
-                  : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-            >
-              <span className="text-base leading-none">📁</span>
-              <span>Change category</span>
-              {!isOnline && <span className="ml-auto text-xs text-gray-400">Offline</span>}
-            </button>
+            <MenuItem icon="folder" label="Change category" disabled={!isOnline} onClick={() => handleAction(onChangeCategory)} />
           )}
 
-          {(canShare || onNativeShare || canPublish || canSaveTemplate) && (
-            <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
-          )}
+          {(canShare || onNativeShare || canPublish || canSaveTemplate) && <Divider />}
 
-          {/* Share */}
           {canShare && (
-            <button
-              onClick={() => handleAction(onShare)}
-              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
-            >
-              <span className="text-base leading-none">🔗</span>
-              <span>Share with people</span>
-            </button>
+            <MenuItem icon="users" label="Share with people" onClick={() => handleAction(onShare)} />
           )}
-
-          {/* Native Share */}
           {onNativeShare && (
-            <button
-              onClick={() => handleAction(onNativeShare)}
-              className="w-full px-4 py-2.5 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-3 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-              </svg>
-              <span>Send public read link</span>
-            </button>
+            <MenuItem icon="link" label="Send public read link" onClick={() => handleAction(onNativeShare)} />
           )}
-
-          {/* Publish */}
           {canPublish && (
-            <button
-              onClick={() => handleAction(onPublish)}
-              disabled={!isOnline}
-              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors ${
-                !isOnline 
-                  ? "text-gray-400 dark:text-gray-500 cursor-not-allowed" 
-                  : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-            >
-              <span className="text-base leading-none">📡</span>
-              <span>{isPublished ? "Manage publication" : "Publish publicly"}</span>
-              {!isOnline && <span className="ml-auto text-xs text-gray-400">Offline</span>}
-            </button>
+            <MenuItem icon="globe" label={isPublished ? "Manage publication" : "Publish publicly"} disabled={!isOnline} onClick={() => handleAction(onPublish)} />
           )}
-
-          {/* Save as template */}
           {canSaveTemplate && (
-            <button
-              onClick={() => handleAction(onSaveTemplate)}
-              disabled={!isOnline}
-              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors ${
-                !isOnline 
-                  ? "text-gray-400 dark:text-gray-500 cursor-not-allowed" 
-                  : "text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-            >
-              <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
-              </svg>
-              <span>Save as template</span>
-              {!isOnline && <span className="ml-auto text-xs text-gray-400">Offline</span>}
-            </button>
+            <MenuItem icon="copy" label="Save as template" disabled={!isOnline} onClick={() => handleAction(onSaveTemplate)} />
           )}
 
-          {/* Delete - only show if user can delete */}
           {canDelete && (
             <>
-              <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
-              <button
-                onClick={() => handleAction(onDelete)}
-                disabled={!isOnline}
-                className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors ${
-                  !isOnline 
-                    ? "text-gray-400 dark:text-gray-500 cursor-not-allowed" 
-                    : "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                }`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                <span>Delete {subject}</span>
-                {!isOnline && <span className="ml-auto text-xs text-gray-400">Offline</span>}
-              </button>
+              <Divider />
+              <MenuItem icon="trash" label={`Delete ${subject}`} danger disabled={!isOnline} onClick={() => handleAction(onDelete)} />
             </>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+/** Shared treatment for the round icon buttons in a list or note header. */
+export const TOOLBAR_BUTTON =
+  "inline-flex items-center justify-center w-9 h-9 rounded-full bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-colors active:scale-95 disabled:opacity-50";
+
+function Divider() {
+  return <div className="border-t border-[var(--boop-line)] my-1.5" />;
+}
+
+function MenuItem({ icon, label, hint, danger, disabled, onClick }: {
+  icon: IconName;
+  label: string;
+  hint?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const tone = disabled
+    ? "text-[var(--boop-dim)] cursor-not-allowed"
+    : danger
+      ? "text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+      : "text-[var(--boop-ink)] hover:bg-[var(--boop-panel)]";
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-3 transition-colors ${tone}`}
+    >
+      <Icon name={icon} className={`w-[18px] h-[18px] ${danger || disabled ? "" : "text-[var(--boop-muted)]"}`} />
+      <span>{label}</span>
+      {disabled ? (
+        <span className="ml-auto text-xs">Offline</span>
+      ) : hint ? (
+        <span className="ml-auto text-xs text-[var(--boop-dim)]">{hint}</span>
+      ) : null}
+    </button>
   );
 }

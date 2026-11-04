@@ -53,8 +53,8 @@ function ItemNoteEditor() {
   if (data === undefined) {
     return (
       <div className="min-h-screen-safe bg-stone-50 dark:bg-gray-950 p-4">
-        <div className="animate-pulse h-8 w-40 bg-stone-200 dark:bg-gray-800 rounded mb-4" />
-        <div className="animate-pulse h-64 w-full bg-stone-200 dark:bg-gray-800 rounded" />
+        <div className="animate-pulse h-8 w-40 bg-[var(--boop-panel)] rounded mb-4" />
+        <div className="animate-pulse h-64 w-full bg-[var(--boop-panel)] rounded" />
       </div>
     );
   }
@@ -63,7 +63,7 @@ function ItemNoteEditor() {
   if (data === null || status === "denied") {
     return (
       <div className="min-h-screen-safe bg-stone-50 dark:bg-gray-950 flex flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-stone-600 dark:text-stone-400">This note isn't available.</p>
+        <p className="text-[var(--boop-muted)]">This note isn't available.</p>
         <UnsentNoteDrafts documentKey={draftKey} onDiscard={discardStoredDraft} />
         <button
           onClick={goBack}
@@ -83,16 +83,16 @@ function ItemNoteEditor() {
   // --- Editor
   return (
     <div className="min-h-screen-safe flex flex-col bg-stone-50 dark:bg-gray-950">
-      <header className="flex-shrink-0 sticky top-0 z-10 bg-stone-50/90 dark:bg-gray-950/90 backdrop-blur-md border-b border-stone-200 dark:border-gray-800 safe-area-inset-top">
+      <header className="flex-shrink-0 sticky top-0 z-10 bg-stone-50/90 dark:bg-gray-950/90 backdrop-blur-md border-b border-[var(--boop-line)] safe-area-inset-top">
         <div className="px-4 py-3 flex items-center gap-3">
           <button
             onClick={goBack}
             aria-label="Back"
-            className="text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
+            className="text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
           >
             ‹ Back
           </button>
-          <h1 className="flex-1 truncate text-sm font-semibold text-stone-900 dark:text-stone-100">
+          <h1 className="flex-1 truncate text-sm font-semibold text-[var(--boop-ink)]">
             {data.name}
           </h1>
           <span className="text-xs text-stone-400 text-right" aria-live="polite">
@@ -107,7 +107,7 @@ function ItemNoteEditor() {
             <button
               onClick={() => { haptic("light"); setMode((mode) => (mode === "edit" ? "preview" : "edit")); }}
               aria-pressed={mode === "preview"}
-              className="rounded-full px-3 py-1.5 text-xs font-semibold bg-stone-100 dark:bg-gray-900 text-stone-700 dark:text-stone-200"
+              className="rounded-full px-3 py-1.5 text-xs font-semibold bg-[var(--boop-panel)] text-[var(--boop-ink)]"
             >
               {mode === "edit" ? "Preview" : "Edit"}
             </button>
@@ -127,7 +127,7 @@ function ItemNoteEditor() {
             onChange={(e) => onChange(e.target.value)}
             autoFocus
             placeholder="Start writing…  (markdown supported)"
-            className="flex-1 w-full resize-none bg-transparent text-base leading-relaxed text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-none font-mono"
+            className="flex-1 w-full resize-none bg-transparent text-base leading-relaxed text-[var(--boop-ink)] placeholder-stone-400 focus:outline-none font-mono"
           />
         ) : (
           <div className="flex-1 w-full prose prose-stone dark:prose-invert max-w-none overflow-auto">

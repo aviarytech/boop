@@ -170,7 +170,7 @@ export function Panel({
       <div
         ref={panelRef}
         className={`
-          bg-white dark:bg-gray-800 
+          bg-[var(--boop-card)] 
           rounded-t-2xl shadow-2xl 
           w-full 
           ${fullHeight ? "h-[90vh]" : "max-h-[90vh]"}
@@ -186,24 +186,24 @@ export function Panel({
         {/* Drag Handle */}
         {showHandle && (
           <div className="flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing">
-            <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full" />
+            <div className="w-10 h-1 bg-[color-mix(in_oklch,var(--boop-ink)_20%,transparent)] rounded-full" />
           </div>
         )}
 
         {/* Header */}
         {(header || title) && (
-          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--boop-line)]">
             {header || (
               <>
                 <h2
                   id={ariaLabelledBy}
-                  className="text-lg font-semibold text-gray-900 dark:text-gray-100"
+                  className="text-lg font-semibold text-[var(--boop-ink)]"
                 >
                   {title}
                 </h2>
                 <button
                   onClick={handleClose}
-                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg transition-colors"
+                  className="p-2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] rounded-lg transition-colors"
                   aria-label="Close panel"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,7 +225,7 @@ export function Panel({
 
         {/* Footer */}
         {footer && (
-          <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div className="border-t border-[var(--boop-line)] bg-[var(--boop-card)]">
             {footer}
           </div>
         )}

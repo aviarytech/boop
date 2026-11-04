@@ -3,6 +3,7 @@ import { useAction, useMutation, useQuery } from "../../lib/authenticatedConvex"
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useToast } from "../../hooks/useToast";
+import { Icon, type IconName } from "../ui/Icon";
 import { useSettings } from "../../hooks/useSettings";
 
 type Props = {
@@ -44,14 +45,10 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function assetIcon(contentType: string): string {
-  if (contentType.startsWith("image/")) return "🖼";
-  if (contentType.startsWith("text/html")) return "📄";
-  if (contentType.startsWith("text/css")) return "🎨";
-  if (contentType.includes("javascript")) return "📜";
-  if (contentType.includes("json")) return "📋";
-  if (contentType.startsWith("font/")) return "🔤";
-  return "📁";
+function assetIcon(contentType: string): IconName {
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType.startsWith("text/") || contentType.includes("javascript") || contentType.includes("json")) return "file";
+  return "paperclip";
 }
 
 export function SiteAssets({ siteId, hostname }: Props) {
@@ -173,9 +170,7 @@ export function SiteAssets({ siteId, hostname }: Props) {
                 key={asset._id}
                 className="flex items-center gap-3 px-4 py-3"
               >
-                <span className="text-xl" aria-hidden>
-                  {assetIcon(asset.contentType)}
-                </span>
+                <Icon name={assetIcon(asset.contentType)} className="w-5 h-5 text-[var(--boop-muted)]" />
                 <div className="flex-1 min-w-0">
                   <a
                     href={href || undefined}

@@ -8,6 +8,8 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useBilling } from "../hooks/useBilling";
 import { useAuth } from "../hooks/useAuth";
 import { trackUpgradePageViewed, trackUpgradeClicked } from "../lib/analytics";
+import { PublicHeader, publicNavLink } from "../components/PublicHeader";
+import { Icon } from "../components/ui/Icon";
 
 const CONVEX_SITE_URL = import.meta.env.VITE_CONVEX_HTTP_URL as string;
 
@@ -97,25 +99,31 @@ export function Pricing() {
   const proPriceId = interval === "yearly" ? PRO_YEARLY_PRICE_ID : PRO_MONTHLY_PRICE_ID;
 
   return (
-    <div className="max-w-5xl mx-auto pt-16 pb-8 px-4">
+    <div className="min-h-screen bg-[var(--boop-bg)]">
+    <PublicHeader>
+      {isAuthenticated
+        ? <Link to="/d" className={publicNavLink}>Back to app</Link>
+        : <Link to="/login" className={publicNavLink}>Sign in</Link>}
+    </PublicHeader>
+    <div className="max-w-5xl mx-auto pt-12 sm:pt-16 pb-8 px-5 sm:px-8">
       {/* Header */}
       <div className="text-center mb-10">
-        <h1 className="text-3xl font-black text-gray-900 dark:text-white mb-3">
+        <h1 className="text-[clamp(36px,6vw,56px)] font-extrabold leading-[1.02] tracking-[-0.03em] text-[var(--boop-ink)] mb-3">
           Simple, honest pricing
         </h1>
-        <p className="text-gray-600 dark:text-gray-400 text-lg">
+        <p className="text-[var(--boop-muted)] text-lg">
           Start free. Upgrade when you need more.
         </p>
 
         {/* Billing interval toggle */}
-        <div className="flex items-center justify-center gap-3 mt-6">
+        <div className="inline-flex items-center gap-1 mt-7 rounded-xl bg-[var(--boop-panel)] p-1">
           <button
             onClick={() => setInterval("monthly")}
             aria-pressed={interval === "monthly"}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
               interval === "monthly"
-                ? "bg-amber-500 text-white"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                ? "bg-[var(--boop-card)] text-[var(--boop-ink)] shadow-[0_0_0_1px_var(--boop-line)]"
+                : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
             }`}
           >
             Monthly
@@ -123,14 +131,14 @@ export function Pricing() {
           <button
             onClick={() => setInterval("yearly")}
             aria-pressed={interval === "yearly"}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
               interval === "yearly"
-                ? "bg-amber-500 text-white"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                ? "bg-[var(--boop-card)] text-[var(--boop-ink)] shadow-[0_0_0_1px_var(--boop-line)]"
+                : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
             }`}
           >
             Yearly
-            <span className="ml-1.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-1.5 py-0.5 rounded-full">
+            <span className="ml-1.5 text-xs font-semibold bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)] px-1.5 py-0.5 rounded-full">
               Save 20%
             </span>
           </button>
@@ -163,11 +171,11 @@ export function Pricing() {
           ]}
           cta={
             plan === "free" ? (
-              <span className="block w-full py-2.5 text-center rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm font-medium cursor-default">
+              <span className="block w-full py-2.5 text-center rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] text-sm font-medium cursor-default">
                 Current plan
               </span>
             ) : (
-              <span className="block w-full py-2.5 text-center rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm font-medium cursor-default">
+              <span className="block w-full py-2.5 text-center rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] text-sm font-medium cursor-default">
                 Downgrade via portal
               </span>
             )
@@ -193,7 +201,7 @@ export function Pricing() {
           ]}
           cta={
             isLoading ? (
-              <div className="w-full py-2.5 text-center rounded-xl bg-amber-500/50 text-white text-sm font-medium animate-pulse">
+              <div className="w-full py-2.5 text-center rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] text-sm font-medium animate-pulse">
                 Loading…
               </div>
             ) : plan === "pro" ? (
@@ -205,7 +213,7 @@ export function Pricing() {
                 {loading === "portal" ? "Opening…" : "Manage subscription"}
               </button>
             ) : plan === "team" ? (
-              <span className="block w-full py-2.5 text-center rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-sm font-medium cursor-default">
+              <span className="block w-full py-2.5 text-center rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] text-sm font-medium cursor-default">
                 Included in Team
               </span>
             ) : (
@@ -236,14 +244,14 @@ export function Pricing() {
           ]}
           cta={
             isLoading ? (
-              <div className="w-full py-2.5 text-center rounded-xl bg-gray-800/50 text-white text-sm font-medium animate-pulse">
+              <div className="w-full py-2.5 text-center rounded-xl bg-[var(--boop-panel)] text-[var(--boop-muted)] text-sm font-medium animate-pulse">
                 Loading…
               </div>
             ) : plan === "team" ? (
               <button
                 onClick={openPortal}
                 disabled={loading === "portal"}
-                className="w-full py-2.5 rounded-xl bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
+                className="w-full py-2.5 rounded-xl bg-[var(--boop-ink)] hover:opacity-90 text-[var(--boop-bg)] text-sm font-medium transition-colors disabled:opacity-60"
               >
                 {loading === "portal" ? "Opening…" : "Manage subscription"}
               </button>
@@ -251,7 +259,7 @@ export function Pricing() {
               <button
                 onClick={() => TEAM_PRICE_ID && startCheckout(TEAM_PRICE_ID, "team")}
                 disabled={!TEAM_PRICE_ID || loading === TEAM_PRICE_ID}
-                className="w-full py-2.5 rounded-xl bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
+                className="w-full py-2.5 rounded-xl bg-[var(--boop-ink)] hover:opacity-90 text-[var(--boop-bg)] text-sm font-medium transition-colors disabled:opacity-60"
               >
                 {loading === TEAM_PRICE_ID ? "Redirecting…" : "Upgrade to Team"}
               </button>
@@ -263,7 +271,7 @@ export function Pricing() {
       {/* Manage existing subscription */}
       {isAuthenticated && subscription && plan !== "free" && (
         <div className="mt-8 text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-[var(--boop-muted)]">
             {subscription.cancelAtPeriodEnd && subscription.currentPeriodEnd ? (
               <>
                 Your subscription will cancel on{" "}
@@ -277,7 +285,7 @@ export function Pricing() {
             ) : null}
             <button
               onClick={openPortal}
-              className="text-amber-600 dark:text-amber-400 hover:underline font-medium"
+              className="text-[var(--boop-accent)] hover:underline font-medium"
             >
               Manage subscription →
             </button>
@@ -289,11 +297,12 @@ export function Pricing() {
       <div className="mt-10 text-center">
         <Link
           to="/d"
-          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          className="text-sm text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-colors"
         >
           ← Back to app
         </Link>
       </div>
+    </div>
     </div>
   );
 }
@@ -318,9 +327,9 @@ function PlanCard({ name, price, priceDetail, description, features, current, hi
     <div
       className={`relative rounded-2xl p-6 flex flex-col border transition-shadow ${
         highlight
-          ? "border-amber-400 bg-amber-50 dark:bg-amber-900/10 shadow-lg shadow-amber-500/10"
-          : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-      } ${current ? "ring-2 ring-amber-500" : ""}`}
+          ? "border-amber-500 bg-[var(--boop-card)] shadow-[0_24px_48px_-32px_oklch(25%_0.04_200/0.35)]"
+          : "border-[var(--boop-line)] bg-[var(--boop-card)]"
+      } ${current ? "ring-2 ring-[var(--boop-ink)]/70" : ""}`}
     >
       {highlight && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -331,27 +340,25 @@ function PlanCard({ name, price, priceDetail, description, features, current, hi
       )}
       {current && (
         <div className="absolute -top-3 right-4">
-          <span className="bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+          <span className="bg-[var(--boop-ink)] text-[var(--boop-bg)] text-xs font-bold px-3 py-1 rounded-full shadow-sm">
             Current plan
           </span>
         </div>
       )}
 
       <div className="mb-6">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1">{name}</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{description}</p>
+        <h2 className="text-xl font-bold text-[var(--boop-ink)] mb-1">{name}</h2>
+        <p className="text-sm text-[var(--boop-muted)] mb-4">{description}</p>
         <div className="flex items-baseline gap-1">
-          <span className="text-3xl font-black text-gray-900 dark:text-white">{price}</span>
-          <span className="text-sm text-gray-500 dark:text-gray-400">{priceDetail}</span>
+          <span className="text-4xl font-extrabold tracking-[-0.02em] text-[var(--boop-ink)]">{price}</span>
+          <span className="text-sm text-[var(--boop-muted)]">{priceDetail}</span>
         </div>
       </div>
 
       <ul className="space-y-2.5 flex-1 mb-6">
         {features.map((f) => (
-          <li key={f} className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
-            <svg className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-            </svg>
+          <li key={f} className="flex items-start gap-2 text-sm text-[var(--boop-ink)]">
+            <Icon name="check" className="w-4 h-4 mt-0.5 text-[var(--boop-accent)]" strokeWidth={2.5} />
             {f}
           </li>
         ))}

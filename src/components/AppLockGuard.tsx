@@ -6,6 +6,7 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { biometrics } from '../lib/biometrics';
 import { getBiometricLockEnabled } from '../lib/storage';
+import { Icon } from './ui/Icon';
 
 interface AppLockGuardProps {
   children: ReactNode;
@@ -59,13 +60,15 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
 
   // Show lock screen
   return (
-    <div className="fixed inset-0 bg-amber-100 dark:bg-gray-900 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-[var(--boop-bg)] flex items-center justify-center z-50">
       <div className="text-center px-6">
         <div className="mb-8">
-          <span className="text-8xl">🔒</span>
+          <span className="mx-auto flex items-center justify-center w-20 h-20 rounded-full border-[3px] border-[var(--boop-accent)] text-[var(--boop-accent)]">
+            <Icon name="lock" className="w-9 h-9" />
+          </span>
         </div>
         <h1
-          className="text-gray-900 dark:text-gray-100 mb-3"
+          className="text-[var(--boop-ink)] mb-3"
           style={{
             fontFamily: 'var(--font-sans)',
             fontWeight: 800,
@@ -75,13 +78,13 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
         >
           boop is locked
         </h1>
-        <p className="text-gray-600 dark:text-gray-400 mb-8">
+        <p className="text-[var(--boop-muted)] mb-8">
           Use Face ID or fingerprint to unlock
         </p>
         <button
           onClick={authenticate}
           disabled={isAuthenticating}
-          className="px-8 py-4 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-2xl font-semibold transition-colors text-lg shadow-lg"
+          className="px-8 py-4 bg-[var(--boop-accent)] hover:bg-[var(--boop-accent-deep)] disabled:opacity-60 disabled:cursor-not-allowed text-white dark:text-[var(--boop-bg)] rounded-2xl font-semibold transition-colors text-lg"
         >
           {isAuthenticating ? (
             <span className="flex items-center gap-2">
@@ -92,7 +95,7 @@ export function AppLockGuard({ children }: AppLockGuardProps) {
               Authenticating...
             </span>
           ) : (
-            '🔓 Unlock'
+            'Unlock'
           )}
         </button>
       </div>

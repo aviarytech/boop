@@ -7,9 +7,9 @@ import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { randomId } from "../lib/randomId";
 import { PublicDisplayNameEditor } from "./PublicDisplayNameEditor";
 
-const button = "min-h-11 rounded-full border border-stone-300 dark:border-gray-700 px-4 py-2 text-sm font-semibold hover:bg-stone-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-amber-600";
+const button = "min-h-11 rounded-full border border-[var(--boop-line)] px-4 py-2 text-sm font-semibold hover:bg-[var(--boop-panel)] disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-amber-600";
 const primary = `${button} bg-amber-500 border-amber-500 text-white hover:bg-amber-600`;
-const input = "min-h-11 w-full rounded-xl border border-stone-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 focus:outline-2 focus:outline-amber-600";
+const input = "min-h-11 w-full rounded-xl border border-[var(--boop-line)] bg-[var(--boop-card)] px-3 py-2 focus:outline-2 focus:outline-amber-600";
 type Role = "viewer" | "editor";
 
 export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lists">; embedded?: boolean }) {
@@ -82,21 +82,21 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
         <select id="invitation-role" className={input} value={role} onChange={e => setRole(e.target.value as Role)} disabled={busy}>
           <option value="viewer">Viewer — read only</option><option value="editor">Editor — view and edit</option>
         </select></div>
-      {currentRole && <p role="note" className={`text-sm ${downgrade ? "text-amber-800 dark:text-amber-300" : "text-stone-600 dark:text-gray-400"}`}>
+      {currentRole && <p role="note" className={`text-sm ${downgrade ? "text-amber-800 dark:text-amber-300" : "text-[var(--boop-muted)]"}`}>
         Already has {currentRole} access{downgrade ? ". This lowers their access from editor to viewer." : currentRole === role ? "." : `. This changes it to ${role}; no email is sent.`}
       </p>}
-      {match && !currentRole && <p role="note" className="text-sm text-stone-600 dark:text-gray-400">Already invited. Sending again emails a new link and earlier links stop working.</p>}
+      {match && !currentRole && <p role="note" className="text-sm text-[var(--boop-muted)]">Already invited. Sending again emails a new link and earlier links stop working.</p>}
       <button className={primary} disabled={busy || !canSend || !email.trim() || currentRole === role}>{submitLabel}</button>
-      <p className="text-sm text-stone-600 dark:text-gray-400">Expires in seven days. Emails contain no list or note content.</p>
+      <p className="text-sm text-[var(--boop-muted)]">Expires in seven days. Emails contain no list or note content.</p>
     </form>
     {error && <p role="alert" className="mt-4 text-red-700 dark:text-red-400">{error}</p>}
     {notice && <p role="status" className="mt-4">{notice}</p>}
     <h3 className="mt-8 text-lg font-semibold">Invitations sent</h3>
-    {invitations === undefined ? <p role="status">Loading invitations…</p> : invitations.length === 0 ? <p className="mt-3 text-stone-600 dark:text-gray-400">Your invitations will appear here with their delivery status.</p> : <ul className="divide-y divide-stone-200 dark:divide-gray-800">
+    {invitations === undefined ? <p role="status">Loading invitations…</p> : invitations.length === 0 ? <p className="mt-3 text-[var(--boop-muted)]">Your invitations will appear here with their delivery status.</p> : <ul className="divide-y divide-[var(--boop-line)]">
       {invitations.map(invite => <li key={invite.invitationId} className="py-4 space-y-2">
         <p className="font-semibold break-all">{invite.email}</p>
         <p className="text-sm capitalize">{invite.status === "accepted" && grants !== undefined && !grants.some(grant => grant._id === invite.grantId) ? "Access ended (revoked or left)" : invite.status} · {invite.role} · {invite.delivery === "failed" ? "Email failed — resend to retry" : invite.delivery === "sent" ? "Email sent" : "Email queued"}</p>
-        <p className="text-sm text-stone-600 dark:text-gray-400">Expires {new Date(invite.expiresAt).toLocaleString()}</p>
+        <p className="text-sm text-[var(--boop-muted)]">Expires {new Date(invite.expiresAt).toLocaleString()}</p>
         <div className="flex flex-wrap gap-2">
           {invite.status === "pending" && <select className={`${input} w-auto`} aria-label={`Role for ${invite.email}`} disabled={busy} value={invite.role} onChange={e => void run(() => update({ listId, invitationId: invite.invitationId, version: invite.version, role: e.target.value as Role }))}>
             <option value="viewer">Viewer</option><option value="editor">Editor</option>
@@ -107,7 +107,7 @@ export function OwnerInvitations({ listId, embedded = false }: { listId: Id<"lis
       </li>)}
     </ul>}
     <h3 className="mt-8 text-lg font-semibold">Accepted access</h3>
-    {grants === undefined ? <p role="status">Loading access…</p> : grants.length === 0 ? <p className="mt-3 text-stone-600 dark:text-gray-400">No accepted invitations yet.</p> : <ul className="divide-y divide-stone-200 dark:divide-gray-800">
+    {grants === undefined ? <p role="status">Loading access…</p> : grants.length === 0 ? <p className="mt-3 text-[var(--boop-muted)]">No accepted invitations yet.</p> : <ul className="divide-y divide-[var(--boop-line)]">
       {grants.map(grant => {
         const label = invitations?.find(invite => invite.grantId === grant._id)?.email ?? `Account ${grant.recipientId}`;
         return <li key={grant._id} className="py-4 space-y-2"><p className="break-all font-semibold">{label}</p>

@@ -5,12 +5,13 @@
 
 import { Panel } from "./ui/Panel";
 import { useSettings } from "../hooks/useSettings";
+import { Icon } from "./ui/Icon";
 
 export type CreateKind = "list" | "note";
 
-const OPTIONS: { kind: CreateKind; icon: string; title: string; blurb: string }[] = [
-  { kind: "list", icon: "☑", title: "List", blurb: "Items you check off. Share, categorize, save as a template." },
-  { kind: "note", icon: "¶", title: "Note", blurb: "Prose you sign. Publish it and readers can verify who wrote it and that it hasn't changed." },
+const OPTIONS: { kind: CreateKind; icon: "list" | "file"; title: string; blurb: string }[] = [
+  { kind: "list", icon: "list", title: "List", blurb: "Items you check off. Share, categorize, save as a template." },
+  { kind: "note", icon: "file", title: "Note", blurb: "Prose you sign. Publish it and readers can verify who wrote it and that it hasn't changed." },
 ];
 
 interface CreateChooserProps {
@@ -24,17 +25,16 @@ export function CreateChooser({ onPick, onClose }: CreateChooserProps) {
   const header = (
     <>
       <div className="flex items-center gap-3">
-        <span className="text-2xl leading-none">✨</span>
         <div>
-          <h2 id="create-chooser-title" className="text-lg font-bold text-gray-900 dark:text-gray-100">
+          <h2 id="create-chooser-title" className="text-lg font-bold text-[var(--boop-ink)]">
             Create new
           </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">What are you making?</p>
+          <p className="text-xs text-[var(--boop-muted)]">What are you making?</p>
         </div>
       </div>
       <button
         onClick={() => { haptic('light'); onClose(); }}
-        className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        className="p-2 text-[var(--boop-dim)] hover:text-[var(--boop-muted)] rounded-lg hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
         aria-label="Close"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,14 +52,14 @@ export function CreateChooser({ onPick, onClose }: CreateChooserProps) {
             key={option.kind}
             type="button"
             onClick={() => { haptic('light'); onPick(option.kind); }}
-            className="text-left rounded-2xl border-2 border-stone-200 dark:border-stone-700 hover:border-amber-400 dark:hover:border-amber-500 p-4 transition-colors bg-stone-50 dark:bg-gray-900"
+            className="text-left rounded-2xl border-2 border-[var(--boop-line)] hover:border-[var(--boop-accent)] p-4 transition-colors bg-[var(--boop-panel)]"
           >
-            <div className="text-2xl mb-2" style={{ fontFamily: 'var(--font-sans)' }} aria-hidden="true">{option.icon}</div>
-            <div className="font-bold text-stone-900 dark:text-stone-100" style={{ fontFamily: 'var(--font-sans)' }}>{option.title}</div>
-            <div className="text-xs text-stone-500 dark:text-stone-400 mt-1 leading-snug">{option.blurb}</div>
+            <span className="flex items-center justify-center w-9 h-9 mb-3 rounded-xl bg-[var(--boop-accent-soft)] text-[var(--boop-accent-ink)]"><Icon name={option.icon} className="w-[18px] h-[18px]" /></span>
+            <div className="font-bold text-[var(--boop-ink)]" style={{ fontFamily: 'var(--font-sans)' }}>{option.title}</div>
+            <div className="text-xs text-[var(--boop-muted)] mt-1 leading-snug">{option.blurb}</div>
           </button>
         ))}
-        <p className="col-span-2 text-[11px] text-stone-400" style={{ fontFamily: 'var(--font-mono)' }}>
+        <p className="col-span-2 text-[11px] text-[var(--boop-dim)]" style={{ fontFamily: 'var(--font-mono)' }}>
           a note is born a note — it can't be turned into a list later
         </p>
       </div>

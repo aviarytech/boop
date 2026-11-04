@@ -15,7 +15,7 @@ interface SkeletonProps {
 export function Skeleton({ className = '' }: SkeletonProps) {
   return (
     <div
-      className={`animate-shimmer bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 dark:from-gray-700 dark:via-gray-600 dark:to-gray-700 bg-[length:200%_100%] rounded ${className}`}
+      className={`animate-shimmer bg-gradient-to-r from-[var(--boop-panel)] via-[var(--boop-card)] to-[var(--boop-panel)] bg-[length:200%_100%] rounded ${className}`}
     />
   );
 }
@@ -25,7 +25,7 @@ export function Skeleton({ className = '' }: SkeletonProps) {
  */
 export function ListCardSkeleton() {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-5 space-y-3">
+    <div className="bg-[var(--boop-card)] rounded-2xl shadow-lg p-5 space-y-3">
       <Skeleton className="h-6 w-3/4" />
       <Skeleton className="h-4 w-1/2" />
       <div className="flex gap-2 pt-2">
@@ -70,7 +70,7 @@ export function ListViewSkeleton() {
           <Skeleton className="h-10 w-16 rounded-lg" />
         </div>
       </div>
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow divide-y divide-gray-100 dark:divide-gray-700">
+      <div className="bg-[var(--boop-card)] rounded-xl shadow divide-y divide-[var(--boop-line)]">
         {[1, 2, 3, 4, 5].map((i) => (
           <ListItemSkeleton key={i} />
         ))}
@@ -101,7 +101,7 @@ export function HomePageSkeleton() {
  */
 function PriorityItemSkeleton() {
   return (
-    <div className="flex items-start gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+    <div className="flex items-start gap-3 p-4 bg-[var(--boop-card)] rounded-xl border border-[var(--boop-line)]">
       <Skeleton className="w-5 h-5 rounded-md flex-shrink-0" />
       <div className="flex-1 space-y-2">
         <div className="flex items-start justify-between gap-2">

@@ -12,6 +12,7 @@ import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from "../../convex/_generated/api";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { useAuth } from "../hooks/useAuth";
+import { Icon } from "./ui/Icon";
 import type { Id } from "../../convex/_generated/dataModel";
 
 interface ListItem {
@@ -234,7 +235,7 @@ export function SharedListResource() {
                     : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 hover:bg-amber-50 dark:hover:bg-amber-900/20 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-200 dark:hover:border-amber-800"
                 } ${favouritePending ? "opacity-50" : ""}`}
               >
-                <span>{isBookmarked ? "⭐" : "☆"}</span>
+                <Icon name="star" className="w-4 h-4" fill={isBookmarked ? "currentColor" : "none"} />
                 <span>{isBookmarked ? "Saved" : "Save"}</span>
               </button>
             )}
@@ -267,7 +268,6 @@ export function SharedListResource() {
         {bookmarkPlanLimit && (
           <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-sm space-y-2">
             <div className="flex items-center gap-2 font-semibold text-amber-800 dark:text-amber-300">
-              <span>🚀</span>
               <span>This list has reached its bookmark limit</span>
             </div>
             <p className="text-amber-700 dark:text-amber-400">The list owner needs to upgrade to Pro to allow more bookmarks. Bookmarks do not grant editing access.</p>
@@ -283,7 +283,7 @@ export function SharedListResource() {
         {/* Not logged in — nudge to sign up */}
         {!token && (
           <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
-            <span>✓</span>
+            <Icon name="check" className="w-4 h-4" />
             <span>
               <Link to="/login" className="font-medium underline">Sign in</Link>
               {" "}to save this list or use an accepted invitation. Editing requires an editor invitation from the owner.
@@ -328,7 +328,7 @@ export function SharedListResource() {
             >
               <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                 item.checked
-                  ? "border-green-500 bg-green-500"
+                  ? "border-amber-500 bg-amber-500"
                   : "border-gray-300 dark:border-gray-600"
               }`}>
                 {item.checked && (
@@ -356,7 +356,7 @@ export function SharedListResource() {
                       ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
                       : item.priority === "medium"
                       ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400"
-                      : "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                      : "bg-[var(--boop-panel)] text-[var(--boop-muted)]"
                   }`}>
                     {item.priority}
                   </span>
@@ -368,14 +368,14 @@ export function SharedListResource() {
 
         {/* Provenance */}
         {resource.credential?.proof && (
-          <div className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
-            <div className="flex items-center gap-2 text-green-700 dark:text-green-400 mb-2">
+          <div className="mt-6 p-4 bg-[var(--boop-accent-soft)] rounded-xl">
+            <div className="flex items-center gap-2 text-[var(--boop-accent-ink)] mb-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
               <span className="text-sm font-medium">Cryptographically signed</span>
             </div>
-            <div className="space-y-1 text-xs text-green-600 dark:text-green-500">
+            <div className="space-y-1 text-xs text-[var(--boop-accent-ink)]">
               <p><span className="font-medium">Signed by:</span> <span className="font-mono break-all">{resource.credential.issuer}</span></p>
               <p><span className="font-medium">Date:</span> {new Date(resource.credential.proof.created).toLocaleString()}</p>
               <p><span className="font-medium">Cryptosuite:</span> {resource.credential.proof.cryptosuite}</p>

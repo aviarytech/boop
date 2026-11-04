@@ -124,5 +124,5 @@ export async function openList(scenario: Scenario, screen: TestFixtures['screen'
 export async function openSettings(scenario: Scenario, screen: TestFixtures['screen']) {
   await scenario.open('/d');
   await screen.getByRole('button', 'Settings').tap();
-  await expect(screen.getByRole('heading', '⚙️ Settings')).toBeVisible();
+  await expect(screen.getByRole('heading', 'Settings')).toBeVisible();
 }

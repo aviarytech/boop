@@ -40,7 +40,8 @@ import { NoItemsEmptyState } from "../components/ui/EmptyState";
 import { ListViewSkeleton } from "../components/ui/Skeleton";
 import { CalendarView } from "../components/CalendarView";
 import { BatchOperations } from "../components/BatchOperations";
-import { HeaderActionsMenu } from "../components/HeaderActionsMenu";
+import { HeaderActionsMenu, TOOLBAR_BUTTON } from "../components/HeaderActionsMenu";
+import { Icon } from "../components/ui/Icon";
 import { ListVerificationBadge, type VerificationState } from "../components/VerificationBadge";
 import { isNote } from "../../convex/lib/noteBody";
 
@@ -658,16 +659,18 @@ export function ListView() {
   if (list === null) {
     return (
       <div className="text-center py-16">
-        <div className="text-6xl mb-4">🔍</div>
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--boop-panel)] text-[var(--boop-muted)]">
+          <Icon name="search" className="w-7 h-7" />
+        </div>
+        <h2 className="text-xl font-semibold text-[var(--boop-ink)] mb-2">
           List not found
         </h2>
-        <p className="text-gray-500 dark:text-gray-400 mb-6">
+        <p className="text-[var(--boop-muted)] mb-6">
           This list may have been deleted or you don't have access.
         </p>
         <Link 
           to="/d"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--boop-accent)] hover:bg-[var(--boop-accent-deep)] text-white dark:text-[var(--boop-bg)] rounded-xl font-semibold transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -694,26 +697,23 @@ export function ListView() {
       className="max-w-3xl mx-auto"
     >
       {(access?.role === "viewer" || access?.role === "editor") && <Link to="/shared" className="inline-block mb-4 underline">Your access · Shared with me</Link>}
-      {/* Header - Redesigned for less crowding */}
-      <div className="mb-6">
-        <div className="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-3">
-          {/* Back button */}
-          <Link
-            to="/d"
-            onClick={() => haptic('light')}
-            className="flex-shrink-0 w-10 h-10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-colors"
-            aria-label="Back to lists"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Link>
+      {/* Header: back link, title row with toolbar, one progress line. */}
+      <div className="mb-5">
+        <Link
+          to="/d"
+          onClick={() => haptic('light')}
+          className="-ml-1.5 mb-2 inline-flex items-center gap-0.5 rounded-lg py-1 pl-0.5 pr-2 text-[14px] font-medium text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] transition-colors"
+          aria-label="Back to lists"
+        >
+          <Icon name="chevronLeft" className="w-[18px] h-[18px]" />
+          Lists
+        </Link>
 
-          {/* Title and info - takes remaining space */}
-          <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+          <div className="min-w-0 flex-1 basis-64">
             <div className="flex items-center gap-2 flex-wrap">
               <h1
-                className="text-gray-900 dark:text-gray-100 break-words min-w-0"
+                className="text-[var(--boop-ink)] break-words min-w-0"
                 style={{
                   fontFamily: 'var(--font-sans)',
                   fontWeight: 760,
@@ -727,74 +727,20 @@ export function ListView() {
                 {list.name}
               </h1>
               {streak > 0 && <StreakBadge streak={streak} size="sm" />}
-            {isLegacyList && <LegacyBadge />}
-            {/* Verification badge for list */}
-            <ListVerificationBadge
-              anchorStatus={(publicationStatus?.anchorStatus as VerificationState) ?? "none"}
-              did={list.assetDid}
-              anchorBlockHeight={publicationStatus?.anchorBlockHeight}
-              anchorTxId={publicationStatus?.anchorTxId}
-              signature={badgeSignature(verification)}
-            />
+              {isLegacyList && <LegacyBadge />}
+              <ListVerificationBadge
+                anchorStatus={(publicationStatus?.anchorStatus as VerificationState) ?? "none"}
+                did={list.assetDid}
+                anchorBlockHeight={publicationStatus?.anchorBlockHeight}
+                anchorTxId={publicationStatus?.anchorTxId}
+                signature={badgeSignature(verification)}
+              />
             </div>
-
-            {/* Progress and collaborators info */}
-            <div
-              className="flex items-center gap-2 text-[13px] mt-2 tabular-nums"
-              style={{ color: 'var(--boop-muted)' }}
-            >
-            {totalCount > 0 && (
-              <span>
-                {checkedCount}/{totalCount} done
-              </span>
-            )}
-
-            {isPublished && (
-              <>
-                <span className="text-stone-300 dark:text-stone-600">·</span>
-                <span className="inline-flex items-center gap-1">
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background: 'var(--boop-accent)',
-                      display: 'inline-block',
-                    }}
-                    aria-hidden="true"
-                  />
-                  public
-                </span>
-              </>
-            )}
-            </div>
-
-            {/* Progress bar — only show if there are items */}
-            {totalCount > 0 && (
-              <div className="flex items-center gap-2.5 mt-3 max-w-md">
-                <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: 'var(--boop-line)' }}>
-                  <div
-                    className="h-full rounded-full transition-[width] duration-300"
-                    style={{
-                      width: `${Math.round((checkedCount / totalCount) * 100)}%`,
-                      background: 'var(--boop-accent)',
-                    }}
-                  />
-                </div>
-                <span
-                  className="text-[13px] font-semibold tabular-nums"
-                  style={{ color: 'var(--boop-accent)' }}
-                >
-                  {Math.round((checkedCount / totalCount) * 100)}%
-                </span>
-              </div>
-            )}
           </div>
 
-          {/* Compact action buttons: their own row under the title on phones */}
-          <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto pl-[52px] sm:pl-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
           {/* View toggle - compact on mobile */}
-          <div className="inline-flex items-center bg-[var(--boop-panel)] rounded-full p-0.5">
+          <div className="inline-flex items-center h-9 bg-[var(--boop-panel)] rounded-full p-0.5">
             <button
               onClick={() => {
                 haptic('light');
@@ -804,7 +750,7 @@ export function ListView() {
                   if (userIsOwner) updateItemViewModeMutation({ listId, itemViewMode: "alphabetical" });
                 }
               }}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
+              className={`h-8 w-9 inline-flex items-center justify-center rounded-full transition-all active:scale-95 ${
                 viewMode === "list" && itemViewMode === "alphabetical"
                   ? "bg-[var(--boop-card)] text-[var(--boop-accent)] shadow-[0_0_0_1px_var(--boop-line)]"
                   : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
@@ -825,7 +771,7 @@ export function ListView() {
                   if (userIsOwner) updateItemViewModeMutation({ listId, itemViewMode: "categorized" });
                 }
               }}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
+              className={`h-8 w-9 inline-flex items-center justify-center rounded-full transition-all active:scale-95 ${
                 viewMode === "list" && itemViewMode === "categorized"
                   ? "bg-[var(--boop-card)] text-[var(--boop-accent)] shadow-[0_0_0_1px_var(--boop-line)]"
                   : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
@@ -842,7 +788,7 @@ export function ListView() {
                 haptic('light');
                 setViewMode("calendar");
               }}
-              className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-full transition-all active:scale-95 ${
+              className={`h-8 w-9 inline-flex items-center justify-center rounded-full transition-all active:scale-95 ${
                 viewMode === "calendar"
                   ? "bg-[var(--boop-card)] text-[var(--boop-accent)] shadow-[0_0_0_1px_var(--boop-line)]"
                   : "text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
@@ -856,41 +802,53 @@ export function ListView() {
             </button>
           </div>
 
-          {/* Favourite button */}
+          {canUserEdit && totalCount > 0 && (
+            <button
+              onClick={() => {
+                haptic('light');
+                if (isSelectMode) clearSelection();
+                else setIsSelectMode(true);
+              }}
+              className={`${TOOLBAR_BUTTON} ${isSelectMode ? "!bg-[var(--boop-accent-soft)] !text-[var(--boop-accent-ink)]" : ""}`}
+              aria-label="Select"
+              aria-pressed={isSelectMode}
+              title="Select items"
+            >
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </button>
+          )}
+
           {did && (
             <button
               onClick={handleToggleFavourite}
               disabled={favouritePending}
-              className={`inline-flex items-center justify-center p-2 rounded-full transition-all active:scale-95 ${
-                isBookmarked
-                  ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700"
-                  : "bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:text-[var(--boop-ink)]"
-              } ${favouritePending ? "opacity-50" : ""}`}
+              className={`${TOOLBAR_BUTTON} ${isBookmarked ? "!text-[var(--boop-accent)]" : ""}`}
               aria-label={isBookmarked ? "Remove from favourites" : "Add to favourites"}
+              aria-pressed={!!isBookmarked}
               title={isBookmarked ? "Remove from favourites" : "Add to favourites"}
             >
-              <span className="text-sm leading-none">{isBookmarked ? "⭐" : "☆"}</span>
+              <Icon name="star" className="w-[18px] h-[18px]" fill={isBookmarked ? "currentColor" : "none"} />
             </button>
           )}
 
-          {/* Share button - always visible as it's commonly used */}
           {canUserInvite && (
             <button
               onClick={() => {
                 haptic('light');
                 setIsShareModalOpen(true);
               }}
-              className="inline-flex items-center justify-center p-2 rounded-full bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:text-[var(--boop-ink)] transition-all active:scale-95"
+              className={TOOLBAR_BUTTON}
               aria-label="Share"
               title="Share list"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
               </svg>
             </button>
           )}
 
-          {/* More actions menu - consolidates Publish, Template, Delete, Keyboard shortcuts */}
           <HeaderActionsMenu
             canShare={canUserInvite}
             canPublish={canUserDelete}
@@ -912,32 +870,65 @@ export function ListView() {
           />
           </div>
         </div>
+
+        {/* One progress line: bar, count, publication state. */}
+        {(totalCount > 0 || isPublished) && (
+          <div className="mt-4 flex items-center gap-3 text-[13px] tabular-nums text-[var(--boop-muted)]">
+            {totalCount > 0 && (
+              <>
+                <div
+                  className="flex-1 h-[5px] rounded-full overflow-hidden bg-[var(--boop-line)]"
+                  role="progressbar"
+                  aria-label="Items done"
+                  aria-valuemin={0}
+                  aria-valuemax={totalCount}
+                  aria-valuenow={checkedCount}
+                >
+                  <div
+                    className="h-full rounded-full bg-[var(--boop-accent)] transition-[width] duration-300"
+                    style={{ width: `${Math.round((checkedCount / totalCount) * 100)}%` }}
+                  />
+                </div>
+                <span className="whitespace-nowrap">
+                  <span className="font-semibold text-[var(--boop-ink)]">{checkedCount}</span> of {totalCount} done
+                </span>
+              </>
+            )}
+            {isPublished && (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                {totalCount > 0 && <span aria-hidden="true">·</span>}
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--boop-accent)]" aria-hidden="true" />
+                public
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cached data indicator */}
       {usingCache && (
-        <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-700 dark:text-amber-400 text-sm flex items-center gap-3 animate-slide-up">
-          <span className="text-xl">📡</span>
+        <div className="mb-4 px-4 py-3 bg-[var(--boop-panel)] border border-[var(--boop-line)] rounded-xl text-[var(--boop-muted)] text-sm flex items-center gap-3 animate-slide-up">
+          <Icon name="clock" className="w-[18px] h-[18px]" />
           <span>Showing cached items. Some info may be outdated.</span>
         </div>
       )}
 
       {/* Select mode header */}
       {isSelectMode && canUserEdit && (
-        <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-center justify-between animate-slide-up">
-          <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+        <div className="mb-4 px-4 py-2.5 bg-[var(--boop-accent-soft)] rounded-xl flex items-center justify-between animate-slide-up">
+          <span className="text-sm font-semibold text-[var(--boop-accent-ink)] tabular-nums">
             {selectedIds.size} of {totalCount} selected
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={selectAll}
-              className="px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
+              className="px-3 py-1.5 text-[13px] font-semibold text-[var(--boop-accent-ink)] hover:bg-[var(--boop-card)] rounded-lg transition-colors"
             >
               Select all
             </button>
             <button
               onClick={clearSelection}
-              className="px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded-lg transition-colors"
+              className="px-3 py-1.5 text-[13px] font-semibold text-[var(--boop-accent-ink)] hover:bg-[var(--boop-card)] rounded-lg transition-colors"
             >
               Cancel
             </button>
@@ -945,29 +936,11 @@ export function ListView() {
         </div>
       )}
 
-      {/* Select mode toggle button (when not in select mode) */}
-      {!isSelectMode && canUserEdit && totalCount > 0 && (
-        <div className="mb-4 flex justify-end">
-          <button
-            onClick={() => {
-              haptic('light');
-              setIsSelectMode(true);
-            }}
-            className="px-3 py-1.5 text-[14px] font-medium text-[var(--boop-muted)] hover:text-[var(--boop-ink)] hover:bg-[var(--boop-panel)] rounded-lg transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-            Select
-          </button>
-        </div>
-      )}
-
       {/* Items - List View */}
       {viewMode === "list" && (
         <div className="overflow-hidden">
           {sortedItems.length === 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
+            <div className="boop-sheet">
               <NoItemsEmptyState />
             </div>
           ) : aisleGroups ? (
@@ -977,8 +950,7 @@ export function ListView() {
               onTouchMove={canUserEdit ? groceryTouchDrag.handleTouchMove : undefined}
               onTouchEnd={canUserEdit ? groceryTouchDrag.handleTouchEnd : undefined}
             >
-              {canUserEdit && <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 mb-2 text-xs text-gray-400 dark:text-gray-500">
-                <span>✨</span>
+              {canUserEdit && <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 mb-2 text-xs text-[var(--boop-dim)]">
                 <span>Drag items between aisles to reclassify</span>
               </div>}
               {aisleGroups.groups.map(({ category: aisle, items: aisleItems }, groupIndex) => (
@@ -986,11 +958,11 @@ export function ListView() {
                   {/* Aisle section header — highlights when dragging over */}
                   <div className={`flex items-center gap-2 px-3 py-2 rounded-t-xl border-b transition-colors duration-150 ${
                     dragOverAisleId === aisle.id && groceryTouchDrag.state.draggedId
-                      ? "bg-amber-100 dark:bg-amber-900/40 border-amber-400 dark:border-amber-600 ring-2 ring-amber-400 dark:ring-amber-600"
-                      : "bg-amber-50 dark:bg-gray-700 border-amber-100 dark:border-gray-600"
+                      ? "bg-[var(--boop-accent-soft)] border-[var(--boop-accent)] ring-2 ring-[var(--boop-accent)]"
+                      : "bg-[var(--boop-panel)] border-[var(--boop-line)]"
                   }`}>
                     <span className="text-lg">{aisle.emoji}</span>
-                    <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">{aisle.name}</span>
+                    <span className="font-semibold text-sm text-[var(--boop-ink)]">{aisle.name}</span>
                     {canUserEdit ? (
                       <CategoryHeaderMenu
                         category={aisle}
@@ -1004,12 +976,12 @@ export function ListView() {
                         onDelete={() => deleteCategoryMutation({ listId, categoryId: aisle.id })}
                       />
                     ) : (
-                      <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+                      <span className="ml-auto text-xs text-[var(--boop-muted)] tabular-nums">
                         {aisleItems.length} {aisleItems.length === 1 ? "item" : "items"}
                       </span>
                     )}
                   </div>
-                  <div className="bg-white dark:bg-gray-800 rounded-b-xl shadow-lg divide-y divide-gray-100 dark:divide-gray-700">
+                  <div className="bg-[var(--boop-card)] rounded-b-xl shadow-[0_0_0_1px_var(--boop-line)] divide-y divide-[var(--boop-line)]">
                     {aisleItems.map((item) => {
                       const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                       const hasAisleOverride = !!(item as OptimisticItem & { groceryAisle?: string }).groceryAisle;
@@ -1020,7 +992,7 @@ export function ListView() {
                           className="animate-slide-up relative"
                         >
                           {hasAisleOverride && (
-                            <span className="absolute top-1 right-1 z-10 text-[10px] opacity-60" title="Manually placed in this aisle">📌</span>
+                            <span className="absolute top-1.5 right-1.5 z-10 text-[var(--boop-dim)]" title="Manually placed in this aisle"><Icon name="pin" className="w-3 h-3" /></span>
                           )}
                           <NestedListItem
                             item={item}
@@ -1048,16 +1020,16 @@ export function ListView() {
               {/* Add custom aisle */}
               {canUserEdit && (
                 showAddAisle ? (
-                  <div className="mb-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-3">
+                  <div className="mb-3 bg-[var(--boop-card)] rounded-xl shadow-[0_0_0_1px_var(--boop-line)] p-3">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">New Aisle</span>
+                      <span className="text-sm font-medium text-[var(--boop-ink)]">New Aisle</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={newAisleEmoji}
                         onChange={e => setNewAisleEmoji(e.target.value)}
-                        className="w-10 text-center text-lg bg-gray-100 dark:bg-gray-700 rounded-lg p-1"
+                        className="w-10 text-center text-lg bg-[var(--boop-panel)] rounded-lg p-1"
                         maxLength={2}
                       />
                       <input
@@ -1065,7 +1037,7 @@ export function ListView() {
                         value={newAisleName}
                         onChange={e => setNewAisleName(e.target.value)}
                         placeholder="Aisle name..."
-                        className="flex-1 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg px-3 py-2 text-gray-800 dark:text-gray-200 placeholder-gray-400"
+                        className="flex-1 text-sm bg-[var(--boop-panel)] rounded-lg px-3 py-2 text-[var(--boop-ink)] placeholder:text-[var(--boop-dim)]"
                         autoFocus
                         onKeyDown={e => {
                           if (e.key === "Enter" && newAisleName.trim()) {
@@ -1088,24 +1060,25 @@ export function ListView() {
                             setShowAddAisle(false);
                           }
                         }}
-                        className="text-sm font-medium text-amber-700 dark:text-amber-400 px-2 py-1 hover:text-amber-800 dark:hover:text-amber-300"
+                        className="text-sm font-semibold text-[var(--boop-accent)] px-2 py-1 hover:text-[var(--boop-accent-deep)]"
                       >
                         Add
                       </button>
                       <button
                         onClick={() => { setShowAddAisle(false); setNewAisleName(""); }}
-                        className="text-sm text-gray-400 px-1"
+                        className="text-[var(--boop-dim)] hover:text-[var(--boop-ink)] px-1"
+                        aria-label="Cancel new aisle"
                       >
-                        ✕
+                        <Icon name="x" className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                 ) : (
                   <button
                     onClick={() => setShowAddAisle(true)}
-                    className="w-full mb-3 py-2 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+                    className="w-full mb-3 py-2 text-sm text-[var(--boop-muted)] hover:text-[var(--boop-ink)] flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--boop-line)] hover:border-[var(--boop-dim)] transition-colors"
                   >
-                    <span>＋</span>
+                    <Icon name="plus" className="w-4 h-4" />
                     <span>New Aisle</span>
                   </button>
                 )
@@ -1114,14 +1087,14 @@ export function ListView() {
               {/* Completed section */}
               {aisleGroups.checked.length > 0 && (
                 <div className="mb-3">
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-t-xl bg-gray-50 dark:bg-gray-700 border-b border-gray-100 dark:border-gray-600">
-                    <span className="text-xs">✅</span>
-                    <span className="font-medium text-xs text-gray-500 dark:text-gray-400">Completed</span>
-                    <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 tabular-nums">
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-t-xl bg-[var(--boop-panel)] border-b border-[var(--boop-line)]">
+                    <Icon name="check" className="w-3.5 h-3.5 text-[var(--boop-accent)]" />
+                    <span className="font-medium text-xs text-[var(--boop-muted)]">Completed</span>
+                    <span className="ml-auto text-xs text-[var(--boop-muted)] tabular-nums">
                       {aisleGroups.checked.length}
                     </span>
                   </div>
-                  <div className="bg-white/50 dark:bg-gray-800/50 rounded-b-xl divide-y divide-gray-100 dark:divide-gray-700/50">
+                  <div className="bg-[color-mix(in_oklch,var(--boop-card)_55%,transparent)] rounded-b-xl shadow-[0_0_0_1px_var(--boop-line)] divide-y divide-[var(--boop-line)]">
                     {aisleGroups.checked.map((item) => {
                       const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                       return (
@@ -1159,7 +1132,7 @@ export function ListView() {
               onTouchEnd={canUserEdit ? touchDrag.handleTouchEnd : undefined}
             >
               {/* Active (unchecked) items as rounded cards - only top-level items (no parentId) */}
-              <div className="boop-sheet divide-y divide-[var(--boop-line)]">
+              {sortedItems.some(item => !item.checked && !item.parentId) && <div className="boop-sheet divide-y divide-[var(--boop-line)]">
                 {sortedItems.filter(item => !item.checked && !item.parentId).map((item: OptimisticItem) => {
                   const globalIndex = sortedItems.findIndex(si => si._id === item._id);
                   return (
@@ -1191,7 +1164,7 @@ export function ListView() {
                     </div>
                   );
                 })}
-              </div>
+              </div>}
 
               {/* Collapsed Done section */}
               {checkedCount > 0 && (
@@ -1279,7 +1252,7 @@ export function ListView() {
 
       {/* Viewer notice */}
       {!canUserEdit && (
-        <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-xl text-center text-gray-500 dark:text-gray-400 text-sm flex items-center justify-center gap-2">
+        <div className="mt-4 p-4 bg-[var(--boop-panel)] rounded-xl text-center text-[var(--boop-muted)] text-sm flex items-center justify-center gap-2">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />

@@ -144,7 +144,7 @@ export function TagSelector({
               haptic("light");
               setShowCreateForm(true);
             }}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-[var(--boop-panel)] text-[var(--boop-muted)] hover:bg-[color-mix(in_oklch,var(--boop-ink)_7%,var(--boop-panel))] transition-colors"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -156,14 +156,14 @@ export function TagSelector({
 
       {/* Create tag form */}
       {showCreateForm && canEdit && (
-        <form onSubmit={handleCreateTag} className="space-y-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+        <form onSubmit={handleCreateTag} className="space-y-2 p-3 bg-[var(--boop-panel)] rounded-lg">
           <input
             type="text"
             value={newTagName}
             onChange={(e) => setNewTagName(e.target.value)}
             placeholder="Tag name..."
             autoFocus
-            className="w-full px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full px-3 py-1.5 bg-[var(--boop-card)] border border-[var(--boop-line)] rounded text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
           
           <div className="flex flex-wrap gap-1">
@@ -189,7 +189,7 @@ export function TagSelector({
                 setShowCreateForm(false);
                 setNewTagName("");
               }}
-              className="px-3 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              className="px-3 py-1 text-xs text-gray-500 hover:text-[var(--boop-ink)]"
             >
               Cancel
             </button>
@@ -205,7 +205,7 @@ export function TagSelector({
       )}
 
       {tags.length === 0 && !showCreateForm && (
-        <p className="text-xs text-gray-400 dark:text-gray-500">
+        <p className="text-xs text-[var(--boop-dim)]">
           No tags yet. Create one to categorize items.
         </p>
       )}

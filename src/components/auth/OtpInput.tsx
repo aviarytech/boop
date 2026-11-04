@@ -143,7 +143,7 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
 
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-center">
+      <label className="block text-sm font-medium text-[var(--boop-ink)] mb-3 text-center">
         Verification code
       </label>
 
@@ -164,7 +164,7 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
             onFocus={(e) => e.target.select()}
             onPaste={handlePaste}
             disabled={isLoading}
-            className="w-12 h-14 text-center text-2xl font-semibold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-12 h-14 text-center text-2xl font-semibold text-[var(--boop-ink)] bg-[var(--boop-card)] border border-[var(--boop-line)] rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={`Digit ${index + 1}`}
           />
         ))}
@@ -175,13 +175,13 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
       )}
 
       {isLoading && (
-        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400 text-center">Verifying...</p>
+        <p className="mt-3 text-sm text-[var(--boop-muted)] text-center">Verifying...</p>
       )}
 
       {onResend && (
         <div className="mt-4 text-center">
           {resendCooldown > 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-[var(--boop-muted)]">
               Resend code in {resendCooldown}s
             </p>
           ) : (
@@ -189,7 +189,7 @@ export function OtpInput({ onComplete, isLoading = false, error, onResend }: Otp
               type="button"
               onClick={handleResend}
               disabled={isLoading}
-              className="text-sm text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-medium disabled:opacity-50"
+              className="text-sm text-[var(--boop-accent)] hover:text-[var(--boop-accent-deep)] font-medium disabled:opacity-50"
             >
               Resend code
             </button>
