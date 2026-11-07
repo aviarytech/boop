@@ -64,7 +64,8 @@ copy is kept, unversioned, in `tmp/lws-spec/` while this is being built.
    `sub = iss = client_id = did:key:…` and `aud` including
    `B/lws-access/requests`; this proves the agent holds the key. The server
    assigns the fragment `agent-<id>` and returns `201` with `Location`.
-   Requests expire after 24 hours, and a user can have at most 10 pending.
+   Requests expire after 24 hours. A user has at most 10 pending: an 11th
+   expires the oldest pending one (see "The request queue").
 2. **Approve.** The app lists the pending requests. Approving one builds a DID
    update that adds the method `#agent-<id>` (Multikey, the agent's key,
    `controller` = the DID) and references it from `authentication`. The author
@@ -86,11 +87,12 @@ copy is kept, unversioned, in `tmp/lws-spec/` while this is being built.
    written, and takes its latest `state`. It finds `kid` in `authentication`,
    checks the signature, and checks that the agent row is active with the same
    key. It then issues an opaque `lwsat_…` access token, stored hashed, that
-   lasts an hour and is bound to the storage.
+   lasts 300 seconds (LWS Authorization recommends 300 or less), is bound to
+   the storage, and records the actions it grants.
 4. **Use.** `Authorization: Bearer lwsat_…` on storage resources. The
    resource server resolves the token to an actor whose `did` is the user's,
-   whose scopes are the agent's, and whose credential is
-   `{kind: "agent", id}`. Requests without a valid token get a `401` with
+   whose actions are the token's (never more than the agent holds now), and
+   whose credential is `{kind: "agent", id}`. Requests without a valid token get a `401` with
    `WWW-Authenticate: Bearer resource_metadata="…"` and the storage `Link`.
 5. **Revoke.** The app calls `revokeAgent`, which marks the row revoked and
    deletes its tokens, and then removes the method from the DID (a DID update
@@ -98,8 +100,18 @@ copy is kept, unversioned, in `tmp/lws-spec/` while this is being built.
    revoked: the token endpoint and the resource server both check the row as
    well as the DID. See "App" below.
 
-Action → scope: `read` → `lists:read` and `items:read`; `create`, `update`,
-`delete` → `items:write`.
+**Actions are enforced one by one.** Every storage operation checks the one
+action it needs: every read (GET and HEAD on containers, items and linksets)
+needs `read`; POST needs `create`; PUT and PATCH need `update` (`modify` is
+the same action); DELETE needs `delete`. A missing action is `403` with
+`error="insufficient_scope"`, so narrowing at approval holds. Tokens carry
+the canonical actions (`read`, `create`, `update`, `delete`); a token
+without recorded actions grants none.
+
+Scopes still exist for the app's own operations that storage writes run
+through: `read` → `lists:read` and `items:read`; `create`, `update`,
+`delete` → `items:write`. They follow from the actions and are never what
+decides an LWS request.
 
 ## The author DID rule
 
@@ -173,8 +185,8 @@ but that build won't sign Originals until it updates.
 Where the server (phase 1) fills in what the sections above leave open:
 
 - **`modify` is accepted as well as `update`.** The LWS access profile names
-  the action `modify`; agents written to the spec send it. Both map to
-  `items:write` and are stored as sent.
+  the action `modify`; agents written to the spec send it. Both are stored
+  as sent and grant the same action, `update`.
 - **`name` is optional.** Spec-only agents don't send it; the label is then
   `Agent`. It is trimmed, NFC, 1–60 characters, with no control or bidi
   override characters.
@@ -183,16 +195,37 @@ Where the server (phase 1) fills in what the sections above leave open:
   than partly honoured. An absent `target` means the storage root.
 - **A retry gets the same request.** A second POST signed by the same key while
   its request is pending returns that request (`200`, same `Location`), not a
-  new one. A key that is already an active agent gets `409`.
+  new one. A key that is already an active agent gets `409`. So does a key
+  that is still an agent method of the DID while no active agent or pending
+  request holds it (a revoked agent whose key removal failed): the problem
+  detail says to remove the key first, and Settings → Agents says "Remove
+  key from DID first" next to such keys.
 - **Polling is signed too.** `GET B/lws-access/requests/{id}` takes a fresh
   did:key JWT (single-use `jti`, `aud` ∋ the requests URL or the request's
   own URL). Another key's request reads as `404`. An approved request whose
-  agent was revoked reads `status: "revoked"`, without the grant.
+  agent was revoked reads `status: "revoked"`, without the grant. The request
+  is looked up and its assignee matched before the `jti` is recorded, so a
+  poll of an unknown or someone else's request writes nothing.
 - **The did:key JWT's `kid` is optional**; when present it must be
   `did:key:z…#z…`. The did:webvh JWT's `kid` is required and absolute.
-- **`scope` at the token endpoint** may narrow the agent's scopes; anything
-  beyond them is `invalid_scope`. A bad subject token is `invalid_request`
-  (RFC 8693 §2.2.2); a wrong `resource` is `invalid_target`.
+- **`scope` at the token endpoint** may narrow the agent's actions. Each
+  value is an action (`read`, `create`, `update`/`modify`, `delete`) or one of
+  the agent's scopes, which keeps the actions it fully covers (`items:write`
+  keeps the agent's `create`, `update` and `delete`; `items:read` alone covers
+  no action). Anything beyond the agent, or a result with no action, is
+  `invalid_scope`. The response's `scope` is the granted actions, e.g.
+  `read create`.
+- **Token endpoint errors** use only RFC 6749 §5.2 codes, plus
+  `invalid_target` (RFC 8707), which RFC 8693 names for a bad `resource`. A
+  bad subject token is `invalid_request` (RFC 8693 §2.2.2). The per-IP rate
+  limit is `429` with `error: "invalid_request"`, a description and
+  `Retry-After`; an internal failure is `500` `invalid_request`.
+- **`response_types_supported` stays** in the AS metadata (`["token"]`).
+  RFC 8414 §2 makes it REQUIRED, LWS Authorization requires RFC 8414
+  metadata, and its example lists it. There is no authorization endpoint.
+- **The `Bearer` scheme is case-insensitive** (RFC 9110 §11.1) everywhere a
+  bearer credential is read, the session extractor included, so `bearer
+  lwsat_…` is still an agent token and never falls back to a cookie.
 - **Owner operations refuse every delegated credential**, not only those
   without `*`: an API key or agent never approves, denies or revokes.
 - **Agent tokens are good on LWS storage only.** `requestCredentials`
@@ -206,6 +239,49 @@ Where the server (phase 1) fills in what the sections above leave open:
   an agent credential every list whose `ownerDid` isn't the user's (current or
   legacy) DID, at every authority. So lists shared with, bookmarked by or
   published to the user are out of reach, even though the user can read them.
+- **Approving a key already in the DID** (the DID update landed, the grant
+  didn't) needs no signature: `changeAuthorAgentKey` reads the served DID
+  and goes straight to the grant, without a confirmed author or a live
+  Turnkey session.
+- **Account deletion** erases the user's `lwsAccessTokens`,
+  `lwsAccessRequests` and `lwsAgents` in its batched steps. **A DID re-mint**
+  (`applyRemint`, and the paged `finishRemint`) revokes the user's agents,
+  deletes their tokens and expires pending requests: the new DID lists none
+  of their keys. (`agentApiKeys` are a separate, pre-existing gap: deletion
+  doesn't erase them.)
+- **Cleanup.** The cron (`lwsAccess.cleanupInternal`, every 15 minutes)
+  expires undecided requests, deletes decided and expired requests 30 days
+  after they expire, spent `jti`s and expired tokens, 200 of each at a time,
+  and reschedules itself at once while any batch was full.
+
+### The request queue
+
+The access-request endpoint is unauthenticated: a request only proves that
+its sender holds the key it names. So anyone can ask for access to any
+storage. Two limits keep that cheap:
+
+- **Per IP**, 10 requests a minute. The IP is taken from `cf-connecting-ip`,
+  else the first `x-forwarded-for` value. On `*.convex.site` these may be
+  set by the client, so the limit slows a casual flood but doesn't stop a
+  determined one.
+- **Per user**, 10 pending requests. When a new request arrives at the cap,
+  the oldest pending request expires to make room: refusing new requests
+  instead would let anyone fill the queue and keep the owner's real agent
+  out for a day. A retry by the same key still gets its own request back.
+
+So a flood can push the owner's request out of the queue, or bury it among
+others, but not block it: the agent asks again and its request is the
+newest. What protects the owner is approving only the right request.
+Settings → Agents says, next to pending requests: "Only approve a request you
+started just now from your own agent. Check the key fingerprint matches
+what your agent printed." The fingerprint is the last 12 characters of the
+key in groups of four (`shared/multikey.ts` `keyFingerprint`), which the
+agent CLI prints from `keygen` and `request`.
+
+**Open, for the owner to decide:** a one-time enrollment code, shown in the
+app and given to the agent with the storage URL, would let only the owner's
+own agent create a request at all. That is the stronger fix; it isn't
+built.
 
 ## Storage
 
@@ -219,10 +295,10 @@ operations are in `convex/lwsStorage.ts` and the pure parts are in
 | URL | Type | Methods | Body |
 |---|---|---|---|
 | `B/lws/{u}` | storage description | GET HEAD OPTIONS | `application/lws+cid`: `StorageRoot` and `AccessRequestService` services, no `capability` |
-| `B/lws/{u}/` | root `Container` | GET HEAD OPTIONS | `application/lws+json`: the user's own lists, not notes, as `Container` members with `title` and `modified` |
-| `B/lws/{u}/{listId}/` | list `Container` | GET HEAD POST OPTIONS | `application/lws+json`: `title`, then the items in list order as `DataResource` members with `format`, `size` and `modified` |
+| `B/lws/{u}/` | root `Container` | GET HEAD OPTIONS | `application/lws+json`: the user's own lists (under the current and the legacy DID), not notes, as `Container` members with `title` and `modified` |
+| `B/lws/{u}/{listId}/` | list `Container` | GET HEAD POST OPTIONS | `application/lws+json`: `title`, then the items in list order as `DataResource` members with `format`, `size` and `modified`; paginated past 500 items |
 | `B/lws/{u}/{listId}/{itemId}` | item `DataResource` | GET HEAD PUT PATCH DELETE OPTIONS | `application/json` (below) |
-| `<any of the three above>.meta` | linkset | GET HEAD PATCH OPTIONS | `application/linkset+json`: `up`, `type` and `…#storage` links |
+| `<any of the three above>.meta` | linkset | GET HEAD PATCH OPTIONS | `application/linkset+json`: `up`, `type` and `…#storage` links; the response's own `Link` is only the storage |
 
 An item:
 
@@ -242,25 +318,47 @@ after creation. In a PUT or a patched document they may be left out; if
 present, they must equal the current values (else `409`). Unknown members are
 `400`. Dates are ISO 8601. `recurrence.interval` is an integer from 1 to 1000.
 
-Every response carries `Allow` and the `…#storage` link. Resource GET/HEAD
-responses also carry `ETag`, `Last-Modified`, `Link` (`linkset`, `up` except
-on the root, `type`), `Accept-Ranges`, and where they apply `Accept-Patch` and
-`Accept-Post`. Errors are RFC 9457 problem JSON.
+Every response carries `Allow` and the `…#storage` link, a `404` under a
+storage included. Resource GET/HEAD responses also carry `ETag`,
+`Last-Modified`, `Link` (`linkset`, `up` except on the root, `type`; a
+linkset's own response has only the storage link), `Accept-Ranges`, and
+where they apply `Accept-Patch` and `Accept-Post`. Errors are RFC 9457
+problem JSON.
+
+**The root** reads one item per list, the latest by the `items` index
+`by_list_updated` (`["listId", "updatedAt"]`), for each list's `modified`;
+a list with no items has its `createdAt`. It never scans a list's items, so
+root members have no `size`. Its ETag changes when a list is added,
+removed, renamed or gets a newer item, not on every item deletion.
+
+**Pagination** (lws-media-type.md "Pagination"). A list with more than 500
+items is paginated. The container's URI is the first page; later pages are
+`…/{listId}/?page=n`, URIs clients take from the `Link` header (`first` and
+`last` on every page, `prev` and `next` where they apply) and don't build.
+Each page lists up to 500 members in list order, `totalItems` counts the
+whole list, and each page has its own ETag. A page past the last, or a
+`page` that isn't a number, is `404`. The list's items are still read whole,
+as the app's own list view and `addItem` do, so a list an agent reads is no
+bigger than one the app reads; the page bounds what is serialized and sent.
+POST preconditions apply to the first page's ETag.
 
 ### Writes
 
 - **POST to a list** creates an item from `application/json`; `parent` may
   name a top-level item of the same list. The answer is `201` with
   `Location`, `Content-Location`, `ETag`, the links, and the new item as the
-  body. `Slug` is ignored. Setting `checked: true` checks the item in the same
-  transaction.
+  body, or no body when the agent hasn't `read`. `Slug` is ignored. Setting
+  `checked: true` checks the item in the same transaction.
 - **PUT** (`application/json`) replaces an item: a writable member that's left
   out is cleared, and `checked` defaults to `false`.
 - **PATCH** takes `application/merge-patch+json` (RFC 7396) or
   `application/json-patch+json` (RFC 6902, which LWS requires). The patch
   applies to the item's JSON, and the result is validated like a PUT. PUT and
-  PATCH answer `200` with the new representation and `ETag`. A write that
-  changes nothing writes nothing.
+  PATCH answer `200` with the new representation and `ETag`, or `204` with
+  only the `ETag` when the agent hasn't `read`. A JSON Patch `test` reads the
+  item, so it needs `read` (`403` otherwise). A patch that removes a
+  sub-item's `parent` (merge-patch `null`, JSON Patch `remove`) is `409`; PUT
+  may leave it out. A write that changes nothing writes nothing.
 - **DELETE** answers `204`. An item with sub-items is a `409`: delete those
   first.
 - Writes run the app's own operations from `convex/items.ts` (`addItem`,
@@ -293,8 +391,8 @@ preconditions apply to the list container's ETag. On GET/HEAD, a match is
 `If-Match` is not required: update-resource.md says clients SHOULD send it,
 so an unconditional write is accepted, and `428` is never sent.
 
-Every representation with an ETag is sent with `Cache-Control: …,
-no-transform`. Without it, Cloudflare in front of `*.convex.site` gzips
+Every response with an ETag, `412` and `416` included, is sent with
+`Cache-Control: …, no-transform`. Without it, Cloudflare in front of `*.convex.site` gzips
 `application/json` (items) and weakens the ETag to `W/"…"`, which `If-Match`
 never matches: every conditional write after a GET was a `412` (found by the
 dev e2e).
@@ -303,14 +401,16 @@ dev e2e).
 
 - The description is public. Everything else takes `Authorization: Bearer
   lwsat_…`.
-- With no credential, the answer is `401` with `WWW-Authenticate: Bearer
-  resource_metadata="…"` and the storage `Link`. A bad, expired or revoked
-  token adds `error="invalid_token"`.
+- With no Bearer credential (no `Authorization`, or another scheme), the
+  answer is `401` with `WWW-Authenticate: Bearer resource_metadata="…"` and
+  the storage `Link`. A presented bad, expired or revoked token adds
+  `error="invalid_token"` (RFC 6750 §3.1). The access-request service's
+  `401`s follow the same rule.
 - A token issued for another storage fails the spec's audience validation, so
   it gets the same `401 invalid_token`.
-- Missing scope is `403` with `error="insufficient_scope"`. Containers and
-  linksets need `lists:read` to read; items need `items:read`; every write,
-  including PATCH on a linkset, needs `items:write`.
+- A missing action is `403` with `error="insufficient_scope"`. Every read
+  needs `read`; POST `create`; PUT, PATCH, and PATCH on a linkset `update`;
+  DELETE `delete`.
 - A list or item that doesn't exist, isn't the user's own, is a note, or whose
   id isn't a valid Convex id for its table (`normalizeId`) is `404`. So is an
   item addressed through another list.
@@ -324,11 +424,12 @@ dev e2e).
 - **Content negotiation.** Containers are only `application/lws+json`, and
   `Accept` is ignored. No Turtle or JSON-LD profile is offered, which the
   spec permits, so there is no `Vary: Accept`.
-- **No pagination** (a SHOULD). The full listing is returned every time.
-- **Ranges.** A single `bytes` range is served on items, linksets and the
-  description (`206`, `416`, `If-Range`). Several ranges get the whole
-  representation, which RFC 9110 allows. Container listings send
-  `Accept-Ranges: none` and are always whole.
+- **Pagination only past 500 items, and only on lists.** The root is never
+  paginated: it holds one member per list.
+- **Ranges.** A single `bytes` range is served on GET of items, linksets and
+  the description (`206`, `416`, `If-Range`); HEAD ignores `Range`. Several
+  ranges get the whole representation, which RFC 9110 allows. Container
+  listings send `Accept-Ranges: none` and are always whole.
 - **Linksets are read-only.** All links are server-managed, which metadata.md
   allows. PATCH with JSON Patch is supported, as required, but succeeds
   (`204`) only if it changes nothing; any change, including moving `up`, is
@@ -346,6 +447,11 @@ dev e2e).
 - **Root members have no `size`** (a SHOULD): it would mean serializing every
   list.
 - **The storage description has no linkset.** It sits in no container.
+- **No `conformsTo` on the AccessRequestService.** The LWS AccessProfile
+  requires a server advertising it to support constraints (`client`, and
+  more), and boop refuses every constraint and any target below the root. A
+  client trusting the claim would send requests boop turns down, so the
+  service doesn't claim the profile.
 
 ### curl
 
@@ -422,8 +528,11 @@ agent delete "$B/lws/$U/<listId>/<itemId>"
   with JWT subject tokens to be supported. Then it signs the agent JWT
   (`kid` = the granted method, `sub` = `iss` = `client_id` = the user's DID,
   `aud` = the issuer, 5 minutes) and exchanges it with `resource` = the storage.
+- `keygen` and `request` print the key's `fingerprint`, as Settings → Agents
+  shows it next to the request.
 - `get`, `create`, `patch` and `delete` reuse the cached token and get a new
-  one when it has less than a minute left. `patch` sends merge-patch for an
+  one when it has less than 30 seconds left; on a `401 invalid_token` they get
+  a new one and retry once. `patch` sends merge-patch for an
   object and JSON Patch for an array, with `If-Match` from a fresh HEAD unless
   `--etag` is given. `delete` sends `If-Match` only with `--etag`.
 
@@ -443,7 +552,8 @@ npx convex env remove LWS_DEV_SEED
 
 It seeds two accounts, requests access, approves, gets a token, reads and
 checks the headers, creates, patches (`If-Match`, a stale `412`, checking),
-deletes, makes the negative checks (no token, `lwsat_` on `/api/v1/lists`,
+deletes, approves a second agent for `[read, create]` only (it creates, and
+gets `403` on PATCH and DELETE), makes the negative checks (no token, `lwsat_` on `/api/v1/lists`,
 a replayed `jti`, `kid` `#key-0` signed by the author key, the other account's
 storage and token audience), revokes (token `401`, exchange refused, then the
 key removed from the DID), and cleans up in `finally`.

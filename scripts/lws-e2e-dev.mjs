@@ -160,6 +160,7 @@ async function main() {
   const { domain } = await convex('devLws:config');
   const seeded = [];
   const statePath = `${OUT}/agent-${Date.now()}.json`;
+  const narrowPath = `${OUT}/agent-narrow-${Date.now()}.json`;
   try {
     // 1. Seed: the owner, and a second account the agent must not reach.
     const owner = await seedAccount(app, domain, [
@@ -187,6 +188,7 @@ async function main() {
     const [pending] = await convex('lwsAccess:pendingAccessRequestsForUser', { userId: owner.userId });
     const state = await agent.loadState(statePath);
     check('owner sees the request with the agent key', pending?.agentPublicKeyMultibase === state.key.multikey, JSON.stringify(pending));
+    check('the CLI prints the fingerprint the app shows', requested.fingerprint === app.agentKeys.shortKey(pending.agentDidKey), `${requested.fingerprint} / ${app.agentKeys.shortKey(pending.agentDidKey)}`);
     const served = await (await fetch(`${B}/api/did/log?path=${encodeURIComponent(owner.path)}`)).text();
     const author = { subOrgId: owner.subOrgId, did: owner.did, keys: owner.keys };
     const deps = { backend: owner.turnkey.backend, ready: async () => true };
@@ -201,7 +203,8 @@ async function main() {
     const granted = await cli('status', '--state', statePath);
     check('status: approved with verificationMethod', granted.status === 'approved' && granted.verificationMethod === approved.vmId, JSON.stringify(granted));
     const tokenResult = await cli('token', '--state', statePath);
-    check('token: discovery + exchange', tokenResult.scope === 'lists:read items:read items:write', JSON.stringify(tokenResult));
+    check('token: discovery + exchange, the granted actions, 300 s', tokenResult.scope === 'read create update delete'
+      && Math.abs(Date.parse(tokenResult.expiresAt) - Date.now() - 300_000) < 30_000, JSON.stringify(tokenResult));
     const accessToken = (await agent.loadState(statePath)).token.accessToken;
     const auth = { Authorization: `Bearer ${accessToken}` };
 
@@ -244,6 +247,28 @@ async function main() {
     const gone = await http(location, { headers: auth });
     check('DELETE → 204, then 404', deleted.status === 204 && gone.status === 404, `${deleted.status} ${gone.status}`);
 
+    // 8b. A second agent approved for [read, create] only: it may create, never update or delete.
+    await cli('keygen', '--state', narrowPath);
+    await cli('request', storage, '--name', 'e2e narrow agent', '--actions', 'read,create', '--state', narrowPath);
+    const narrowPending = (await convex('lwsAccess:pendingAccessRequestsForUser', { userId: owner.userId })).find(r => r.name === 'e2e narrow agent');
+    const servedForNarrow = await (await fetch(`${B}/api/did/log?path=${encodeURIComponent(owner.path)}`)).text();
+    const narrowAdded = await app.agentKeys.buildAgentUpdate(author, servedForNarrow, { add: { fragment: narrowPending.fragment, publicKeyMultibase: narrowPending.agentPublicKeyMultibase } }, deps);
+    await convex('devLws:storeDidContinuation', { userId: owner.userId, log: narrowAdded.jsonl, accounts: owner.turnkey.accounts });
+    await convex('lwsAccess:approveAccessRequestForUser', { userId: owner.userId, requestId: narrowPending.requestId });
+    await cli('status', '--state', narrowPath);
+    const narrowToken = await cli('token', '--state', narrowPath);
+    check('narrow agent: token for read create', narrowToken.scope === 'read create', JSON.stringify(narrowToken));
+    const narrowAuth = { Authorization: `Bearer ${(await agent.loadState(narrowPath)).token.accessToken}` };
+    const narrowCreated = await http(listUrl, { method: 'POST', headers: { ...narrowAuth, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Narrow' }) });
+    const narrowItem = narrowCreated.headers.get('Location');
+    check('narrow agent: POST → 201', narrowCreated.status === 201 && narrowCreated.body?.name === 'Narrow', `${narrowCreated.status} ${JSON.stringify(narrowCreated.body).slice(0, 100)}`);
+    const narrowPatch = await http(narrowItem, { method: 'PATCH', headers: { ...narrowAuth, 'Content-Type': 'application/merge-patch+json' }, body: JSON.stringify({ name: 'Changed' }) });
+    check('narrow agent: PATCH → 403 insufficient_scope', narrowPatch.status === 403 && /insufficient_scope/.test(narrowPatch.headers.get('WWW-Authenticate') ?? ''), `${narrowPatch.status} ${narrowPatch.headers.get('WWW-Authenticate')}`);
+    const narrowDelete = await http(narrowItem, { method: 'DELETE', headers: narrowAuth });
+    const narrowAfter = await http(narrowItem, { headers: narrowAuth });
+    check('narrow agent: DELETE → 403, item unchanged', narrowDelete.status === 403 && narrowAfter.body?.name === 'Narrow', `${narrowDelete.status} ${JSON.stringify(narrowAfter.body).slice(0, 80)}`);
+    await http(narrowItem, { method: 'DELETE', headers: auth });
+
     // 9. Refusals.
     const anonymous = await http(root);
     const challenge = agent.authParams(anonymous.headers.get('WWW-Authenticate'));
@@ -274,7 +299,7 @@ async function main() {
     check("other account's list via own storage → 404", crossList.status === 404, crossList.status);
 
     // 10. Revoke, then the DID update that removes the key.
-    const [active] = await convex('lwsAccess:activeAgentsForUser', { userId: owner.userId });
+    const active = (await convex('lwsAccess:activeAgentsForUser', { userId: owner.userId })).find(a => a.vmId === approved.vmId);
     await convex('lwsAccess:revokeAgentForUser', { userId: owner.userId, agentId: active.agentId });
     const afterRevoke = await http(root, { headers: auth });
     check('after revoke: token → 401', afterRevoke.status === 401 && /invalid_token/.test(afterRevoke.headers.get('WWW-Authenticate') ?? ''), afterRevoke.status);
@@ -300,6 +325,7 @@ async function main() {
       check('cleanup', false, error.message);
     }
     await rm(statePath, { force: true });
+    await rm(narrowPath, { force: true });
   }
 
   const width = Math.max(...results.map(r => r.name.length));
