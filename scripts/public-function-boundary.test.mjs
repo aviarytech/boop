@@ -12,6 +12,7 @@ import { SignJWT } from 'jose';
 import { getFunctionName } from 'convex/server';
 
 process.env.JWT_SECRET = 'public-boundary-test-secret-not-a-deployed-credential';
+process.env.LWS_BASE_URL = 'https://test';
 const outdir = 'tmp/public-function-boundary-test';
 // Every Convex module, including subdirectories such as migrations/ (Convex registers
 // those too); lib/ holds helpers and _generated/ is codegen.
@@ -163,7 +164,9 @@ test('every public registration is classified', () => {
     if (PUBLIC[r.id] || SELF_AUTHENTICATED.has(r.id) || REJECTING.has(r.id)) continue;
     // Everything else must come from the actor wrappers: they take credentials and
     // only the legacy, non-authoritative identity assertion fields.
-    assert.ok(r.fields.includes('authToken') && r.fields.includes('apiKey') && r.fields.includes('agentToken'), `${r.id} is public but not authenticated`);
+    assert.ok(r.fields.includes('authToken') && r.fields.includes('apiKey'), `${r.id} is public but not authenticated`);
+    // An LWS access token is good on LWS storage only (convex/lwsStorageHttp.ts), never here.
+    assert.ok(!r.fields.includes('agentToken'), `${r.id} accepts an LWS agent token`);
     for (const field of identityAssertionFields) assert.ok(r.fields.includes(field), `${r.id} is missing assertion validator ${field}`);
   }
 });
@@ -187,9 +190,8 @@ test('anonymous callers are rejected by every non-public registration before pri
 test('unknown API keys and asserted owner identities never authenticate', async () => {
   for (const r of registrations.filter(r => r.fields.includes('apiKey') && !SELF_AUTHENTICATED.has(r.id))) {
     await expectRejected(r, { apiKey: 'forged-key' }, /invalid api key/i);
-    await expectRejected(r, { agentToken: 'lwsat_forged' }, /invalid access token/i);
-    // An LWS access token is a credential of its own: never combined with a session or key.
-    await expectRejected(r, { agentToken: 'lwsat_forged', authToken: strangerToken }, /invalid access token/i);
+    // Not a credential here at all: the validator refuses the field, and the wrapper ignores it.
+    await expectRejected(r, { agentToken: 'lwsat_forged' }, /authentication required/i);
     // A stranger asserting the owner's current or legacy DID in every legacy field.
     for (const did of ['did:owner', 'did:legacy']) {
       const assertions = Object.fromEntries(identityAssertionFields.map(f => [f, did]));
@@ -215,6 +217,7 @@ const PUBLIC_ROUTES = new Set([
   // inside their internal mutations; scripts/lws-agent-auth.test.mjs covers them.
   'POST /lws-access/requests', 'GET /lws-access/requests/*', 'POST /oauth/token',
   'GET /.well-known/lws-configuration', 'GET /.well-known/oauth-protected-resource/lws/*',
+  // GET /lws/* is checked below on an item; only the storage description at B/lws/{u} is public.
 ]);
 test('every non-public HTTP route rejects anonymous, forged-key and asserted-identity requests without writing', async () => {
   const routes = modules.http.default.getRoutes().filter(([, method]) => method !== 'OPTIONS');
@@ -224,7 +227,9 @@ test('every non-public HTTP route rejects anonymous, forged-key and asserted-ide
   const body = { listId: 'L1', itemId: 'I1', assetDid: 'did:cel:x', itemIds: ['I1'], categoryId: 'C1', name: 'x', assigneeDid: 'did:owner', did: 'did:webvh:X:boop.ad:user-owner', keyId: 'K1', ...assertions };
   for (const [path, method, handler] of routes) {
     if (PUBLIC_ROUTES.has(`${method} ${path}`)) continue;
-    const url = new URL(`https://test${path === '/d/*' ? '/d/owner/resources/list-L1/items/I1/check' : path}`);
+    // LWS storage: POST creates in a list; the other methods act on an item.
+    const target = { '/d/*': '/d/owner/resources/list-L1/items/I1/check', '/lws/*': method === 'POST' ? '/lws/user-owner/L1/' : '/lws/user-owner/L1/I1' }[path] ?? path;
+    const url = new URL(`https://test${target}`);
     // GET routes take one target; body routes get every field a handler might read.
     if (method === 'GET') for (const [k, v] of Object.entries({ listId: 'L1', ...assertions })) url.searchParams.set(k, String(v));
     for (const headers of [{}, { 'X-API-Key': 'forged-key' }, { Authorization: 'Bearer forged.jwt.token' }]) {
