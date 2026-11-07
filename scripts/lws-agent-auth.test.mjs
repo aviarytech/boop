@@ -671,3 +671,28 @@ test("an agent is authorized for the user's own lists only", async () => {
   ctx.rows.users[0].deletionRequestedAt = Date.now();
   assert.equal(await allowed({ ...agent }, ['OWN'], 'read'), false);
 });
+
+// Phase 4: scripts/lws-agent.mjs, the CLI agent, against the server's own verifiers.
+test('the CLI agent signs credentials the server accepts', async () => {
+  const cli = await import(pathToFileURL(`${process.cwd()}/scripts/lws-agent.mjs`).href);
+  const key = await cli.newKey();
+  const requests = `${B}/lws-access/requests`;
+  const asItself = lwsJwt.verifyDidKeyJwt(await cli.didKeyJwt(key, requests), { audience: requests, now: Date.now() });
+  assert.equal(asItself.didKey, key.didKey);
+  assert.equal(asItself.publicKeyMultibase, key.multikey);
+  const did = 'did:webvh:QmScid:boop.test:user-sub-org';
+  const vm = `${did}#agent-abcdefghij`;
+  const document = {
+    id: did,
+    verificationMethod: [{ id: vm, type: 'Multikey', controller: did, publicKeyMultibase: key.multikey }],
+    authentication: [vm],
+  };
+  const asUser = lwsJwt.verifyAgentJwt(await cli.agentJwt(key, vm, B), { audience: B, now: Date.now(), document });
+  assert.equal(asUser.kid, vm);
+  assert.equal(asUser.subject, did);
+  assert.deepEqual(cli.authParams('Bearer resource_metadata="https://x/.well-known/a", error="invalid_token"'),
+    { resource_metadata: 'https://x/.well-known/a', error: 'invalid_token' });
+  assert.deepEqual(cli.parseLinks('<https://x/s>; rel="https://www.w3.org/ns/lws#storage", <https://x/>; rel=up'),
+    [{ href: 'https://x/s', rel: ['https://www.w3.org/ns/lws#storage'] }, { href: 'https://x/', rel: ['up'] }]);
+});
+

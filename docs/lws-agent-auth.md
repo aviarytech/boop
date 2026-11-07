@@ -386,3 +386,43 @@ curl -si -X PATCH -H "$H" -H 'Content-Type: application/json-patch+json' \
 ETAG=$(curl -sI -H "$H" "$ITEM" | awk 'tolower($1)=="etag:" {print $2}' | tr -d '\r')
 curl -si -X DELETE -H "$H" -H "If-Match: $ETAG" "$ITEM"    # 204
 ```
+
+## Agent CLI
+
+`scripts/lws-agent.mjs` is a whole agent in one file (`@noble/ed25519` and
+`fetch`). Everything it knows (its secret key, its request, its grant and a
+cached access token) is in the `--state` file, written with mode 0600.
+Output is JSON.
+
+```sh
+agent() { node scripts/lws-agent.mjs "$@" --state "$HOME/.boop-agent.json"; }
+agent keygen                                   # a new Ed25519 key
+agent request "$B/lws/$U" --name "My agent" --actions read,create,update,delete
+agent status                                   # pending → approved (after Settings → Agents)
+agent token                                    # discovery + token exchange
+agent get "$B/lws/$U/"                         # the lists
+agent create "$B/lws/$U/<listId>/" '{"name":"Eggs"}'
+agent patch "$B/lws/$U/<listId>/<itemId>" '{"checked":true}'   # If-Match from a fresh HEAD
+agent delete "$B/lws/$U/<listId>/<itemId>"
+```
+
+- `request` reads the storage description, takes its `AccessRequestService`
+  (refusing one on another origin), and POSTs the `AccessRequest` with a
+  did:key JWT (`aud` = the service URL).
+- `status` polls with a fresh did:key JWT (`aud` = the request URL) and keeps
+  the grant's `verificationMethod`.
+- `token` discovers the token endpoint from scratch: an unauthenticated GET of
+  the storage root → `401` → `resource_metadata` → its `authorization_servers`
+  → `/.well-known/lws-configuration`. It makes the client's discovery
+  validation checks (LWS Authorization): the metadata URL has the requested
+  URI's origin, the metadata's `resource` is exactly the requested URI, and
+  the `StorageRoot` of the storage in the `Link` header has that origin too.
+  It also requires the configuration's `issuer` to be the one named (RFC 8414
+  3.3), the storage to be the one it asked for access to, and token exchange
+  with JWT subject tokens to be supported. Then it signs the agent JWT
+  (`kid` = the granted method, `sub` = `iss` = `client_id` = the user's DID,
+  `aud` = the issuer, 5 minutes) and exchanges it with `resource` = the storage.
+- `get`, `create`, `patch` and `delete` reuse the cached token and get a new
+  one when it has less than a minute left. `patch` sends merge-patch for an
+  object and JSON Patch for an array, with `If-Match` from a fresh HEAD unless
+  `--etag` is given. `delete` sends `If-Match` only with `--etag`.
