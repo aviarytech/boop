@@ -33,6 +33,7 @@ import type * as cloudflare from "../cloudflare.js";
 import type * as comments from "../comments.js";
 import type * as crons from "../crons.js";
 import type * as dev from "../dev.js";
+import type * as devLws from "../devLws.js";
 import type * as didLogValidation from "../didLogValidation.js";
 import type * as didLogs from "../didLogs.js";
 import type * as didLogsHttp from "../didLogsHttp.js";
@@ -142,6 +143,7 @@ declare const fullApi: ApiFromModules<{
   comments: typeof comments;
   crons: typeof crons;
   dev: typeof dev;
+  devLws: typeof devLws;
   didLogValidation: typeof didLogValidation;
   didLogs: typeof didLogs;
   didLogsHttp: typeof didLogsHttp;

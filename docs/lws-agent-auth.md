@@ -426,3 +426,40 @@ agent delete "$B/lws/$U/<listId>/<itemId>"
   one when it has less than a minute left. `patch` sends merge-patch for an
   object and JSON Patch for an array, with `If-Match` from a fresh HEAD unless
   `--etag` is given. `delete` sends `If-Match` only with `--etag`.
+
+## End-to-end on dev
+
+`scripts/lws-e2e-dev.mjs` runs the whole flow against the **dev** deployment
+(`CONVEX_DEPLOYMENT` in `.env.local`), over real HTTP to its `.convex.site`
+URL, with the CLI agent as a separate process:
+
+```sh
+pgrep -fl "convex dev"                 # nothing else may push to dev meanwhile
+npx convex dev --once                  # deploy this branch to dev
+npx convex env set LWS_DEV_SEED 1      # dev only
+node scripts/lws-e2e-dev.mjs           # prints a pass/fail table; exit 1 on any failure
+npx convex env remove LWS_DEV_SEED
+```
+
+It seeds two accounts, requests access, approves, gets a token, reads and
+checks the headers, creates, patches (`If-Match`, a stale `412`, checking),
+deletes, makes the negative checks (no token, `lwsat_` on `/api/v1/lists`,
+a replayed `jti`, `kid` `#key-0` signed by the author key, the other account's
+storage and token audience), revokes (token `401`, exchange refused, then the
+key removed from the DID), and cleans up in `finally`.
+
+**What it bypasses.** Approving on dev needs a Turnkey session (the author key
+signs the DID update) and a boop session (`POST /api/did/log`), and the e2e
+can't sign in. So the test accounts' author and assertion keys are local
+Ed25519 keys, and `convex/devLws.ts` stores the logs they sign after the same
+write check `/api/did/log` makes (`didLogValidation.checkWrite`, with the
+local keys in place of the sub-org's Turnkey accounts). The DID itself is built
+by the app's own code (`mintAuthorDid`, `buildAgentUpdate`), and approval and
+revocation are the deployed `approveAccessRequestForUser` and
+`revokeAgentForUser`, minus the session check. Everything else is the
+deployed code over HTTP.
+
+`devLws.ts` is internal only, and every helper refuses to run unless
+`WEBVH_DOMAIN` is set and isn't `boop.ad`, and `LWS_DEV_SEED` is `1`. It only
+touches accounts it made (`lws-e2e-…` sub-org, `lws-e2e+…@example.invalid`).
+`npx convex run devLws:cleanup '{"all": true}'` removes any a failed run left.

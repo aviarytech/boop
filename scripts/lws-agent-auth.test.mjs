@@ -27,13 +27,14 @@ const entries = {
   actor: 'convex/lib/actor.ts', jwt: 'convex/lib/jwt.ts', authorDidShared: 'shared/authorDid.ts',
   lwsAccess: 'convex/lwsAccess.ts', lwsHttp: 'convex/lwsHttp.ts', rateLimits: 'convex/rateLimits.ts', actorSession: 'convex/actorSession.ts',
   permissions: 'convex/lib/permissions.ts', lists: 'convex/lists.ts', agentReadHttp: 'convex/agentReadHttp.ts',
+  devLws: 'convex/devLws.ts',
 };
 await build({
   entryPoints: Object.fromEntries(Object.entries(entries)), outdir, bundle: true, platform: 'node', format: 'esm', target: 'node20',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error',
 });
 const load = name => import(`${pathToFileURL(`${process.cwd()}/${outdir}/${name}.mjs`).href}`);
-const [fixture, lwsJwt, lib, urls, tokens, actor, jwtLib, shared, lwsAccess, lwsHttp, rateLimits, actorSession, permissions, lists, agentReadHttp] = await Promise.all(Object.keys(entries).map(load));
+const [fixture, lwsJwt, lib, urls, tokens, actor, jwtLib, shared, lwsAccess, lwsHttp, rateLimits, actorSession, permissions, lists, agentReadHttp, devLws] = await Promise.all(Object.keys(entries).map(load));
 const { mockTurnkey, mintAuthor, agentKey, changeAgentMethod, pinned, authorDidLog } = fixture;
 
 const b64u = value => Buffer.from(typeof value === 'string' ? value : value).toString('base64url');
@@ -696,3 +697,15 @@ test('the CLI agent signs credentials the server accepts', async () => {
     [{ href: 'https://x/s', rel: ['https://www.w3.org/ns/lws#storage'] }, { href: 'https://x/', rel: ['up'] }]);
 });
 
+test('the dev seed refuses anything that may be prod, and accounts it did not make', () => {
+  assert.throws(() => devLws.assertDevSeedAllowed({ WEBVH_DOMAIN: 'boop.ad', LWS_DEV_SEED: '1' }), /prod/);
+  assert.throws(() => devLws.assertDevSeedAllowed({ WEBVH_DOMAIN: 'www.boop.ad', LWS_DEV_SEED: '1' }), /prod/);
+  assert.throws(() => devLws.assertDevSeedAllowed({ LWS_DEV_SEED: '1' }), /prod/, 'unset domain is not clearly dev');
+  assert.throws(() => devLws.assertDevSeedAllowed({ WEBVH_DOMAIN: 'lvh.me:5173' }), /LWS_DEV_SEED/);
+  assert.throws(() => devLws.assertDevSeedAllowed({ WEBVH_DOMAIN: 'lvh.me:5173', LWS_DEV_SEED: 'true' }), /LWS_DEV_SEED/);
+  assert.doesNotThrow(() => devLws.assertDevSeedAllowed({ WEBVH_DOMAIN: 'lvh.me:5173', LWS_DEV_SEED: '1' }));
+  assert.equal(devLws.isSeedUser({ turnkeySubOrgId: 'lws-e2e-0123456789abcdef', email: 'lws-e2e+a1b2c3@example.invalid' }), true);
+  assert.equal(devLws.isSeedUser({ turnkeySubOrgId: 'lws-e2e-0123456789abcdef', email: 'brian@example.com' }), false);
+  assert.equal(devLws.isSeedUser({ turnkeySubOrgId: '20ed9d43-2d31-44aa', email: 'lws-e2e+a1@example.invalid' }), false);
+  assert.equal(devLws.isSeedUser(null), false);
+});
