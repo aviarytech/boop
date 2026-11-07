@@ -24,7 +24,11 @@ const STORAGE_RESOURCE_TYPES = new Set(["StorageResource", "https://www.w3.org/n
 
 type AgentScope = (typeof AGENT_SCOPES)[number];
 
-/** `read` → lists:read and items:read; `create`, `update`/`modify`, `delete` → items:write. Never `*`. */
+/**
+ * `read` → lists:read and items:read; `create`, `update`/`modify`, `delete` → items:write. Never `*`.
+ * Scopes are what the app's own operations check; what an agent may do over
+ * LWS is decided by its actions (`hasAction`), which are finer.
+ */
 export function scopesForActions(actions: readonly string[]): AgentScope[] {
   const scopes = new Set<AgentScope>();
   for (const action of actions) {
@@ -33,6 +37,41 @@ export function scopesForActions(actions: readonly string[]): AgentScope[] {
     else throw new Error(`Unknown action ${action}`);
   }
   return AGENT_SCOPES.filter(scope => scopes.has(scope));
+}
+
+/** The actions LWS operations check: `modify` is `update` under another name. */
+export const CANONICAL_ACTIONS = ["read", "create", "update", "delete"] as const;
+export type CanonicalAction = (typeof CANONICAL_ACTIONS)[number];
+
+/** Stored actions (as sent) → the canonical ones they grant. Unknown values grant nothing. */
+export function canonicalActions(actions: readonly string[]): CanonicalAction[] {
+  const held = new Set(actions.map(action => action === "modify" ? "update" : action));
+  return CANONICAL_ACTIONS.filter(action => held.has(action));
+}
+
+/**
+ * The token endpoint's optional `scope`, applied to an agent's actions. Each
+ * value is an action (`read`, `create`, `update`/`modify`, `delete`) or one of
+ * the agent's scopes; a scope keeps the actions it fully covers. Null when a
+ * value is beyond the agent or the result grants nothing (invalid_scope).
+ */
+export function narrowActionsByScope(actions: readonly string[], scope: string): CanonicalAction[] | null {
+  const held = canonicalActions(actions);
+  const heldScopes: string[] = scopesForActions(held);
+  const named = new Set<string>();
+  const scopes = new Set<string>();
+  const values = scope.split(" ").filter(Boolean);
+  if (values.length === 0) return null;
+  for (const value of values) {
+    if ((LWS_ACTIONS as readonly string[]).includes(value)) {
+      const action = value === "modify" ? "update" : value;
+      if (!(held as string[]).includes(action)) return null;
+      named.add(action);
+    } else if (heldScopes.includes(value)) scopes.add(value);
+    else return null;
+  }
+  const narrowed = held.filter(action => named.has(action) || scopesForActions([action]).every(s => scopes.has(s)));
+  return narrowed.length > 0 ? narrowed : null;
 }
 
 /** A non-empty list of distinct known actions, or null. */

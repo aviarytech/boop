@@ -193,10 +193,14 @@ export default defineSchema({
     userId: v.id("users"),
     storage: v.string(),
     scopes: v.array(v.string()),
+    // The canonical actions (read, create, update, delete) this token may use;
+    // absent on tokens issued before they were recorded, which then grant none.
+    actions: v.optional(v.array(v.string())),
     expiresAt: v.number(),
   })
     .index("by_hash", ["tokenHash"])
     .index("by_agent", ["agentId"])
+    .index("by_user", ["userId"])
     .index("by_expires_at", ["expiresAt"]),
   // JWT ids already accepted, until the JWT itself expires: each is good once.
   lwsJtis: defineTable({
@@ -377,6 +381,7 @@ export default defineSchema({
     }))),
   })
     .index("by_list", ["listId"])
+    .index("by_list_updated", ["listId", "updatedAt"])
     .index("by_parent", ["parentId"])
     .index("by_due_date", ["listId", "dueDate"]),
 

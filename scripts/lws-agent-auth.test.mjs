@@ -290,6 +290,21 @@ test('actions map to scopes, and approval can only narrow them', () => {
   assert.equal(lib.narrowActions(['read'], ['read', 'delete']), null);
   assert.equal(lib.narrowActions(['read'], []), null);
   assert.equal(lib.narrowActions(['read'], ['bogus']), null);
+  // What LWS operations check: modify is update.
+  assert.deepEqual(lib.canonicalActions(['modify', 'read']), ['read', 'update']);
+  assert.deepEqual(lib.canonicalActions(['delete', 'bogus']), ['delete']);
+  // The token endpoint's scope narrows actions, by action or by the scopes that cover them.
+  const all = ['read', 'create', 'update', 'delete'];
+  assert.deepEqual(lib.narrowActionsByScope(all, 'read'), ['read']);
+  assert.deepEqual(lib.narrowActionsByScope(all, 'create modify'), ['create', 'update']);
+  assert.deepEqual(lib.narrowActionsByScope(all, 'lists:read items:read'), ['read']);
+  assert.deepEqual(lib.narrowActionsByScope(all, 'items:write'), ['create', 'update', 'delete']);
+  assert.deepEqual(lib.narrowActionsByScope(['read', 'create'], 'items:write'), ['create'], 'items:write never adds update');
+  assert.equal(lib.narrowActionsByScope(all, 'items:read'), null, 'items:read alone covers no action');
+  assert.equal(lib.narrowActionsByScope(['read'], 'delete'), null);
+  assert.equal(lib.narrowActionsByScope(['read'], 'items:write'), null);
+  assert.equal(lib.narrowActionsByScope(['read'], ''), null);
+  assert.equal(lib.narrowActionsByScope(['read'], '*'), null);
 });
 
 test('LWS URLs', () => {
@@ -494,10 +509,12 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   assert.equal(issued.body.issued_token_type, 'urn:ietf:params:oauth:token-type:access_token');
   assert.equal(issued.body.token_type, 'Bearer');
   assert.equal(issued.body.expires_in, 3600);
-  assert.equal(issued.body.scope, 'lists:read items:read');
+  assert.equal(issued.body.scope, 'read', 'the granted actions');
   const [tokenRow] = ctx.rows.lwsAccessTokens;
   assert.equal(tokenRow.tokenHash, hash(issued.body.access_token), 'stored hashed');
   assert.equal(tokenRow.storage, `${B}/lws/${U}`);
+  assert.deepEqual(tokenRow.actions, ['read']);
+  assert.deepEqual(tokenRow.scopes, ['lists:read', 'items:read']);
   assert.ok(ctx.effects.some(([kind, fn]) => kind === 'runAt' && fn === 'lwsAccess:deleteAccessToken'));
   assert.ok(agentRow.lastUsedAt >= tokenRow.expiresAt - 3600000);
 
@@ -509,6 +526,8 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   await refused(exchangeFields(subjectToken(), { resource: `${B}/lws/user-other` }), 'invalid_target', 'another storage');
   await refused(exchangeFields(subjectToken(), { resource: `${B}/lws/${U}/` }), 'invalid_target', 'the root, not the storage');
   await refused(exchangeFields(subjectToken(), { scope: 'items:write' }), 'invalid_scope', 'scope beyond the agent');
+  await refused(exchangeFields(subjectToken(), { scope: 'create' }), 'invalid_scope', 'an action beyond the agent');
+  await refused(exchangeFields(subjectToken(), { scope: 'items:read' }), 'invalid_scope', 'a scope that covers no whole action');
   await refused(exchangeFields(subjectToken(), { grant_type: 'client_credentials' }), 'unsupported_grant_type', 'grant type');
   await refused(exchangeFields(subjectToken(), { subject_token_type: 'urn:ietf:params:oauth:token-type:id_token' }), 'invalid_request', 'token type');
   await refused(exchangeFields(subjectToken(), { actor_token: 'x' }), 'invalid_request', 'actor token');
@@ -519,8 +538,9 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   ctx.rows.didLogs[0].author = false;
   await refused(exchangeFields(subjectToken()), 'invalid_request', 'not an author DID');
   ctx.rows.didLogs[0].author = true;
-  // A narrowed scope works.
-  assert.equal((await exchange(exchangeFields(subjectToken(), { scope: 'items:read' }))).body.scope, 'items:read');
+  // A scope that names the agent's actions works.
+  assert.equal((await exchange(exchangeFields(subjectToken(), { scope: 'read' }))).body.scope, 'read');
+  assert.equal((await exchange(exchangeFields(subjectToken(), { scope: 'lists:read items:read' }))).body.scope, 'read');
 
   // The access token authenticates as the user, as this agent.
   const resolved = await actor.authenticate(ctx, { agentToken: issued.body.access_token });
@@ -620,7 +640,7 @@ async function agentWorld() {
   const token = 'lwsat_agent-token-for-tests';
   Object.assign(w.ctx.rows, {
     lwsAgents: [{ _id: 'A1', userId: 'U1', ownerDid: w.author.did, fragment: 'agent-abcdefghij', vmId: `${w.author.did}#agent-abcdefghij`, publicKeyMultibase: 'z6Mk', name: 'Bot', actions: ['read', 'create'], scopes: ['lists:read', 'items:read', 'items:write'], requestId: 'r', createdAt: 1 }],
-    lwsAccessTokens: [{ _id: 'T1', tokenHash: hash(token), agentId: 'A1', userId: 'U1', storage: `${B}/lws/${U}`, scopes: ['lists:read', 'items:read', 'items:write'], expiresAt: Date.now() + 3600000 }],
+    lwsAccessTokens: [{ _id: 'T1', tokenHash: hash(token), agentId: 'A1', userId: 'U1', storage: `${B}/lws/${U}`, scopes: ['lists:read', 'items:read', 'items:write'], actions: ['read', 'create'], expiresAt: Date.now() + 3600000 }],
     lists: [
       { _id: 'OWN', ownerDid: w.author.did, name: 'Mine', createdAt: 1 },
       { _id: 'SHARED', ownerDid: 'did:webvh:x:boop.ad:user-friend', name: "A friend's", createdAt: 1 },

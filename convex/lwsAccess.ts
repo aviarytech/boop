@@ -19,7 +19,7 @@ import type { ResolvedActor } from "./lib/actor";
 import { resourceUnavailable } from "./lib/authError";
 import { hashApiKey } from "./lib/apiKeyHelpers";
 import { latestDidState, LwsJwtError, selectAgentMethod, unverifiedSubject, verifyAgentJwt, verifyDidKeyJwt, type VerifiedClaims } from "./lib/lwsJwt";
-import { accessRequestDocument, narrowActions, parseActions, parseAgentName, scopesForActions } from "./lib/lwsAccess";
+import { accessRequestDocument, canonicalActions, narrowActions, narrowActionsByScope, parseActions, parseAgentName, scopesForActions } from "./lib/lwsAccess";
 import { accessRequestsUri, accessRequestUri, lwsBaseUrl, storageUri, USER_PATH_PATTERN } from "./lib/lwsUrls";
 import {
   ACCESS_REQUEST_ID_PATTERN,
@@ -184,7 +184,7 @@ export const exchangeTokenInternal = internalMutation({
   args: {
     subjectToken: v.string(),
     resource: v.string(),
-    /** Space-separated; narrows the agent's scopes when present. */
+    /** Space-separated actions or scopes; narrows the agent's actions when present. */
     scope: v.optional(v.string()),
     /** The `lwsat_` token to issue, drawn by the caller. */
     accessToken: v.string(),
@@ -221,21 +221,20 @@ export const exchangeTokenInternal = internalMutation({
     if (!agent || agent.userId !== user._id || agent.ownerDid !== subject || agent.publicKeyMultibase !== claims.publicKeyMultibase) {
       return invalid("The agent is not approved");
     }
-    let scopes = agent.scopes;
-    if (args.scope !== undefined) {
-      const requested = args.scope.split(" ").filter(Boolean);
-      if (requested.length === 0 || requested.some(scope => !agent.scopes.includes(scope))) return { ok: false, error: "invalid_scope", description: "scope exceeds the agent's" };
-      scopes = agent.scopes.filter(scope => requested.includes(scope));
-    }
+    // The token carries the agent's actions, or fewer when `scope` narrows
+    // them (lib/lwsAccess.ts narrowActionsByScope); its scopes follow.
+    const actions = args.scope === undefined ? canonicalActions(agent.actions) : narrowActionsByScope(agent.actions, args.scope);
+    if (!actions || actions.length === 0) return { ok: false, error: "invalid_scope", description: "scope must name some of the agent's actions (read, create, update, delete)" };
+    const scopes = scopesForActions(actions).filter(scope => agent.scopes.includes(scope));
     if (!await consumeJti(ctx, claims)) return invalid("This jti was already used");
 
     const expiresAt = now + LWS_ACCESS_TOKEN_TTL_MS;
     const id = await ctx.db.insert("lwsAccessTokens", {
-      tokenHash: await hashApiKey(args.accessToken), agentId: agent._id, userId: user._id, storage: args.resource, scopes, expiresAt,
+      tokenHash: await hashApiKey(args.accessToken), agentId: agent._id, userId: user._id, storage: args.resource, scopes, actions, expiresAt,
     });
     await ctx.scheduler.runAt(expiresAt, internal.lwsAccess.deleteAccessToken, { id });
     await ctx.db.patch(agent._id, { lastUsedAt: now });
-    return { ok: true, accessToken: args.accessToken, expiresIn: Math.floor(LWS_ACCESS_TOKEN_TTL_MS / 1000), scope: scopes.join(" ") };
+    return { ok: true, accessToken: args.accessToken, expiresIn: Math.floor(LWS_ACCESS_TOKEN_TTL_MS / 1000), scope: actions.join(" ") };
   },
 });
 

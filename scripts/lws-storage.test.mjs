@@ -82,8 +82,9 @@ const OTHER_TOKEN = 'lwsat_other-storage';
 const DAY = 24 * 3600 * 1000;
 const DUE = Date.UTC(2026, 10, 9, 9);
 
+const ALL = ['read', 'create', 'update', 'delete'];
 function world() {
-  const token = (id, value, scopes, storageUri = S) => ({ _id: id, tokenHash: hash(value), agentId: 'lwsAgentsx1', userId: 'usersx1', storage: storageUri, scopes, expiresAt: Date.now() + 3600000 });
+  const token = (id, value, scopes, storageUri = S, actions = scopes.includes('items:write') ? ALL : ['read']) => ({ _id: id, tokenHash: hash(value), agentId: 'lwsAgentsx1', userId: 'usersx1', storage: storageUri, scopes, actions, expiresAt: Date.now() + 3600000 });
   return convex({
     users: [
       { _id: 'usersx1', did: DID, turnkeySubOrgId: 'owner', displayName: 'Owner', createdAt: 500 },
@@ -530,6 +531,67 @@ test('linksets: read-only server-managed links', async () => {
   assert.equal((await call(ctx, '/listsxown/itemsxmilk.meta', { method: 'PATCH', headers: { ...jsonPatch, 'If-Match': '"stale"' }, body: [] })).status, 412);
   assert.equal((await call(ctx, '/listsxown/itemsxmilk.meta', { method: 'PATCH', token: READ_TOKEN, headers: jsonPatch, body: [] })).status, 403);
   assert.equal((await call(ctx, '/listsxshared/itemsxfriend.meta')).status, 404);
+});
+
+/** world(), plus a token for an agent that holds only `actions`. */
+function withActions(ctx, actions, value = `lwsat_${actions.join('-')}`) {
+  const scopes = [...new Set(actions.flatMap(a => a === 'read' ? ['lists:read', 'items:read'] : ['items:write']))];
+  ctx.rows.lwsAgents.push({ ...ctx.rows.lwsAgents[0], _id: `lwsAgentsx${actions.join('')}`, actions, scopes, fragment: 'agent-bbbbbbbbbb' });
+  ctx.rows.lwsAccessTokens.push({ _id: `lwsAccessTokensx${actions.join('')}`, tokenHash: hash(value), agentId: `lwsAgentsx${actions.join('')}`, userId: 'usersx1', storage: S, scopes, actions: actions.map(a => a === 'modify' ? 'update' : a), expiresAt: Date.now() + 3600000 });
+  return value;
+}
+
+test('each operation checks its own action: read, create, update, delete', async () => {
+  const ctx = world();
+  // An agent approved for [read, create] has items:write, but may not update or delete.
+  const readCreate = withActions(ctx, ['read', 'create']);
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { token: readCreate })).status, 200);
+  const created = await call(ctx, '/listsxown/', { method: 'POST', token: readCreate, headers: json, body: { name: 'Eggs' } });
+  assert.equal(created.status, 201);
+  assert.equal((await created.json()).name, 'Eggs', 'with read, the new item is the body');
+  for (const [method, headers, body] of [['PATCH', merge, { name: 'x' }], ['PATCH', jsonPatch, [{ op: 'replace', path: '/name', value: 'x' }]], ['PUT', json, { name: 'x' }], ['DELETE', {}, undefined]]) {
+    const refused = await call(ctx, '/listsxown/itemsxmilk', { method, token: readCreate, headers, body });
+    assert.equal(refused.status, 403, method);
+    assert.match(refused.headers.get('WWW-Authenticate'), /error="insufficient_scope"/, method);
+  }
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk.meta', { method: 'PATCH', token: readCreate, headers: jsonPatch, body: [] })).status, 403, 'a linkset PATCH is an update');
+  assert.equal(ctx.rows.items.find(i => i._id === 'itemsxmilk').name, 'Milk');
+
+  // Without read: nothing to read, and writes answer without a body.
+  const writeOnly = withActions(ctx, ['create', 'update', 'delete'], 'lwsat_write-only');
+  for (const path of ['/', '/listsxown/', '/listsxown/itemsxmilk', '/listsxown/itemsxmilk.meta']) {
+    assert.equal((await call(ctx, path, { token: writeOnly })).status, 403, path);
+  }
+  const blind = await call(ctx, '/listsxown/', { method: 'POST', token: writeOnly, headers: json, body: { name: 'Jam' } });
+  assert.equal(blind.status, 201);
+  assert.ok(blind.headers.get('Location'));
+  assert.match(blind.headers.get('ETag'), /^"[0-9a-f]{32}"$/);
+  assert.equal(blind.headers.get('Content-Type'), null);
+  assert.equal(await blind.text(), '');
+  const updated = await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', token: writeOnly, headers: merge, body: { name: 'Oat milk' } });
+  assert.equal(updated.status, 204);
+  assert.equal(await updated.text(), '');
+  assert.match(updated.headers.get('Cache-Control'), /no-transform/);
+  const etag = updated.headers.get('ETag');
+  assert.equal(etag, (await call(ctx, '/listsxown/itemsxmilk')).headers.get('ETag'), 'the ETag of the new representation');
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', token: writeOnly, headers: { ...merge, 'If-Match': etag }, body: { priority: 'low' } })).status, 204);
+  // A JSON Patch test reads the item: refused without read, whatever it would find.
+  const probe = await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', token: writeOnly, headers: jsonPatch, body: [{ op: 'test', path: '/description', value: 'Oat' }, { op: 'replace', path: '/name', value: 'x' }] });
+  assert.equal(probe.status, 403);
+  assert.equal(ctx.rows.items.find(i => i._id === 'itemsxmilk').name, 'Oat milk');
+  assert.equal((await call(ctx, '/listsxown/itemsxbread', { method: 'DELETE', token: writeOnly })).status, 204);
+
+  // `modify` is `update`.
+  const modify = withActions(ctx, ['read', 'modify'], 'lwsat_modify');
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', token: modify, headers: merge, body: { name: 'Milk' } })).status, 200);
+  assert.equal((await call(ctx, '/listsxown/', { method: 'POST', token: modify, headers: json, body: { name: 'x' } })).status, 403);
+
+  // Fail closed: a token that records no actions grants none, and never more than the agent holds now.
+  delete ctx.rows.lwsAccessTokens[0].actions;
+  assert.equal((await call(ctx, '/')).status, 403);
+  ctx.rows.lwsAccessTokens[0].actions = ALL;
+  ctx.rows.lwsAgents[0].actions = ['read'];
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'DELETE' })).status, 403);
 });
 
 test('JSON Patch and merge patch, by the RFCs', () => {

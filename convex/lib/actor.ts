@@ -6,6 +6,7 @@ import { AuthError } from "./auth";
 import { extractTokenFromRequest } from "./jwt";
 import { hasScope, hashApiKey, type Scope } from "./apiKeyHelpers";
 import { LWS_ACCESS_TOKEN_PREFIX } from "./lwsTokens";
+import { canonicalActions, scopesForActions, type CanonicalAction } from "./lwsAccess";
 import type { Doc } from "../_generated/dataModel";
 
 /** `agentToken` is an LWS access token (`lwsat_…`, convex/lib/lwsTokens.ts), never a session JWT.
@@ -69,7 +70,7 @@ export async function authenticateAgentToken(
   ctx: QueryCtx | MutationCtx,
   agentToken: string,
   allowDeletingAccount = false,
-): Promise<{ actor: ResolvedActor; token: Doc<"lwsAccessTokens">; agent: Doc<"lwsAgents"> }> {
+): Promise<{ actor: ResolvedActor; token: Doc<"lwsAccessTokens">; agent: Doc<"lwsAgents">; actions: CanonicalAction[] }> {
   if (!agentToken.startsWith(LWS_ACCESS_TOKEN_PREFIX)) throw new AuthError("Invalid access token", "INVALID_TOKEN");
   const tokenHash = await hashApiKey(agentToken);
   const token = await ctx.db.query("lwsAccessTokens").withIndex("by_hash", q => q.eq("tokenHash", tokenHash)).first();
@@ -80,12 +81,16 @@ export async function authenticateAgentToken(
   // and must still be the account the agent was approved for.
   const user = await delegatingUser(ctx, agent.ownerDid, allowDeletingAccount);
   if (user._id !== agent.userId) throw new AuthError("User unavailable", "UNAUTHORIZED");
-  // The token's scopes were the agent's when issued; never more than the agent's now.
-  const scopes = agent.scopes.filter(scope => token.scopes.includes(scope));
+  // The token's actions were the agent's (or fewer) when issued; never more
+  // than the agent's now. A token that records no actions grants none (fail
+  // closed). Scopes, which the app's operations check, follow from the actions.
+  const actions = canonicalActions(agent.actions).filter(action => (token.actions ?? []).includes(action));
+  const scopes: string[] = scopesForActions(actions).filter(scope => agent.scopes.includes(scope) && token.scopes.includes(scope));
   return {
     actor: { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes, viaApiKey: true, credential: { kind: "agent", id: agent._id } },
     token,
     agent,
+    actions,
   };
 }
 

@@ -17,12 +17,11 @@ import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from
 import type { Doc, Id } from "./_generated/dataModel";
 import { authenticateAgentToken, type ResolvedActor } from "./lib/actor";
 import type { ActorCtx } from "./lib/authenticated";
-import { hasScope, type Scope } from "./lib/apiKeyHelpers";
 import { authorizeResources } from "./lib/permissions";
 import { authErrorData } from "./lib/authError";
 import { isNote } from "./lib/noteBody";
 import { accessRequestsUri, storageUri } from "./lib/lwsUrls";
-import { LWS_JSON } from "./lib/lwsAccess";
+import { LWS_JSON, type CanonicalAction } from "./lib/lwsAccess";
 import {
   applyJsonPatch, entityTag, evaluatePreconditions, hasPreconditions, itemDocument, itemModified, jsonEqual,
   linksetDocument, listContainerDocument, listModified, lwsFailure, mergePatch, notFound, parseItemInput,
@@ -44,13 +43,20 @@ const preconditions = v.object({
 });
 
 export type Representation = Validators & { contentType: string; body: string };
+/**
+ * A write's result. `readable` is whether the agent may also read: if not,
+ * `body` is empty and the response carries none (204, or 201 without a body).
+ */
+export type WriteResult = Representation & { readable: boolean };
 
 /**
- * The agent behind a token, for this storage, with this scope. A token for
- * another storage fails audience validation (LWS Authorization "Validation"):
- * 401 invalid_token, like an unknown one.
+ * The agent behind a token, for this storage, holding this action. A token
+ * for another storage fails audience validation (LWS Authorization
+ * "Validation"): 401 invalid_token, like an unknown one. Each operation names
+ * the one action it needs: every read `read`, POST `create`, PUT and PATCH
+ * `update` (`modify` is the same action), DELETE `delete`.
  */
-async function agentFor(ctx: QueryCtx | MutationCtx, agentToken: string, userPath: string, scope: Scope) {
+async function agentFor(ctx: QueryCtx | MutationCtx, agentToken: string, userPath: string, action: CanonicalAction) {
   let resolved;
   try {
     resolved = await authenticateAgentToken(ctx, agentToken);
@@ -60,9 +66,13 @@ async function agentFor(ctx: QueryCtx | MutationCtx, agentToken: string, userPat
   }
   const storage = storageUri(userPath);
   if (resolved.token.storage !== storage) throw lwsFailure(401, "Invalid access token", "The token is for another storage", "invalid_token");
-  if (!hasScope(resolved.actor.scopes, scope)) throw lwsFailure(403, "Insufficient scope", `This needs ${scope}`, "insufficient_scope");
-  return { ...resolved, storage };
+  if (!resolved.actions.includes(action)) throw lwsFailure(403, "Insufficient scope", `This needs the ${action} action`, "insufficient_scope");
+  return { ...resolved, storage, canRead: resolved.actions.includes("read") };
 }
+
+/** A write's representation, for an agent that may read it; otherwise only its validators. */
+const writeResult = (representation: Representation, readable: boolean): WriteResult =>
+  readable ? { ...representation, readable } : { ...representation, body: "", readable };
 
 /** One of the user's own lists, not a note; anything else is indistinguishable from none. */
 async function ownList(ctx: QueryCtx | MutationCtx, actor: ResolvedActor, rawId: string): Promise<Doc<"lists">> {
@@ -129,8 +139,6 @@ function resourceTarget(subpath: string): ResourceTarget & { linkset: boolean } 
   return target;
 }
 
-const readScope = (target: ResourceTarget): Scope => target.kind === "item" ? "items:read" : "lists:read";
-
 function requirePreconditions(p: Preconditions, current: Validators) {
   if (evaluatePreconditions(p, current, false) !== "proceed") throw lwsFailure(412, "Precondition failed", "The resource has changed");
 }
@@ -158,7 +166,7 @@ export const read = internalQuery({
   args: { agentToken: v.string(), userPath: v.string(), subpath: v.string() },
   handler: async (ctx, args): Promise<Representation> => {
     const target = resourceTarget(args.subpath);
-    const { actor, storage } = await agentFor(ctx, args.agentToken, args.userPath, readScope(target));
+    const { actor, storage } = await agentFor(ctx, args.agentToken, args.userPath, "read");
     const found = await resource(ctx, storage, actor, target);
     if (!target.linkset) return found.representation;
     return json(LINKSET_JSON, linksetDocument(storage, target), found.representation.lastModified, false);
@@ -175,12 +183,14 @@ export const patchLinkset = internalQuery({
   handler: async (ctx, args): Promise<Representation> => {
     const target = resourceTarget(args.subpath);
     if (!target.linkset) throw notFound();
-    const { actor, storage } = await agentFor(ctx, args.agentToken, args.userPath, "items:write");
+    const { actor, storage, canRead } = await agentFor(ctx, args.agentToken, args.userPath, "update");
     const found = await resource(ctx, storage, actor, target);
     const document = linksetDocument(storage, target);
     const current = await json(LINKSET_JSON, document, found.representation.lastModified, false);
     requirePreconditions(args.preconditions, current);
-    const patched = applyJsonPatch(document, parseBody(args.patch));
+    const patch = parseBody(args.patch);
+    requireReadForTests(patch, canRead);
+    const patched = applyJsonPatch(document, patch);
     if (!patched.ok) throw lwsFailure(patched.status, patched.status === 400 ? "Invalid patch" : "Patch does not apply", patched.detail);
     if (!jsonEqual(patched.value, document)) throw lwsFailure(409, "Links are server-managed", "boop doesn't allow clients to change any link, including up");
     return current;
@@ -189,6 +199,14 @@ export const patchLinkset = internalQuery({
 
 function parseBody(text: string): unknown {
   try { return JSON.parse(text); } catch { throw lwsFailure(400, "Invalid JSON", "The body is not JSON"); }
+}
+
+/** A JSON Patch `test` reads the document: an agent without `read` may not use one. */
+function requireReadForTests(patch: unknown, canRead: boolean) {
+  if (canRead || !Array.isArray(patch)) return;
+  if (patch.some(op => typeof op === "object" && op !== null && (op as { op?: unknown }).op === "test")) {
+    throw lwsFailure(403, "Insufficient scope", "A test operation needs the read action", "insufficient_scope");
+  }
 }
 
 /** Check a parent named at creation: an item of the same list, itself top-level (items nest one level). */
@@ -203,10 +221,10 @@ async function checkParent(ctx: MutationCtx, list: Doc<"lists">, rawId: string):
 /** POST B/lws/{u}/{listId}/: create an item. Returns its URI and representation. */
 export const createItem = internalMutation({
   args: { agentToken: v.string(), userPath: v.string(), subpath: v.string(), body: v.string(), preconditions },
-  handler: async (ctx, args): Promise<Representation & { location: string; listId: string; itemId: string }> => {
+  handler: async (ctx, args): Promise<WriteResult & { location: string; listId: string; itemId: string }> => {
     const target = resourceTarget(args.subpath);
     if (target.kind !== "list" || target.linkset) throw notFound();
-    const { actor, agent, storage } = await agentFor(ctx, args.agentToken, args.userPath, "items:write");
+    const { actor, agent, storage, canRead } = await agentFor(ctx, args.agentToken, args.userPath, "create");
     const list = await ownList(ctx, actor, target.listId);
     if (hasPreconditions(args.preconditions)) requirePreconditions(args.preconditions, await listRepresentation(ctx, storage, list));
     const input = parseItemInput(parseBody(args.body), listUri(storage, list._id));
@@ -225,7 +243,7 @@ export const createItem = internalMutation({
     if (longDescription) await updateItemOperation(actorCtx, { itemId, description: fields.description });
     if (fields.checked) await checkItemOperation(actorCtx, { itemId, checkedAt: now });
     const item = (await ctx.db.get(itemId))!;
-    return { ...await itemRepresentation(storage, item), location: itemUri(storage, list._id, itemId), listId: list._id, itemId };
+    return { ...writeResult(await itemRepresentation(storage, item), canRead), location: itemUri(storage, list._id, itemId), listId: list._id, itemId };
   },
 });
 
@@ -236,10 +254,10 @@ export const writeItem = internalMutation({
     mode: v.union(v.literal("put"), v.literal("merge-patch"), v.literal("json-patch")),
     body: v.string(), preconditions,
   },
-  handler: async (ctx, args): Promise<Representation> => {
+  handler: async (ctx, args): Promise<WriteResult> => {
     const target = resourceTarget(args.subpath);
     if (target.kind !== "item" || target.linkset) throw notFound();
-    const { actor, agent, storage } = await agentFor(ctx, args.agentToken, args.userPath, "items:write");
+    const { actor, agent, storage, canRead } = await agentFor(ctx, args.agentToken, args.userPath, "update");
     const list = await ownList(ctx, actor, target.listId);
     const item = await ownItem(ctx, list, target.itemId);
     requirePreconditions(args.preconditions, await itemRepresentation(storage, item));
@@ -249,6 +267,7 @@ export const writeItem = internalMutation({
     let next: unknown = body;
     if (args.mode === "merge-patch") next = mergePatch(current, body);
     if (args.mode === "json-patch") {
+      requireReadForTests(body, canRead);
       const patched = applyJsonPatch(current, body);
       if (!patched.ok) throw lwsFailure(patched.status, patched.status === 400 ? "Invalid patch" : "Patch does not apply", patched.detail);
       next = patched.value;
@@ -268,7 +287,7 @@ export const writeItem = internalMutation({
     if (!sameRecurrence(fields.recurrence, item.recurrence)) { if (fields.recurrence === undefined) update.clearRecurrence = true; else update.recurrence = fields.recurrence; }
     const detailsChange = Object.keys(update).length > 1;
     const checkChange = fields.checked !== item.checked;
-    if (!detailsChange && !checkChange) return itemRepresentation(storage, item);
+    if (!detailsChange && !checkChange) return writeResult(await itemRepresentation(storage, item), canRead);
 
     const actorCtx = await actorContext(ctx, actor, agent, args.agentToken);
     if (detailsChange) await updateItemOperation(actorCtx, update);
@@ -276,7 +295,7 @@ export const writeItem = internalMutation({
       if (fields.checked) await checkItemOperation(actorCtx, { itemId: item._id, checkedAt: Date.now() });
       else await uncheckItemOperation(actorCtx, { itemId: item._id });
     }
-    return itemRepresentation(storage, (await ctx.db.get(item._id))!);
+    return writeResult(await itemRepresentation(storage, (await ctx.db.get(item._id))!), canRead);
   },
 });
 
@@ -286,7 +305,7 @@ export const deleteItem = internalMutation({
   handler: async (ctx, args): Promise<null> => {
     const target = resourceTarget(args.subpath);
     if (target.kind !== "item" || target.linkset) throw notFound();
-    const { actor, agent, storage } = await agentFor(ctx, args.agentToken, args.userPath, "items:write");
+    const { actor, agent, storage } = await agentFor(ctx, args.agentToken, args.userPath, "delete");
     const list = await ownList(ctx, actor, target.listId);
     const item = await ownItem(ctx, list, target.itemId);
     requirePreconditions(args.preconditions, await itemRepresentation(storage, item));

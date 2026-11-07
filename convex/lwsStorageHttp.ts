@@ -26,7 +26,7 @@ import {
   JSON_MEDIA, JSON_PATCH, MAX_STORAGE_BODY_BYTES, MERGE_PATCH, LWS_NS,
   type Preconditions, type StorageTarget,
 } from "./lib/lwsStorage";
-import type { Representation } from "./lwsStorage";
+import type { Representation, WriteResult } from "./lwsStorage";
 
 type Headers = Record<string, string>;
 
@@ -195,12 +195,13 @@ export const lwsStorage = httpAction(async (ctx, request) => {
     if (method === "POST") {
       const created = await ctx.runMutation(internal.lwsStorage.createItem, { agentToken, userPath, subpath, body, preconditions });
       const itemTarget = { kind: "item" as const, listId: created.listId, itemId: created.itemId, linkset: false };
-      return new Response(created.body, {
+      // Without `read`, the agent gets where the item is and its validators, not its content.
+      return new Response(created.readable ? created.body : null, {
         status: 201,
         headers: {
           ...cors(request),
           ...capabilityHeaders(itemTarget),
-          "Content-Type": created.contentType,
+          ...(created.readable ? { "Content-Type": created.contentType } : {}),
           Location: created.location,
           "Content-Location": created.location,
           ETag: created.etag,
@@ -215,7 +216,16 @@ export const lwsStorage = httpAction(async (ctx, request) => {
       return new Response(null, { status: 204, headers: { ...cors(request), ...capabilities, ...storageLink } });
     }
     const mode = method === "PUT" ? "put" as const : type === MERGE_PATCH ? "merge-patch" as const : "json-patch" as const;
-    return respond(await ctx.runMutation(internal.lwsStorage.writeItem, { agentToken, userPath, subpath, mode, body, preconditions }));
+    const written: WriteResult = await ctx.runMutation(internal.lwsStorage.writeItem, { agentToken, userPath, subpath, mode, body, preconditions });
+    if (written.readable) return respond(written);
+    // Without `read`: 204 with the new validators, so a later write can be conditional.
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...cors(request), ...capabilities, ETag: written.etag, "Last-Modified": new Date(written.lastModified).toUTCString(),
+        Link: resourceLinks(storage, target).join(", "), "Cache-Control": representationCacheControl(target),
+      },
+    });
   } catch (error) {
     const lws = lwsFailureData(error);
     if (lws) {
