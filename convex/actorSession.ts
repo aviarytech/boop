@@ -9,7 +9,7 @@ import { hashApiKey } from "./lib/apiKeyHelpers";
 import { AuthError } from "./lib/auth";
 
 export const resolve = internalQuery({
-  args: { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) },
+  args: { authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()) },
   handler: (ctx, args): Promise<ResolvedActor> => authenticate(ctx, args),
 });
 
@@ -82,7 +82,7 @@ export const identity = internalQuery({
 
 export const authorize = internalQuery({
   args: {
-    authToken: v.optional(v.string()), apiKey: v.optional(v.string()),
+    authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()),
     authority: v.union(v.literal("read"), v.literal("edit"), v.literal("owner")),
     scope: v.union(v.literal("lists:read"), v.literal("items:read"), v.literal("items:write"), v.literal("*")),
     resources: v.object({

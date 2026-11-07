@@ -65,7 +65,7 @@ function sample(t) {
     default: return {};
   }
 }
-const nonBusiness = new Set(['authToken', 'apiKey', ...identityAssertionFields]);
+const nonBusiness = new Set(['authToken', 'apiKey', 'agentToken', ...identityAssertionFields]);
 function businessArgs(args) {
   return Object.fromEntries(Object.entries(args.value ?? {}).filter(([k]) => !nonBusiness.has(k)).map(([k, f]) => [k, sample(f.fieldType)]));
 }
@@ -140,7 +140,7 @@ function fixture() {
 }
 
 // Resolving a credential reads only these; anything else before rejection is a leak.
-const AUTH_TABLES = new Set(['accessSessions', 'agentApiKeys', 'users']);
+const AUTH_TABLES = new Set(['accessSessions', 'agentApiKeys', 'lwsAccessTokens', 'lwsAgents', 'users']);
 async function expectRejected(registration, extra, pattern) {
   const ctx = fixture();
   const args = { ...registration.business, ...extra };
@@ -163,14 +163,14 @@ test('every public registration is classified', () => {
     if (PUBLIC[r.id] || SELF_AUTHENTICATED.has(r.id) || REJECTING.has(r.id)) continue;
     // Everything else must come from the actor wrappers: they take credentials and
     // only the legacy, non-authoritative identity assertion fields.
-    assert.ok(r.fields.includes('authToken') && r.fields.includes('apiKey'), `${r.id} is public but not authenticated`);
+    assert.ok(r.fields.includes('authToken') && r.fields.includes('apiKey') && r.fields.includes('agentToken'), `${r.id} is public but not authenticated`);
     for (const field of identityAssertionFields) assert.ok(r.fields.includes(field), `${r.id} is missing assertion validator ${field}`);
   }
 });
 
 test('intentionally public endpoints accept no acting identity', () => {
   for (const r of registrations.filter(r => PUBLIC[r.id])) {
-    for (const field of [...identityAssertionFields, 'authToken', 'apiKey', 'userId']) {
+    for (const field of [...identityAssertionFields, 'authToken', 'apiKey', 'agentToken', 'userId']) {
       assert.ok(!r.fields.includes(field), `${r.id} accepts ${field}`);
     }
   }
@@ -187,6 +187,9 @@ test('anonymous callers are rejected by every non-public registration before pri
 test('unknown API keys and asserted owner identities never authenticate', async () => {
   for (const r of registrations.filter(r => r.fields.includes('apiKey') && !SELF_AUTHENTICATED.has(r.id))) {
     await expectRejected(r, { apiKey: 'forged-key' }, /invalid api key/i);
+    await expectRejected(r, { agentToken: 'lwsat_forged' }, /invalid access token/i);
+    // An LWS access token is a credential of its own: never combined with a session or key.
+    await expectRejected(r, { agentToken: 'lwsat_forged', authToken: strangerToken }, /invalid access token/i);
     // A stranger asserting the owner's current or legacy DID in every legacy field.
     for (const did of ['did:owner', 'did:legacy']) {
       const assertions = Object.fromEntries(identityAssertionFields.map(f => [f, did]));
@@ -208,6 +211,10 @@ const PUBLIC_ROUTES = new Set([
   'POST /auth/initiate', 'POST /auth/verify', 'POST /auth/logout', 'POST /api/stripe/webhook',
   'GET /api/did/log', 'GET /api/sites/resolve-host', 'GET /api/sites/resolve-asset', 'GET /health',
   'GET /d/*', 'GET /api/attachments/download',
+  // LWS agent enrollment and token exchange authenticate a self-signed JWT
+  // inside their internal mutations; scripts/lws-agent-auth.test.mjs covers them.
+  'POST /lws-access/requests', 'GET /lws-access/requests/*', 'POST /oauth/token',
+  'GET /.well-known/lws-configuration', 'GET /.well-known/oauth-protected-resource/lws/*',
 ]);
 test('every non-public HTTP route rejects anonymous, forged-key and asserted-identity requests without writing', async () => {
   const routes = modules.http.default.getRoutes().filter(([, method]) => method !== 'OPTIONS');

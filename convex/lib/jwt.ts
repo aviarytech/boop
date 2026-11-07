@@ -5,6 +5,7 @@
  */
 
 import * as jose from "jose";
+import { LWS_ACCESS_TOKEN_PREFIX } from "./lwsTokens";
 
 /**
  * Result of a successful token verification.
@@ -126,6 +127,9 @@ export function extractTokenFromRequest(request: Request): string | null {
   // Check Authorization header first
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
+    // An LWS access token (lib/lwsTokens.ts) is an agent credential, never a
+    // session: no session lookup, and no falling back to a cookie either.
+    if (authHeader.slice(7).startsWith(LWS_ACCESS_TOKEN_PREFIX)) return null;
     return authHeader.slice(7); // Remove "Bearer " prefix
   }
 

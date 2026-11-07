@@ -26,8 +26,8 @@ export const ACTION_SIGNING_KEY_FRAGMENT = "orig-1";
 // Domain-separates action signatures from anything else the same key signs.
 const signingDomain = (version: number) => `${ACTION_RECORD_SCHEMA}/v${version}`;
 
-/** Row identity of the authenticated session or API key; never a token or hash. */
-export type ActionCredential = { kind: "session" | "apiKey"; id: string };
+/** Row identity of the authenticated session, API key or LWS agent; never a token or hash. */
+export type ActionCredential = { kind: "session" | "apiKey" | "agent"; id: string };
 
 /**
  * What happened, and to what, in the words the author can sign. The subject

@@ -12,7 +12,7 @@ import { authenticate, requireScope, type ResolvedActor, type Credentials } from
 import { authorizeResources, type ListResources, type ListAuthority } from "./permissions";
 import { AuthError } from "./auth";
 
-const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) };
+const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()) };
 // Temporary wire compatibility only. These assertions never grant access. Keep
 // endpoint names and these fields until deployed browser/mobile versions are confirmed.
 const optionalDid = v.optional(v.string());
@@ -51,7 +51,7 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
       } else {
         const resources = definition.resources(args);
         await (ctx as ActionCtx).runQuery(internal.actorSession.authorize, {
-          authToken: args.authToken, apiKey: args.apiKey,
+          authToken: args.authToken, apiKey: args.apiKey, agentToken: args.agentToken,
           authority: definition.authority ?? "read",
           scope: definition.scope,
           resources: {
@@ -65,7 +65,7 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
       // Only declared business arguments reach operations; credentials and old
       // identity assertions cannot be accidentally persisted via an args spread.
       const businessArgs = Object.fromEntries(Object.keys(definition.args).map(key => [key, (args as Record<string, unknown>)[key]])) as ObjectType<A>;
-      return definition.handler(Object.assign({}, ctx, { actor, credentials: { authToken: args.authToken, apiKey: args.apiKey } }), businessArgs);
+      return definition.handler(Object.assign({}, ctx, { actor, credentials: { authToken: args.authToken, apiKey: args.apiKey, agentToken: args.agentToken } }), businessArgs);
     },
   };
 }
@@ -97,6 +97,6 @@ export function actorQuery<A extends PropertyValidators, R>(definition: Definiti
   return { public: query(config), internal: internalQuery(config) };
 }
 export function actorAction<A extends PropertyValidators, R>(definition: Definition<ActionCtx, A, R>) {
-  const config = prepare({ ...definition, authority: definition.authority ?? "edit" }, (ctx, args): Promise<ResolvedActor> => ctx.runQuery(internal.actorSession.resolve, { authToken: args.authToken, apiKey: args.apiKey }));
+  const config = prepare({ ...definition, authority: definition.authority ?? "edit" }, (ctx, args): Promise<ResolvedActor> => ctx.runQuery(internal.actorSession.resolve, { authToken: args.authToken, apiKey: args.apiKey, agentToken: args.agentToken }));
   return { public: action(config), internal: internalAction(config) };
 }

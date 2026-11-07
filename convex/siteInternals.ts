@@ -5,7 +5,7 @@ import { isResourceOwner } from "./lib/permissions";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
-const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) };
+const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()) };
 
 async function requireSiteWriter(ctx: MutationCtx, args: Credentials, ownerDid: string) {
   // Re-resolve credentials in the write transaction: a revoked key/session or
