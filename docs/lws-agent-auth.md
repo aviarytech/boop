@@ -143,3 +143,188 @@ Where the server (phase 1) fills in what the sections above leave open:
   (RFC 8693 §2.2.2); a wrong `resource` is `invalid_target`.
 - **Owner operations refuse every delegated credential**, not only those
   without `*`: an API key or agent never approves, denies or revokes.
+- **Agent tokens are good on LWS storage only.** `requestCredentials`
+  (`convex/lib/actor.ts`) never reads a `Bearer lwsat_…`, so on `/api/*` and
+  `/d/*` it is no credential and the answer is `401`. The operation wrappers
+  (`lib/authenticated.ts`), `actorSession` and `siteInternals` don't accept
+  `agentToken` either, so it can't be passed to a public Convex function.
+  Only the storage operations (`convex/lwsStorage.ts`) call
+  `authenticateAgentToken`.
+- **An agent reaches only the user's own lists.** `authorizeResources` refuses
+  an agent credential every list whose `ownerDid` isn't the user's (current or
+  legacy) DID, at every authority. So lists shared with, bookmarked by or
+  published to the user are out of reach, even though the user can read them.
+
+## Storage
+
+Served by `convex/lwsStorageHttp.ts` (routed at the `/lws/` prefix for GET,
+POST, PUT, PATCH, DELETE and OPTIONS; HEAD goes to the GET route). The
+operations are in `convex/lwsStorage.ts` and the pure parts are in
+`convex/lib/lwsStorage.ts`.
+
+### Resources
+
+| URL | Type | Methods | Body |
+|---|---|---|---|
+| `B/lws/{u}` | storage description | GET HEAD OPTIONS | `application/lws+cid`: `StorageRoot` and `AccessRequestService` services, no `capability` |
+| `B/lws/{u}/` | root `Container` | GET HEAD OPTIONS | `application/lws+json`: the user's own lists, not notes, as `Container` members with `title` and `modified` |
+| `B/lws/{u}/{listId}/` | list `Container` | GET HEAD POST OPTIONS | `application/lws+json`: `title`, then the items in list order as `DataResource` members with `format`, `size` and `modified` |
+| `B/lws/{u}/{listId}/{itemId}` | item `DataResource` | GET HEAD PUT PATCH DELETE OPTIONS | `application/json` (below) |
+| `<any of the three above>.meta` | linkset | GET HEAD PATCH OPTIONS | `application/linkset+json`: `up`, `type` and `…#storage` links |
+
+An item:
+
+```json
+{
+  "id": "B/lws/{u}/{listId}/{itemId}",
+  "name": "Milk", "checked": false, "checkedAt": null,
+  "description": null, "dueDate": "2026-11-20T00:00:00.000Z", "url": null,
+  "priority": "high", "recurrence": { "frequency": "weekly", "interval": 2 },
+  "parent": null, "createdAt": "…", "updatedAt": "…"
+}
+```
+
+Every member is always present, with `null` when it has no value. `id`,
+`checkedAt`, `createdAt` and `updatedAt` are read-only, and so is `parent`
+after creation. In a PUT or a patched document they may be left out; if
+present, they must equal the current values (else `409`). Unknown members are
+`400`. Dates are ISO 8601. `recurrence.interval` is an integer from 1 to 1000.
+
+Every response carries `Allow` and the `…#storage` link. Resource GET/HEAD
+responses also carry `ETag`, `Last-Modified`, `Link` (`linkset`, `up` except
+on the root, `type`), `Accept-Ranges`, and where they apply `Accept-Patch` and
+`Accept-Post`. Errors are RFC 9457 problem JSON.
+
+### Writes
+
+- **POST to a list** creates an item from `application/json`; `parent` may
+  name a top-level item of the same list. The answer is `201` with
+  `Location`, `Content-Location`, `ETag`, the links, and the new item as the
+  body. `Slug` is ignored. Setting `checked: true` checks the item in the same
+  transaction.
+- **PUT** (`application/json`) replaces an item: a writable member that's left
+  out is cleared, and `checked` defaults to `false`.
+- **PATCH** takes `application/merge-patch+json` (RFC 7396) or
+  `application/json-patch+json` (RFC 6902, which LWS requires). The patch
+  applies to the item's JSON, and the result is validated like a PUT. PUT and
+  PATCH answer `200` with the new representation and `ETag`. A write that
+  changes nothing writes nothing.
+- **DELETE** answers `204`. An item with sub-items is a `409`: delete those
+  first.
+- Writes run the app's own operations from `convex/items.ts` (`addItem`,
+  `updateItem`, `checkItem`, `uncheckItem`, `removeItem`), so they behave the
+  same way. Checking a recurring item creates the next one. Each write makes
+  action records (unsigned), notifications and assignment rows.
+- **Attribution.** `createdByDid` and `checkedByDid` are the user's DID, since
+  the agent acts as the user. The action records' attested `credential` is
+  `{kind: "agent", id: <lwsAgents id>}`, which names the agent and its `kid`.
+  So are the `credential` fields of activity rows.
+- `lastUsedAt` is set at token exchange, and by writes at most once a minute.
+  Reads run as queries and don't set it.
+
+### ETags and preconditions
+
+The ETag of every representation is a strong validator: the first 128 bits of
+the SHA-256 of its exact bytes. It doesn't rely on `updatedAt`, which older
+items don't have. A container's ETag therefore changes when a member is added,
+changed or deleted.
+
+Preconditions follow RFC 9110 13.2.2: `If-Match`, then `If-Unmodified-Since`,
+then `If-None-Match`, then (GET/HEAD) `If-Modified-Since`. Writes evaluate them
+inside the mutation that writes, against the representation as that
+transaction reads it. A concurrent write conflicts with the read, so Convex
+retries the mutation, and the retry sees the new ETag and answers `412`. A
+failed request throws, so nothing it did is committed. For POST, the
+preconditions apply to the list container's ETag. On GET/HEAD, a match is
+`304`.
+
+`If-Match` is not required: update-resource.md says clients SHOULD send it,
+so an unconditional write is accepted, and `428` is never sent.
+
+### Auth
+
+- The description is public. Everything else takes `Authorization: Bearer
+  lwsat_…`.
+- With no credential, the answer is `401` with `WWW-Authenticate: Bearer
+  resource_metadata="…"` and the storage `Link`. A bad, expired or revoked
+  token adds `error="invalid_token"`.
+- A token issued for another storage fails the spec's audience validation, so
+  it gets the same `401 invalid_token`.
+- Missing scope is `403` with `error="insufficient_scope"`. Containers and
+  linksets need `lists:read` to read; items need `items:read`; every write,
+  including PATCH on a linkset, needs `items:write`.
+- A list or item that doesn't exist, isn't the user's own, is a note, or whose
+  id isn't a valid Convex id for its table (`normalizeId`) is `404`. So is an
+  item addressed through another list.
+
+### Where boop departs from the spec, and why
+
+- **Wrong-storage token → `401`, not `403`/`404`.** The Authorization
+  section's audience check is a MUST with a `401`.
+- **Opaque access tokens** (phase 1): the storage server looks them up, so the
+  JWT signature, issuer and temporal checks don't apply.
+- **Content negotiation.** Containers are only `application/lws+json`, and
+  `Accept` is ignored. No Turtle or JSON-LD profile is offered, which the
+  spec permits, so there is no `Vary: Accept`.
+- **No pagination** (a SHOULD). The full listing is returned every time.
+- **Ranges.** A single `bytes` range is served on items, linksets and the
+  description (`206`, `416`, `If-Range`). Several ranges get the whole
+  representation, which RFC 9110 allows. Container listings send
+  `Accept-Ranges: none` and are always whole.
+- **Linksets are read-only.** All links are server-managed, which metadata.md
+  allows. PATCH with JSON Patch is supported, as required, but succeeds
+  (`204`) only if it changes nothing; any change, including moving `up`, is
+  `409`. PUT is `405`. There is no `MoveResource` capability, so the
+  description advertises none.
+- **No user-defined metadata.** `Link` headers on POST/PUT/PATCH are ignored,
+  and `Prefer: set-linkset` is ignored, as update-resource.md allows.
+- **No containers are created or changed.** POST to the root is `405`. POST to
+  a list with `Link: <…lws#Container>; rel="type"` is `409`. PUT, PATCH and
+  DELETE on a list are `405`.
+- **Container `Last-Modified` is a lower bound.** It is the latest item or
+  list time, and a deletion leaves no time behind. So `If-Modified-Since` and
+  `If-Unmodified-Since` are not evaluated on containers; their ETags are
+  exact. Containers are sent with `Cache-Control: private, no-cache`.
+- **Root members have no `size`** (a SHOULD): it would mean serializing every
+  list.
+- **The storage description has no linkset.** It sits in no container.
+
+### curl
+
+```sh
+B=https://<deployment>.convex.site     # or LWS_BASE_URL
+U=user-xxxxxxxxxxxxxxxx
+
+# Discovery: public.
+curl -s "$B/lws/$U" | jq
+curl -si "$B/lws/$U/" | grep -iE '^(HTTP|www-authenticate|link)'   # 401 + challenge
+
+# An access token, from a JWT the agent signs with its key (see Flow, step 3).
+TOKEN=$(curl -s "$B/oauth/token" \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d subject_token_type=urn:ietf:params:oauth:token-type:jwt \
+  --data-urlencode "subject_token=$JWT" --data-urlencode "resource=$B/lws/$U" | jq -r .access_token)
+H="Authorization: Bearer $TOKEN"
+
+# The lists, and one list's items.
+curl -s -H "$H" "$B/lws/$U/" | jq '.items[] | {id, title}'
+LIST=$B/lws/$U/<listId>/
+curl -s -H "$H" "$LIST" | jq
+
+# Create an item.
+ITEM=$(curl -si -H "$H" -H 'Content-Type: application/json' \
+  -d '{"name":"Eggs","dueDate":"2026-11-20","recurrence":{"frequency":"weekly"}}' "$LIST" \
+  | awk 'tolower($1)=="location:" {print $2}' | tr -d '\r')
+
+# Check it, conditionally: the app makes next week's copy.
+ETAG=$(curl -sI -H "$H" "$ITEM" | awk 'tolower($1)=="etag:" {print $2}' | tr -d '\r')
+curl -si -X PATCH -H "$H" -H 'Content-Type: application/merge-patch+json' \
+  -H "If-Match: $ETAG" -d '{"checked":true}' "$ITEM"
+# The same ETag again is now stale: 412.
+curl -si -X PATCH -H "$H" -H 'Content-Type: application/json-patch+json' \
+  -H "If-Match: $ETAG" -d '[{"op":"replace","path":"/name","value":"Free-range eggs"}]' "$ITEM"
+
+# Delete it.
+ETAG=$(curl -sI -H "$H" "$ITEM" | awk 'tolower($1)=="etag:" {print $2}' | tr -d '\r')
+curl -si -X DELETE -H "$H" -H "If-Match: $ETAG" "$ITEM"    # 204
+```
