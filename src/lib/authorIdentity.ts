@@ -22,6 +22,8 @@ import {
 } from "./authorDid";
 import { currentWebvhDomain, domainFromDidSafe, forgetLegacyDidKey, userDidPath } from "./webvh";
 import type { EntrySummary, ListAuthor } from "./originalsSigning";
+import { AgentKeyError, publishAgentChange, type AgentKeyDeps, type AgentKeyResult, type AgentKeyStep } from "./agentKeys";
+import type { AgentMethodChange } from "../../shared/authorDid";
 
 export interface CurrentAuthor {
   subOrgId: string;
@@ -42,6 +44,40 @@ export function clearCurrentAuthor(): void {
 /** The signed-in author DID this device confirmed, or null (src/lib/actionSigning.ts). */
 export function currentAuthor(): CurrentAuthor | null {
   return current;
+}
+
+/**
+ * After this device published a DID update (src/lib/agentKeys.ts): Originals
+ * signs at the new version, with the new log as its evidence. Ignored when
+ * the update is for another DID than the cached one (an account switch).
+ */
+export function updateCurrentAuthorLog(did: string, log: string, versionId: string): void {
+  if (current?.did === did) current = { ...current, log, versionId };
+}
+
+/** Whether this device can sign a DID update now: a confirmed author and a live Turnkey session. */
+export async function agentKeySigningReady(): Promise<boolean> {
+  const author = current;
+  return !!author && (await authorSigningReady(author.subOrgId));
+}
+
+/**
+ * Add or remove an agent key in the signed-in author's DID, then sign
+ * Originals at the version that makes. Without a confirmed author (no live
+ * Turnkey session at sign-in) it throws AgentKeyError "not-ready": sign in
+ * again. `deps` defaults to the real Turnkey session and Convex URL.
+ */
+export async function changeAuthorAgentKey(
+  change: AgentMethodChange,
+  token: string,
+  onStep?: (step: AgentKeyStep) => void,
+  deps: AgentKeyDeps = { backend: turnkeyAuthorBackend(), ready: authorSigningReady, fetch: (...args) => fetch(...args), httpUrl: getConvexHttpUrl(), token },
+): Promise<AgentKeyResult> {
+  const author = current;
+  if (!author) throw new AgentKeyError("not-ready", "Sign in again to change your agents: this device hasn't confirmed your signing keys.");
+  const result = await publishAgentChange(author, change, deps, onStep);
+  updateCurrentAuthorLog(result.did, result.log, result.versionId);
+  return result;
 }
 
 /**
