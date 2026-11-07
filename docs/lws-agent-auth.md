@@ -92,11 +92,11 @@ copy is kept, unversioned, in `tmp/lws-spec/` while this is being built.
    whose scopes are the agent's, and whose credential is
    `{kind: "agent", id}`. Requests without a valid token get a `401` with
    `WWW-Authenticate: Bearer resource_metadata="…"` and the storage `Link`.
-5. **Revoke.** The app removes the method from the DID (a DID update signed by
-   the author key), then calls `revokeAgent`, which marks the row revoked and
-   deletes its tokens. If the DID update fails, the row is still revoked: the
-   token endpoint and the resource server both check the row as well as the
-   DID.
+5. **Revoke.** The app calls `revokeAgent`, which marks the row revoked and
+   deletes its tokens, and then removes the method from the DID (a DID update
+   signed by the author key). If the DID update fails, the row is still
+   revoked: the token endpoint and the resource server both check the row as
+   well as the DID. See "App" below.
 
 Action → scope: `read` → `lists:read` and `items:read`; `create`, `update`,
 `delete` → `items:write`.
@@ -115,6 +115,58 @@ also allows agent methods, each of which must:
 `authentication` is `#key-0` followed by agent methods only. A DID can have at
 most 25 agent methods. Every other rule is unchanged, and the check still
 applies to every version of the log.
+
+## App
+
+Settings → Agents (`src/components/AgentsSettings.tsx`) lists pending
+requests and approved agents (reactive `useQuery`), and shows the storage URL
+to give an agent. `B` there is `VITE_LWS_BASE_URL` if set, else the Convex
+site URL: a deployment that sets `LWS_BASE_URL` must set both.
+
+**The DID update** (`src/lib/agentKeys.ts`). It always starts from a fresh
+`GET /api/did/log`, checked with `inspectAuthorDid` against this account's
+keys. `nextAgentDocument` gives the next state, and didwebvh-ts `updateDID`
+builds the entry from it with `updateKeys` unchanged and passed explicitly
+(it writes `[]` otherwise) and no other parameters. `paths` and `portable`
+are genesis-only and untouched. The author key (`#key-0`) signs it through
+the Turnkey session with `authorUpdateSigner`. The client checks that the new
+state is exactly the planned one, appends the entry as one canonical line to
+the served bytes, re-checks the whole log, and POSTs it. A 409 (another write
+won the compare-and-swap) starts again from the new served log, once. A change
+already in the served DID publishes nothing, so a retry needs no signature.
+Afterwards the cached author (`authorIdentity.ts`) takes the new log and
+`versionId`, so Originals signs at the new version with the new log as its
+evidence. Other devices keep signing at their older version until they
+reload; the host accepts that, since the version is in the log's history.
+
+**Approve** = DID update, then `approveAccessRequest`. Progress shows
+"Signing with Turnkey" → "Saving your DID" → "Granting access". Without a
+live Turnkey session (or without an author DID confirmed this sign-in), the
+app asks the user to sign in again, as Originals signing does, and changes
+nothing. If the grant fails after the DID update, the error says so and
+Approve retries only the grant (the DID already has the key). A pending
+request whose key is already in the DID says so.
+
+**Revoke** (after a confirm) = `revokeAgent` first, so access ends even if
+Turnkey is unavailable, then the DID update that removes the key. If that
+fails, the app says access has ended but the key is still in the DID. The app
+compares `agentMethods(served DID)` with active agents and pending requests:
+any other agent method is a revoked agent's leftover key, listed with
+"Remove key from DID" to try again later.
+
+**Old builds: 426.** Builds before this change treat a DID with agent keys
+as not an author DID. `/auth/verify` now requires
+`clientCapabilities: ["agent-keys"]` in the body (`shared/clientCapabilities.ts`),
+which this build sends, and answers 426 with the existing "update or reload
+the app" message otherwise. It is the only endpoint that issues a session:
+`establish` only registers a token `/auth/verify` issued, and the 7-day
+Turnkey session refresh issues no boop session. Sessions old builds already
+hold keep working until they expire (30 days on the web; native sessions are
+persistent until revoked). Such a build that also has a live Turnkey session
+will see the DID as not an author DID and try to re-mint it; the server keeps
+the account where it is (`remintDid` skips an account that already has an
+author DID on the current domain), so nothing moves and its agents survive,
+but that build won't sign Originals until it updates.
 
 ## Implementation notes
 

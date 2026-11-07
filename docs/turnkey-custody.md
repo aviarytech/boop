@@ -22,7 +22,9 @@ Login is Turnkey's encrypted OTP flow
    (`encryptOtpCodeToBundle`). That function checks the target bundle's enclave
    signature first, so a server that substitutes its own target is refused.
 3. `/auth/verify`: Convex relays the ciphertext with `ACTIVITY_TYPE_VERIFY_OTP_V2`.
-   It refuses a plaintext `code` with 426. The verification token Turnkey
+   It refuses a plaintext `code` with 426, and so it does a body without
+   `clientCapabilities: ["agent-keys"]` (builds from before LWS agent keys,
+   `docs/lws-agent-auth.md`). The verification token Turnkey
    returns is bound to the client's session key. Only now, with the email
    verified, does a new account get a sub-org (`CREATE_SUB_ORGANIZATION_V8`
    with `disableEmailAuth`, `disableEmailRecovery`, `disableSmsAuth`).
@@ -112,9 +114,12 @@ device did not build itself.
   with witnesses, pre-rotation, deactivation, or a domain other than
   `WEBVH_DOMAIN` are refused.
 - An author DID is one where **every version**, genesis included, has exactly
-  the two keys (`#key-0` the only update key and only `authentication`,
-  `#orig-1` the only `assertionMethod`, nothing else) and both are the
-  sub-org's own. Checking only the latest version would let a genesis under
+  the two keys (`#key-0` the only update key and first in `authentication`,
+  `#orig-1` the only `assertionMethod`) and both are the sub-org's own. Besides
+  them it may list LWS agent keys (`#agent-…`, at most 25), each an Ed25519
+  Multikey referenced from `authentication` only: never an update key, never
+  in `assertionMethod`, never one of the author's keys
+  (`docs/lws-agent-auth.md`). Nothing else. Checking only the latest version would let a genesis under
   someone else's key hand over to the victim's public keys while keeping an
   assertion key of its own. Log parameters are an allowlist.
 - The server adopts or re-genesises an account only onto an author DID whose
