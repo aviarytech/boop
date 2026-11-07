@@ -103,7 +103,10 @@ copy is kept, unversioned, in `tmp/lws-spec/` while this is being built.
 **Actions are enforced one by one.** Every storage operation checks the one
 action it needs: every read (GET and HEAD on containers, items and linksets)
 needs `read`; POST needs `create`; PUT and PATCH need `update` (`modify` is
-the same action); DELETE needs `delete`. A missing action is `403` with
+the same action), and a PUT or PATCH that completes a recurring item also
+needs `create`, because completing it creates the next occurrence (the
+recurrence may be the item's or arrive in the same request); DELETE needs
+`delete`. A missing action is `403` with
 `error="insufficient_scope"`, so narrowing at approval holds. Tokens carry
 the canonical actions (`read`, `create`, `update`, `delete`); a token
 without recorded actions grants none.

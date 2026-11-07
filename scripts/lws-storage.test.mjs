@@ -718,3 +718,36 @@ test('JSON Patch and merge patch, by the RFCs', () => {
   assert.deepEqual(lib.mergePatch({ a: [1] }, { a: [2] }), { a: [2] });
   assert.deepEqual(lib.mergePatch({ a: 1 }, ['x']), ['x']);
 });
+
+test('completing a recurring item needs create as well as update (#308 review)', async () => {
+  {
+    const ctx = world();
+    ctx.rows.lwsAccessTokens[0].actions = ['update'];
+    const before = structuredClone(ctx.rows.items);
+    const response = await call(ctx, '/listsxown/itemsxbread', { method: 'PATCH', headers: merge, body: { checked: true } });
+    assert.equal(response.status, 403, 'an existing recurrence');
+    assert.deepEqual(ctx.rows.items, before, 'nothing is created or checked');
+  }
+  {
+    const ctx = world();
+    ctx.rows.lwsAccessTokens[0].actions = ['update'];
+    const before = structuredClone(ctx.rows.items);
+    const response = await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { checked: true, recurrence: { frequency: 'daily' } } });
+    assert.equal(response.status, 403, 'a recurrence added in the same request');
+    assert.deepEqual(ctx.rows.items, before, 'the recurrence is not stored either');
+  }
+  {
+    const ctx = world();
+    ctx.rows.lwsAccessTokens[0].actions = ['update'];
+    const response = await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { checked: true } });
+    assert.equal(response.status, 204, 'completing a one-off item needs only update');
+  }
+  {
+    const ctx = world();
+    ctx.rows.lwsAccessTokens[0].actions = ['update', 'create'];
+    const before = ctx.rows.items.length;
+    const response = await call(ctx, '/listsxown/itemsxbread', { method: 'PATCH', headers: merge, body: { checked: true } });
+    assert.equal(response.status, 204);
+    assert.equal(ctx.rows.items.length, before + 1, 'update and create still roll the recurrence forward');
+  }
+});

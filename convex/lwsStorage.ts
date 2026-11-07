@@ -276,7 +276,7 @@ export const writeItem = internalMutation({
   handler: async (ctx, args): Promise<WriteResult> => {
     const target = resourceTarget(args.subpath);
     if (target.kind !== "item" || target.linkset) throw notFound();
-    const { actor, agent, storage, canRead } = await agentFor(ctx, args.agentToken, args.userPath, "update");
+    const { actor, agent, actions, storage, canRead } = await agentFor(ctx, args.agentToken, args.userPath, "update");
     const list = await ownList(ctx, actor, target.listId);
     const item = await ownItem(ctx, list, target.itemId);
     requirePreconditions(args.preconditions, await itemRepresentation(storage, item));
@@ -306,6 +306,12 @@ export const writeItem = internalMutation({
     if (!sameRecurrence(fields.recurrence, item.recurrence)) { if (fields.recurrence === undefined) update.clearRecurrence = true; else update.recurrence = fields.recurrence; }
     const detailsChange = Object.keys(update).length > 1;
     const checkChange = fields.checked !== item.checked;
+    // Completing a recurring item creates its next occurrence (checkItemOperation),
+    // so it needs create as well as update, whether the recurrence was already
+    // there or arrives in this request (#308 review).
+    if (checkChange && fields.checked && fields.recurrence && !actions.includes("create")) {
+      throw lwsFailure(403, "Insufficient scope", "Completing a recurring item creates its next occurrence, which needs the create action", "insufficient_scope");
+    }
     if (!detailsChange && !checkChange) return writeResult(await itemRepresentation(storage, item), canRead);
 
     const actorCtx = await actorContext(ctx, actor, agent, args.agentToken);
