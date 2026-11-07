@@ -166,10 +166,11 @@ export const pollAccessRequestInternal = internalMutation({
       if (error instanceof LwsJwtError) return failure(401, "Invalid credential", error.message);
       throw error;
     }
-    if (!await consumeJti(ctx, claims)) return failure(401, "Invalid credential", "This jti was already used");
     const found = await ctx.db.query("lwsAccessRequests").withIndex("by_request_id", q => q.eq("requestId", args.requestId)).first();
-    // Someone else's request reads exactly like a missing one.
+    // Someone else's request reads exactly like a missing one. Neither writes
+    // anything, not even the jti: only a request's own assignee can make a row.
     if (!found || found.agentDidKey !== claims.didKey) return failure(404, "No such access request");
+    if (!await consumeJti(ctx, claims)) return failure(401, "Invalid credential", "This jti was already used");
     const row = await settleExpiry(ctx, found, now);
     let grant;
     if (row.status === "approved" && row.agentId) {
@@ -250,18 +251,37 @@ export const deleteAccessToken = internalMutation({
   },
 });
 
-/** Cron: expire undecided requests, and drop spent jtis and expired tokens a scheduled delete missed. */
+/** Decided and expired access requests are kept this long after they expire, then deleted. */
+const DECIDED_REQUEST_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const CLEANUP_BATCH = 200;
+
+/**
+ * Cron: expire undecided requests; delete decided and expired requests a
+ * month old, spent jtis, and expired tokens a scheduled delete missed. Each
+ * run does a bounded batch of each and, while any batch was full, schedules
+ * itself again at once, so a backlog drains without waiting for the cron.
+ */
 export const cleanupInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const requests = await ctx.db.query("lwsAccessRequests").withIndex("by_status_expires", q => q.eq("status", "pending").lte("expiresAt", now)).take(100);
+    const requests = await ctx.db.query("lwsAccessRequests").withIndex("by_status_expires", q => q.eq("status", "pending").lte("expiresAt", now)).take(CLEANUP_BATCH);
     for (const row of requests) await ctx.db.patch(row._id, { status: "expired" });
-    const jtis = await ctx.db.query("lwsJtis").withIndex("by_expires_at", q => q.lte("expiresAt", now)).take(500);
+    let old = 0;
+    let full = requests.length === CLEANUP_BATCH;
+    for (const status of ["approved", "denied", "expired"] as const) {
+      const rows = await ctx.db.query("lwsAccessRequests").withIndex("by_status_expires", q => q.eq("status", status).lte("expiresAt", now - DECIDED_REQUEST_RETENTION_MS)).take(CLEANUP_BATCH);
+      for (const row of rows) await ctx.db.delete(row._id);
+      old += rows.length;
+      full ||= rows.length === CLEANUP_BATCH;
+    }
+    const jtis = await ctx.db.query("lwsJtis").withIndex("by_expires_at", q => q.lte("expiresAt", now)).take(CLEANUP_BATCH);
     for (const row of jtis) await ctx.db.delete(row._id);
-    const tokens = await ctx.db.query("lwsAccessTokens").withIndex("by_expires_at", q => q.lte("expiresAt", now)).take(500);
+    const tokens = await ctx.db.query("lwsAccessTokens").withIndex("by_expires_at", q => q.lte("expiresAt", now)).take(CLEANUP_BATCH);
     for (const row of tokens) await ctx.db.delete(row._id);
-    return { requests: requests.length, jtis: jtis.length, tokens: tokens.length };
+    full ||= jtis.length === CLEANUP_BATCH || tokens.length === CLEANUP_BATCH;
+    if (full) await ctx.scheduler.runAfter(0, internal.lwsAccess.cleanupInternal, {});
+    return { requests: requests.length, old, jtis: jtis.length, tokens: tokens.length, more: full };
   },
 });
 

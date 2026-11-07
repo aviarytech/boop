@@ -387,7 +387,7 @@ function convex(rows) {
       return q;
     },
   };
-  const ctx = { rows, effects, db, scheduler: { runAt: async (...a) => { effects.push(['runAt', getFunctionName(a[1])]); }, runAfter: async () => {} } };
+  const ctx = { rows, effects, db, scheduler: { runAt: async (...a) => { effects.push(['runAt', getFunctionName(a[1])]); }, runAfter: async (_ms, ref) => { effects.push(['runAfter', getFunctionName(ref)]); } } };
   ctx.runQuery = ctx.runMutation = async (ref, args) => { const [m, f] = getFunctionName(ref).split(':'); return modules[m][f]._handler(ctx, args); };
   return ctx;
 }
@@ -465,7 +465,13 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
     headers: { Authorization: `Bearer ${signJwt(claimsFor(subject, location), secret)}` },
   }));
   assert.equal((await (await poll()).json()).status, 'pending');
+  const jtisBefore = ctx.rows.lwsJtis.length;
   assert.equal((await poll(stranger.secret, `did:key:${stranger.multikey}`)).status, 404, "another agent can't see it");
+  const unknown = await http(ctx, 'getAccessRequest', new Request(`https://deployment.convex.site/lws-access/requests/${'x'.repeat(32)}`, {
+    headers: { Authorization: `Bearer ${signJwt(claimsFor(didKey, `${B}/lws-access/requests`), agent.secret)}` },
+  }));
+  assert.equal(unknown.status, 404);
+  assert.equal(ctx.rows.lwsJtis.length, jtisBefore, 'a poll of an unknown or someone else\'s request records no jti');
 
   // The owner's view, through a session only.
   const pending = await call(ctx, 'pendingAccessRequestsInternal', { authToken: ownerToken });
@@ -610,9 +616,32 @@ test('requests: deny, expiry, the pending cap, rate limits and someone else\'s r
   await assert.rejects(() => call(ctx, 'approveAccessRequestInternal', { authToken: ownerToken, requestId: ids[1] }), /expired/);
   ctx.rows.lwsAccessRequests[2].expiresAt = Date.now() - 1;
   ctx.rows.lwsJtis.push({ _id: 'J0', jtiHash: 'x', expiresAt: Date.now() - 1 });
+  // Decided and expired requests are deleted a month after they expire.
+  const month = 30 * 24 * 3600 * 1000;
+  ctx.rows.lwsAccessRequests.push(
+    { _id: 'OLD1', requestId: 'o1', userId: 'U1', status: 'denied', createdAt: 0, expiresAt: Date.now() - month - 1 },
+    { _id: 'OLD2', requestId: 'o2', userId: 'U1', status: 'approved', createdAt: 0, expiresAt: Date.now() - month - 1 },
+    { _id: 'NEW1', requestId: 'n1', userId: 'U1', status: 'expired', createdAt: 0, expiresAt: Date.now() - month + 60000 },
+  );
   const cleaned = await call(ctx, 'cleanupInternal', {});
   assert.equal(cleaned.requests, 1);
   assert.equal(cleaned.jtis, 1);
+  assert.equal(cleaned.old, 2);
+  assert.ok(!ctx.rows.lwsAccessRequests.some(row => row._id === 'OLD1' || row._id === 'OLD2'));
+  assert.ok(ctx.rows.lwsAccessRequests.some(row => row._id === 'NEW1'), 'not yet a month');
+  ctx.rows.lwsAccessRequests.splice(ctx.rows.lwsAccessRequests.findIndex(row => row._id === 'NEW1'), 1);
+  assert.equal(cleaned.more, false);
+  assert.ok(!ctx.effects.some(([kind]) => kind === 'runAfter'), 'nothing left: no reschedule');
+  // A full batch reschedules the cleanup at once.
+  for (let i = 0; i < 201; i++) ctx.rows.lwsJtis.push({ _id: `JX${i}`, jtiHash: `x${i}`, expiresAt: Date.now() - 1 });
+  ctx.rows.lwsAccessTokens.push({ _id: 'TX', tokenHash: 'tx', expiresAt: Date.now() - 1 });
+  const first = await call(ctx, 'cleanupInternal', {});
+  assert.equal(first.more, true);
+  assert.ok(ctx.effects.some(([kind, fn]) => kind === 'runAfter' && fn === 'lwsAccess:cleanupInternal'));
+  const second = await call(ctx, 'cleanupInternal', {});
+  assert.deepEqual([second.jtis, second.more], [1, false]);
+  assert.ok(ctx.rows.lwsJtis.every(row => row.expiresAt > Date.now()), 'every spent jti is gone; live ones stay');
+  assert.equal(ctx.rows.lwsAccessTokens.length, 0, 'expired tokens too');
   assert.equal(ctx.rows.lwsAccessRequests[2].status, 'expired');
   assert.equal((await call(ctx, 'pendingAccessRequestsInternal', { authToken: ownerToken })).length, 7);
   // Another account's request is indistinguishable from none.
