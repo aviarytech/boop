@@ -348,6 +348,25 @@ test('POST creates an item: 201, Location, links, attribution', async () => {
   assert.equal((await call(ctx, '/listsxown/', { method: 'POST', headers: { ...json, 'If-Match': etag }, body: { name: 'Jam' } })).status, 201);
 });
 
+// Found on dev (phase 4): Cloudflare in front of convex.site gzips
+// application/json and weakens its strong ETag to W/"…", which If-Match never
+// matches, so every PATCH after a GET was a 412. no-transform prevents that.
+test('representations with a strong ETag say no-transform, so the edge keeps the ETag strong', async () => {
+  const ctx = world();
+  const cases = [
+    ['', { token: null }], ['/', {}], ['/listsxown/', {}], ['/listsxown/itemsxmilk', {}], ['/listsxown/itemsxmilk', { method: 'HEAD' }],
+    ['/listsxown/itemsxmilk.meta', {}],
+    ['/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { name: 'Oat milk' } }],
+    ['/listsxown/', { method: 'POST', headers: json, body: { name: 'Eggs' } }],
+  ];
+  for (const [path, options] of cases) {
+    const response = await call(ctx, path, options);
+    assert.ok(response.status < 300, `${options.method ?? 'GET'} ${path}: ${response.status}`);
+    assert.match(response.headers.get('ETag'), /^"[0-9a-f]{32}"$/);
+    assert.match(response.headers.get('Cache-Control'), /(^|,\s*)no-transform(,|$)/, `${options.method ?? 'GET'} ${path}`);
+  }
+});
+
 test('PATCH and PUT: If-Match, 412, unconditional writes, and read-only members', async () => {
   const ctx = world();
   const etag = (await call(ctx, '/listsxown/itemsxmilk')).headers.get('ETag');

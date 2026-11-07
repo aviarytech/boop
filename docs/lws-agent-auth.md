@@ -293,6 +293,12 @@ preconditions apply to the list container's ETag. On GET/HEAD, a match is
 `If-Match` is not required: update-resource.md says clients SHOULD send it,
 so an unconditional write is accepted, and `428` is never sent.
 
+Every representation with an ETag is sent with `Cache-Control: …,
+no-transform`. Without it, Cloudflare in front of `*.convex.site` gzips
+`application/json` (items) and weakens the ETag to `W/"…"`, which `If-Match`
+never matches: every conditional write after a GET was a `412` (found by the
+dev e2e).
+
 ### Auth
 
 - The description is public. Everything else takes `Authorization: Bearer

@@ -62,6 +62,18 @@ function problem(request: Request, status: number, title: string, detail?: strin
 
 const mediaType = (request: Request) => (request.headers.get("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
 
+/**
+ * Cache-Control for a representation with a strong ETag. `no-transform`
+ * keeps the edge in front of convex.site from compressing it: Cloudflare
+ * gzips `application/json` and then weakens the ETag to `W/"…"`, which
+ * If-Match (strong comparison, RFC 9110 13.1.1) can never match, so every
+ * conditional write after a GET would be a 412.
+ */
+function representationCacheControl(target: StorageTarget | "created"): string {
+  if (target === "created") return "no-store, no-transform";
+  return target.kind === "description" ? "public, max-age=300, no-transform" : "private, no-cache, no-transform";
+}
+
 function requestPreconditions(request: Request): Preconditions {
   const header = (name: string) => request.headers.get(name) ?? undefined;
   return {
@@ -114,7 +126,7 @@ export const lwsStorage = httpAction(async (ctx, request) => {
       ETag: representation.etag,
       "Last-Modified": new Date(representation.lastModified).toUTCString(),
       Link: target.kind === "description" ? storageLink.Link : resourceLinks(storage, target).join(", "),
-      "Cache-Control": target.kind === "description" ? "public, max-age=300" : "private, no-cache",
+      "Cache-Control": representationCacheControl(target),
       Vary: [getCorsHeaders(request).Vary, target.kind === "description" ? undefined : "Authorization"].filter(Boolean).join(", "),
       ...extra,
     };
@@ -194,7 +206,7 @@ export const lwsStorage = httpAction(async (ctx, request) => {
           ETag: created.etag,
           "Last-Modified": new Date(created.lastModified).toUTCString(),
           Link: resourceLinks(storage, itemTarget).join(", "),
-          "Cache-Control": "no-store",
+          "Cache-Control": representationCacheControl("created"),
         },
       });
     }
