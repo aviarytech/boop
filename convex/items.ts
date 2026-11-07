@@ -5,7 +5,9 @@ import { getReplaySequence } from "./lib/replay";
 import { noteConflict } from "./lib/noteConflict";
 import { resourceUnavailable } from "./lib/authError";
 import { actorMutation, actorQuery } from "./lib/authenticated";
-import { v } from "convex/values";
+import { v, type ObjectType } from "convex/values";
+import type { ActorCtx } from "./lib/authenticated";
+import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
 import { internal } from "./_generated/api";
@@ -18,31 +20,30 @@ import { actionSignatureEnvelope, deleteActionRecords, itemCompleted, itemCreate
  * Add an item to a list.
  * Supports legacy DID for migrated users.
  */
-export const { public: addItem, internal: addItemInternal, replay: addItemReplay } = actorMutation({
-  offlineOperation: "addItem",
-  resources: args => ({ lists: [args.listId], items: [args.parentId] }),
-  scope: "items:write",
-  args: {
-    listId: v.id("lists"),
-    name: v.string(),
-    createdAt: v.number(),
-    // Optional enhanced fields
-    description: v.optional(v.string()),
-    dueDate: v.optional(v.number()),
-    url: v.optional(v.string()),
-    recurrence: v.optional(v.object({
-      frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
-      interval: v.optional(v.number()),
-      nextDue: v.optional(v.number()),
-      endDate: v.optional(v.number()),
-    })),
-    priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
-    assigneeDid: v.optional(v.string()),
-    assigneeDids: v.optional(v.array(v.string())),
-    parentId: v.optional(v.id("items")), // For sub-items
-    signed: v.optional(actionSignatureEnvelope), // The author's action-record signature (lib/actionRecords.ts)
-  },
-  handler: async (ctx, args) => withMutationObservability("items.addItem", async () => {
+const addItemArgs = {
+  listId: v.id("lists"),
+  name: v.string(),
+  createdAt: v.number(),
+  // Optional enhanced fields
+  description: v.optional(v.string()),
+  dueDate: v.optional(v.number()),
+  url: v.optional(v.string()),
+  recurrence: v.optional(v.object({
+    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
+    interval: v.optional(v.number()),
+    nextDue: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  })),
+  priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+  assigneeDid: v.optional(v.string()),
+  assigneeDids: v.optional(v.array(v.string())),
+  parentId: v.optional(v.id("items")), // For sub-items
+  signed: v.optional(actionSignatureEnvelope), // The author's action-record signature (lib/actionRecords.ts)
+};
+
+/** addItem, for callers that authenticated and authorized in their own transaction (convex/lwsStorage.ts). */
+export async function addItemOperation(ctx: ActorCtx<MutationCtx>, args: ObjectType<typeof addItemArgs>) {
+  return withMutationObservability("items.addItem", async () => {
     // Input validation
     if (args.name.trim().length === 0) throw new Error("Item name cannot be empty");
     if (args.name.length > 500) throw new Error("Item name cannot exceed 500 characters");
@@ -124,43 +125,50 @@ export const { public: addItem, internal: addItemInternal, replay: addItemReplay
     });
 
     return itemId;
-  }),
+  });
+}
+
+export const { public: addItem, internal: addItemInternal, replay: addItemReplay } = actorMutation({
+  offlineOperation: "addItem",
+  resources: args => ({ lists: [args.listId], items: [args.parentId] }),
+  scope: "items:write",
+  args: addItemArgs,
+  handler: addItemOperation,
 });
 
 /**
  * Update an item's details (name, description, due date, url, recurrence, priority).
  * Supports legacy DID for migrated users.
  */
-export const { public: updateItem, internal: updateItemInternal, replay: updateItemReplay } = actorMutation({
-  offlineOperation: "updateItem",
-  resources: args => ({ items: [args.itemId] }),
-  scope: "items:write",
-  args: {
-    itemId: v.id("items"),
-    // Fields that can be updated
-    name: v.optional(v.string()),
-    description: v.optional(v.string()),
-    expectedDescription: v.optional(v.string()),
-    dueDate: v.optional(v.number()),
-    url: v.optional(v.string()),
-    recurrence: v.optional(v.object({
-      frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
-      interval: v.optional(v.number()),
-      nextDue: v.optional(v.number()),
-      endDate: v.optional(v.number()),
-    })),
-    priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
-    groceryAisle: v.optional(v.string()),
-    assigneeDid: v.optional(v.string()),
-    assigneeDids: v.optional(v.array(v.string())),
-    clearGroceryAisle: v.optional(v.boolean()),
-    clearDueDate: v.optional(v.boolean()),
-    clearRecurrence: v.optional(v.boolean()),
-    clearUrl: v.optional(v.boolean()),
-    clearPriority: v.optional(v.boolean()),
-    clearAssigneeDid: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => withMutationObservability("items.updateItem", async () => {
+const updateItemArgs = {
+  itemId: v.id("items"),
+  // Fields that can be updated
+  name: v.optional(v.string()),
+  description: v.optional(v.string()),
+  expectedDescription: v.optional(v.string()),
+  dueDate: v.optional(v.number()),
+  url: v.optional(v.string()),
+  recurrence: v.optional(v.object({
+    frequency: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly")),
+    interval: v.optional(v.number()),
+    nextDue: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+  })),
+  priority: v.optional(v.union(v.literal("high"), v.literal("medium"), v.literal("low"))),
+  groceryAisle: v.optional(v.string()),
+  assigneeDid: v.optional(v.string()),
+  assigneeDids: v.optional(v.array(v.string())),
+  clearGroceryAisle: v.optional(v.boolean()),
+  clearDueDate: v.optional(v.boolean()),
+  clearRecurrence: v.optional(v.boolean()),
+  clearUrl: v.optional(v.boolean()),
+  clearPriority: v.optional(v.boolean()),
+  clearAssigneeDid: v.optional(v.boolean()),
+};
+
+/** updateItem, for callers that authenticated and authorized in their own transaction (convex/lwsStorage.ts). */
+export async function updateItemOperation(ctx: ActorCtx<MutationCtx>, args: ObjectType<typeof updateItemArgs>) {
+  return withMutationObservability("items.updateItem", async () => {
     if (args.description !== undefined && args.description.length > MAX_NOTE_LENGTH) {
       throw new Error(`Description cannot exceed ${MAX_NOTE_LENGTH} characters`);
     }
@@ -204,7 +212,15 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
     }
     await ctx.db.patch(args.itemId, updates);
     return args.itemId;
-  }),
+  });
+}
+
+export const { public: updateItem, internal: updateItemInternal, replay: updateItemReplay } = actorMutation({
+  offlineOperation: "updateItem",
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
+  args: updateItemArgs,
+  handler: updateItemOperation,
 });
 
 /**
@@ -238,16 +254,15 @@ function calculateNextDueDate(
  * Supports legacy DID for migrated users.
  * If the item has recurrence settings, creates a new unchecked copy with the next due date.
  */
-export const { public: checkItem, internal: checkItemInternal, replay: checkItemReplay } = actorMutation({
-  offlineOperation: "checkItem",
-  resources: args => ({ items: [args.itemId] }),
-  scope: "items:write",
-  args: {
-    itemId: v.id("items"),
-    checkedAt: v.number(),
-    signed: v.optional(actionSignatureEnvelope),
-  },
-  handler: async (ctx, args) => withMutationObservability("items.checkItem", async () => {
+const checkItemArgs = {
+  itemId: v.id("items"),
+  checkedAt: v.number(),
+  signed: v.optional(actionSignatureEnvelope),
+};
+
+/** checkItem, for callers that authenticated and authorized in their own transaction (convex/lwsStorage.ts). */
+export async function checkItemOperation(ctx: ActorCtx<MutationCtx>, args: ObjectType<typeof checkItemArgs>) {
+  return withMutationObservability("items.checkItem", async () => {
     const item = await ctx.db.get(args.itemId);
     if (!item) {
       throw new Error("Item not found");
@@ -333,81 +348,99 @@ export const { public: checkItem, internal: checkItemInternal, replay: checkItem
       }
     }
     await recordActions(ctx, actions, args.signed);
-  }),
+  });
+}
+
+export const { public: checkItem, internal: checkItemInternal, replay: checkItemReplay } = actorMutation({
+  offlineOperation: "checkItem",
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
+  args: checkItemArgs,
+  handler: checkItemOperation,
 });
 
 /**
  * Uncheck an item.
  * Supports legacy DID for migrated users.
  */
+const uncheckItemArgs = {
+  itemId: v.id("items"),
+  signed: v.optional(actionSignatureEnvelope),
+};
+
+/** uncheckItem, for callers that authenticated and authorized in their own transaction (convex/lwsStorage.ts). */
+export async function uncheckItemOperation(ctx: ActorCtx<MutationCtx>, args: ObjectType<typeof uncheckItemArgs>) {
+  const item = await ctx.db.get(args.itemId);
+  if (!item) {
+    throw new Error("Item not found");
+  }
+
+  // Verify user is authorized (owner or editor)
+  const canEdit = await canUserEditList(
+    ctx,
+    item.listId,
+    ctx.actor.did,
+    ctx.actor.legacyDid
+  );
+  if (!canEdit) {
+    throw resourceUnavailable();
+  }
+
+  await ctx.db.patch(args.itemId, {
+    checked: false,
+    checkedByDid: undefined,
+    checkedAt: undefined,
+    updatedAt: Date.now(),
+  });
+  const list = await ctx.db.get(item.listId);
+  await recordActions(ctx, [itemReopened(list ?? { _id: item.listId }, item)], args.signed);
+}
+
 export const { public: uncheckItem, internal: uncheckItemInternal, replay: uncheckItemReplay } = actorMutation({
   offlineOperation: "uncheckItem",
   resources: args => ({ items: [args.itemId] }),
   scope: "items:write",
-  args: {
-    itemId: v.id("items"),
-    signed: v.optional(actionSignatureEnvelope),
-  },
-  handler: async (ctx, args) => {
-    const item = await ctx.db.get(args.itemId);
-    if (!item) {
-      throw new Error("Item not found");
-    }
-
-    // Verify user is authorized (owner or editor)
-    const canEdit = await canUserEditList(
-      ctx,
-      item.listId,
-      ctx.actor.did,
-      ctx.actor.legacyDid
-    );
-    if (!canEdit) {
-      throw resourceUnavailable();
-    }
-
-    await ctx.db.patch(args.itemId, {
-      checked: false,
-      checkedByDid: undefined,
-      checkedAt: undefined,
-      updatedAt: Date.now(),
-    });
-    const list = await ctx.db.get(item.listId);
-    await recordActions(ctx, [itemReopened(list ?? { _id: item.listId }, item)], args.signed);
-  },
+  args: uncheckItemArgs,
+  handler: uncheckItemOperation,
 });
 
 /**
  * Remove an item from a list.
  * Supports legacy DID for migrated users.
  */
+const removeItemArgs = {
+  itemId: v.id("items"),
+};
+
+/** removeItem, for callers that authenticated and authorized in their own transaction (convex/lwsStorage.ts). */
+export async function removeItemOperation(ctx: ActorCtx<MutationCtx>, args: ObjectType<typeof removeItemArgs>) {
+  const item = await ctx.db.get(args.itemId);
+  if (!item) {
+    throw new Error("Item not found");
+  }
+
+  // Verify user is authorized (owner or editor)
+  const canEdit = await canUserEditList(
+    ctx,
+    item.listId,
+    ctx.actor.did,
+    ctx.actor.legacyDid
+  );
+  if (!canEdit) {
+    throw resourceUnavailable();
+  }
+
+  await deleteAssignments(ctx, args.itemId);
+  await deleteActionRecords(ctx, { itemId: args.itemId });
+  await ctx.db.delete(args.itemId);
+}
+
 export const { public: removeItem, internal: removeItemInternal, replay: removeItemReplay } = actorMutation({
   offlineOperation: "removeItem",
   resources: args => ({ items: [args.itemId] }),
   scope: "items:write",
-  args: {
-    itemId: v.id("items"),
-  },
-  handler: async (ctx, args) => {
-    const item = await ctx.db.get(args.itemId);
-    if (!item) {
-      throw new Error("Item not found");
-    }
-
-    // Verify user is authorized (owner or editor)
-    const canEdit = await canUserEditList(
-      ctx,
-      item.listId,
-      ctx.actor.did,
-      ctx.actor.legacyDid
-    );
-    if (!canEdit) {
-      throw resourceUnavailable();
-    }
-
-    await deleteAssignments(ctx, args.itemId);
-    await deleteActionRecords(ctx, { itemId: args.itemId });
-    await ctx.db.delete(args.itemId);
-  },
+  args: removeItemArgs,
+  handler: removeItemOperation,
 });
 
 /**
