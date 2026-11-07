@@ -102,7 +102,12 @@ export function linksetDocument(storage: string, target: ResourceTarget) {
   };
 }
 
-/** The storage description (Discovery.html), with the AccessRequestService phase 1 serves. */
+/**
+ * The storage description (Discovery.html), with the AccessRequestService
+ * phase 1 serves. It doesn't claim `conformsTo` the LWS AccessProfile: that
+ * profile requires constraints (and targets below the root) that boop
+ * refuses, so a client relying on the claim would be misled.
+ */
 export function storageDescription(storage: string, accessRequests: string) {
   return {
     "@context": [CID_CONTEXT, LWS_CONTEXT],
@@ -110,7 +115,7 @@ export function storageDescription(storage: string, accessRequests: string) {
     type: "Storage",
     service: [
       { type: "StorageRoot", serviceEndpoint: rootUri(storage) },
-      { type: "AccessRequestService", serviceEndpoint: accessRequests, conformsTo: [`${LWS_NS}AccessProfile`] },
+      { type: "AccessRequestService", serviceEndpoint: accessRequests },
     ],
   };
 }

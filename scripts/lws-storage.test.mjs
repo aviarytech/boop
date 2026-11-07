@@ -150,6 +150,7 @@ test('the storage description is public', async () => {
   assert.deepEqual(description.service[0], { type: 'StorageRoot', serviceEndpoint: `${S}/` });
   assert.equal(description.service[1].type, 'AccessRequestService');
   assert.equal(description.service[1].serviceEndpoint, `${B}/lws-access/requests`);
+  assert.equal(description.service[1].conformsTo, undefined, 'boop refuses the AccessProfile constraints, so it does not claim the profile');
   assert.ok(!description.capability, 'no MoveResource: the up link is not modifiable');
   ctx.rows.didLogs[0].author = false;
   assert.equal((await call(ctx, '', { token: null })).status, 404, 'not an author DID');
@@ -163,6 +164,12 @@ test('authentication: 401 with the challenge, audience and scope', async () => {
   assert.equal(none.headers.get('Content-Type'), 'application/problem+json');
   assert.equal(none.headers.get('WWW-Authenticate'), `Bearer resource_metadata="${B}/.well-known/oauth-protected-resource/lws/${U}/"`);
   assert.ok(hasLink(none, S, 'https://www.w3.org/ns/lws#storage'));
+  // Only a presented Bearer credential earns error="invalid_token" (RFC 6750 3.1).
+  const basic = await call(ctx, '/', { token: null, headers: { Authorization: 'Basic dXNlcjpwYXNz' } });
+  assert.equal(basic.status, 401);
+  assert.doesNotMatch(basic.headers.get('WWW-Authenticate'), /error=/);
+  const lowercase = await call(ctx, '/', { token: null, headers: { Authorization: `bearer ${TOKEN}` } });
+  assert.equal(lowercase.status, 200, 'the scheme is case-insensitive');
   for (const token of ['lwsat_forged', 'a.session.jwt']) {
     const bad = await call(ctx, '/listsxown/', { token });
     assert.equal(bad.status, 401, token);
@@ -331,6 +338,10 @@ test('an item: representation and headers, HEAD, ranges and conditional GET', as
 
   const head = await call(ctx, '/listsxown/itemsxmilk', { method: 'HEAD' });
   assert.equal(head.status, 200);
+  const rangedHead = await call(ctx, '/listsxown/itemsxmilk', { method: 'HEAD', headers: { Range: 'bytes=0-9' } });
+  assert.equal(rangedHead.status, 200, 'Range applies to GET only');
+  assert.equal(rangedHead.headers.get('Content-Range'), null);
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'HEAD', headers: { Range: 'bytes=99999-' } })).status, 200);
   assert.equal(head.headers.get('ETag'), etag);
   assert.equal(head.headers.get('Link'), response.headers.get('Link'));
   assert.equal(await head.text(), '');
@@ -345,7 +356,12 @@ test('an item: representation and headers, HEAD, ranges and conditional GET', as
   assert.equal(partial.headers.get('Content-Range'), `bytes 0-9/${Buffer.byteLength(text)}`);
   assert.equal(await partial.text(), text.slice(0, 10));
   assert.equal(await (await call(ctx, '/listsxown/itemsxmilk', { headers: { Range: 'bytes=-5' } })).text(), text.slice(-5));
-  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { headers: { Range: 'bytes=99999-' } })).status, 416);
+  const unsatisfiable = await call(ctx, '/listsxown/itemsxmilk', { headers: { Range: 'bytes=99999-' } });
+  assert.equal(unsatisfiable.status, 416);
+  assert.match(unsatisfiable.headers.get('Cache-Control'), /no-transform/, 'it carries an ETag');
+  const failed = await call(ctx, '/listsxown/itemsxmilk', { headers: { 'If-Match': '"stale"' } });
+  assert.ok(failed.headers.get('ETag'));
+  assert.match(failed.headers.get('Cache-Control'), /no-transform/, 'a 412 with an ETag too');
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { headers: { Range: 'bytes=0-1,4-5' } })).status, 200, 'several ranges: the whole');
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { headers: { Range: 'bytes=0-9', 'If-Range': '"stale"' } })).status, 200);
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { headers: { Range: 'bytes=0-9', 'If-Range': etag } })).status, 206);
@@ -568,6 +584,7 @@ test("an agent can't reach lists shared with the user; unknown paths and bad ids
     const response = await call(ctx, path);
     assert.equal(response.status, 404, path);
     assert.equal(response.headers.get('Content-Type'), 'application/problem+json', path);
+    assert.ok(hasLink(response, S, 'https://www.w3.org/ns/lws#storage'), `${path}: a 404 under a storage names it`);
   }
   // A path outside any storage.
   const outside = await http.lwsStorage._handler(ctx, new Request(`${B}/lws/not-a-user/`, { headers: { Authorization: `Bearer ${TOKEN}` } }));
@@ -588,6 +605,7 @@ test('linksets: read-only server-managed links', async () => {
   assert.equal((await call(ctx, '/listsxown/itemsxmilk.meta', { headers: { Range: 'bytes=0-0' } })).status, 206);
   assert.equal((await call(ctx, '/listsxown/', { headers: { Range: 'bytes=0-0' } })).status, 200, 'a container listing is never partial');
   assert.ok(response.headers.get('ETag'));
+  assert.deepEqual(links(response), [`<${S}>; rel="https://www.w3.org/ns/lws#storage"`], 'no linkset, up or type links pointing at itself');
   assert.deepEqual(await response.json(), { linkset: [{
     anchor: MILK, up: [{ href: `${S}/listsxown/` }], type: [{ href: 'https://www.w3.org/ns/lws#DataResource' }], 'https://www.w3.org/ns/lws#storage': [{ href: S }],
   }] });

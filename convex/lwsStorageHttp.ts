@@ -20,7 +20,7 @@ import { authErrorData } from "./lib/authError";
 import { planErrorData } from "./lib/planError";
 import { getCorsHeaders } from "./lib/httpResponses";
 import { LWS_ACCESS_TOKEN_PREFIX, bearerToken } from "./lib/lwsTokens";
-import { canonicalRequestUrl, LWS_STORAGE_REL, lwsBaseUrl, lwsChallenge, parseStoragePath, storageUri } from "./lib/lwsUrls";
+import { canonicalRequestUrl, LWS_STORAGE_REL, lwsBaseUrl, lwsChallenge, parseStoragePath, storageUri, USER_PATH_PATTERN } from "./lib/lwsUrls";
 import {
   allowedMethods, evaluatePreconditions, lwsFailureData, parsePageParam, parseTarget, resourceLinks, selectRange,
   JSON_MEDIA, JSON_PATCH, MAX_STORAGE_BODY_BYTES, MERGE_PATCH, LWS_NS,
@@ -52,11 +52,18 @@ function capabilityHeaders(target: StorageTarget): Headers {
 /** Containers have listings; everything else (items, linksets, the description) is a byte sequence with ranges. */
 const isContainer = (target: StorageTarget) => (target.kind === "root" || target.kind === "list") && !target.linkset;
 
-/** RFC 9457 problem details; `detail` is ours, never an exception's. */
+/**
+ * RFC 9457 problem details; `detail` is ours, never an exception's. One that
+ * carries an ETag (412, 416) is no-transform too, so the edge keeps it strong
+ * (representationCacheControl).
+ */
 function problem(request: Request, status: number, title: string, detail?: string, headers: Headers = {}): Response {
   return new Response(JSON.stringify({ type: "about:blank", title, status, ...(detail ? { detail } : {}) }), {
     status,
-    headers: { "Content-Type": "application/problem+json", "Cache-Control": "no-store", ...cors(request), ...headers },
+    headers: {
+      "Content-Type": "application/problem+json", "Cache-Control": headers.ETag ? "no-store, no-transform" : "no-store",
+      ...cors(request), ...headers,
+    },
   });
 }
 
@@ -102,12 +109,20 @@ export const lwsStorage = httpAction(async (ctx, request) => {
     console.error("[lwsStorageHttp] no base URL:", error);
     return problem(request, 500, "Internal error");
   }
-  const parsed = parseStoragePath(canonicalRequestUrl(request.url, base), base);
-  const target = parsed ? parseTarget(parsed.subpath) : null;
-  if (!parsed || !target) return problem(request, 404, "Not found");
+  const canonical = canonicalRequestUrl(request.url, base);
+  const parsed = parseStoragePath(canonical, base);
+  if (!parsed) {
+    // A malformed path (say, an empty segment) under a storage still names that storage.
+    const userPath = canonical.slice(`${base}/lws/`.length).split("/")[0];
+    const under = canonical.startsWith(`${base}/lws/`) && USER_PATH_PATTERN.test(userPath);
+    return problem(request, 404, "Not found", undefined, under ? { Link: `<${storageUri(userPath, base)}>; rel="${LWS_STORAGE_REL}"` } : {});
+  }
   const { userPath, subpath } = parsed;
   const storage = storageUri(userPath, base);
   const storageLink = { Link: `<${storage}>; rel="${LWS_STORAGE_REL}"` };
+  const target = parseTarget(subpath);
+  // Under a storage, even a path that names nothing says which storage it is in.
+  if (!target) return problem(request, 404, "Not found", undefined, storageLink);
   const capabilities = capabilityHeaders(target);
   const method = request.method.toUpperCase();
 
@@ -116,7 +131,7 @@ export const lwsStorage = httpAction(async (ctx, request) => {
     return problem(request, 405, "Method not allowed", `Allowed: ${capabilities.Allow}`, { ...capabilities, ...storageLink });
   }
 
-  /** A representation as a response, honouring GET/HEAD conditionals and, for items, Range. */
+  /** A representation as a response, honouring GET/HEAD conditionals and, on GET of a non-container, Range. */
   const respond = (representation: Representation, status = 200, extra: Headers = {}): Response => {
     const read = method === "GET" || method === "HEAD";
     const headers: Headers = {
@@ -125,7 +140,9 @@ export const lwsStorage = httpAction(async (ctx, request) => {
       "Content-Type": representation.contentType,
       ETag: representation.etag,
       "Last-Modified": new Date(representation.lastModified).toUTCString(),
-      Link: target.kind === "description" ? storageLink.Link : [...resourceLinks(storage, target), ...(representation.links ?? [])].join(", "),
+      // A linkset is metadata about another resource: it gets no linkset, up or
+      // type links of its own (they would point at itself), only its storage.
+      Link: target.kind === "description" || target.linkset ? storageLink.Link : [...resourceLinks(storage, target), ...(representation.links ?? [])].join(", "),
       "Cache-Control": representationCacheControl(target),
       Vary: [getCorsHeaders(request).Vary, target.kind === "description" ? undefined : "Authorization"].filter(Boolean).join(", "),
       ...extra,
@@ -142,7 +159,8 @@ export const lwsStorage = httpAction(async (ctx, request) => {
     }
     let body: BodyInit | null = representation.body;
     let responseStatus = status;
-    if (read && !isContainer(target)) {
+    // RFC 9110 14.2: Range applies to GET only; HEAD answers as an unranged GET would.
+    if (method === "GET" && !isContainer(target)) {
       const bytes = new TextEncoder().encode(representation.body);
       const range = selectRange(request.headers.get("Range") ?? undefined, request.headers.get("If-Range") ?? undefined, representation, bytes.length);
       if (range === "unsatisfiable") {
@@ -165,8 +183,8 @@ export const lwsStorage = httpAction(async (ctx, request) => {
 
     const agentToken = bearerToken(request);
     if (!agentToken?.startsWith(LWS_ACCESS_TOKEN_PREFIX)) {
-      // RFC 6750 3.1: no error code when the request carried no credential at all.
-      const presented = request.headers.get("Authorization") !== null;
+      // RFC 6750 3.1: no error code unless a Bearer credential was presented.
+      const presented = agentToken !== null;
       return problem(request, 401, "Authentication required", "Send Authorization: Bearer with an LWS access token",
         lwsChallenge(request.url, { base, ...(presented ? { error: "invalid_token" as const } : {}) }));
     }
