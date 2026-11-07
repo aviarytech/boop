@@ -34,6 +34,7 @@ import { resolveSiteHost, resolveSiteAsset } from "./sitesHttp";
 import { createApiKey, listApiKeys, revokeApiKey } from "./apiKeysHttp";
 import { getActionRecords, getLists, getListWithItems } from "./agentReadHttp";
 import { getAccessRequest, getLwsConfiguration, getProtectedResourceMetadata, lwsOptions, postAccessRequest, tokenEndpoint } from "./lwsHttp";
+import { lwsStorage } from "./lwsStorageHttp";
 const RATE_LIMITS = {
   initiate: { windowMs: 60000, maxAttempts: 5 },
   verify: { windowMs: 60000, maxAttempts: 5 },
@@ -475,6 +476,11 @@ http.route({ path: "/.well-known/lws-configuration", method: "GET", handler: get
 http.route({ path: "/.well-known/lws-configuration", method: "OPTIONS", handler: lwsOptions });
 http.route({ pathPrefix: "/.well-known/oauth-protected-resource/lws/", method: "GET", handler: getProtectedResourceMetadata });
 http.route({ pathPrefix: "/.well-known/oauth-protected-resource/lws/", method: "OPTIONS", handler: lwsOptions });
+// Storage resources. A different prefix from /lws-access/, so neither shadows the other.
+// HEAD is routed to the GET handler, which answers it without a body.
+for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
+  http.route({ pathPrefix: "/lws/", method, handler: lwsStorage });
+}
 
 // ============================================================================
 // Health check endpoint (public, no auth)

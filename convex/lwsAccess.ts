@@ -43,7 +43,7 @@ async function consumeJti(ctx: MutationCtx, claims: VerifiedClaims): Promise<boo
 }
 
 /** The account a storage path belongs to, only while it serves an author DID that account holds. */
-async function storageAccount(ctx: QueryCtx, userPath: string) {
+export async function storageAccount(ctx: QueryCtx, userPath: string) {
   const log = await ctx.db.query("didLogs").withIndex("by_path", q => q.eq("path", userPath)).first();
   if (!log?.author) return null;
   const user = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", log.userDid)).first();
