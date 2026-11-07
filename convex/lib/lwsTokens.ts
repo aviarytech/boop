@@ -5,8 +5,8 @@
 
 /** Every LWS access token starts with this; nothing else may. */
 export const LWS_ACCESS_TOKEN_PREFIX = "lwsat_";
-/** Access tokens last an hour. */
-export const LWS_ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
+/** Access tokens last five minutes: LWS Authorization recommends 300 seconds or less. */
+export const LWS_ACCESS_TOKEN_TTL_MS = 5 * 60 * 1000;
 /** Access requests the owner hasn't decided expire after a day. */
 export const LWS_ACCESS_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 /** Most pending access requests one user can have; a new one past this expires the oldest. */
@@ -43,10 +43,15 @@ export function generateAgentFragment(): string {
   return `agent-${Array.from(randomBytes(10), byte => BASE32[byte % 32]).join("")}`;
 }
 
+/** A Bearer credential (RFC 6750 2.1; the scheme is case-insensitive, RFC 9110 11.1), or null. */
+export function bearerCredential(header: string | null | undefined): string | null {
+  const match = /^bearer +(\S+) *$/i.exec(header ?? "");
+  return match ? match[1] : null;
+}
+
 /** The bearer credential of a request's Authorization header, if it has one. */
 export function bearerToken(request: Request): string | null {
-  const header = request.headers.get("Authorization");
-  return header?.startsWith("Bearer ") ? header.slice(7) : null;
+  return bearerCredential(request.headers.get("Authorization"));
 }
 
 /** Constant-time string equality, for secrets and values derived from them. */

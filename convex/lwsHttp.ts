@@ -40,11 +40,17 @@ export function problem(request: Request, status: number, title: string, detail?
   });
 }
 
+/**
+ * The error codes the token endpoint uses: RFC 6749 5.2's, and RFC 8707's
+ * invalid_target, which RFC 8693 2.2.2 names for an unacceptable `resource`.
+ */
+type OAuthErrorCode = "invalid_request" | "invalid_client" | "invalid_grant" | "unauthorized_client" | "unsupported_grant_type" | "invalid_scope" | "invalid_target";
+
 /** RFC 6749 5.2 error. */
-function oauthError(request: Request, error: string, description?: string, status = 400): Response {
+function oauthError(request: Request, error: OAuthErrorCode, description?: string, status = 400, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify({ error, ...(description ? { error_description: description } : {}) }), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", Pragma: "no-cache", ...cors(request) },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", Pragma: "no-cache", ...cors(request), ...headers },
   });
 }
 
@@ -62,14 +68,18 @@ async function ipKey(request: Request): Promise<string> {
   return `ip:${await hashApiKey(ip)}`;
 }
 
-/** A 429 when this IP is over its budget, else null. */
+/**
+ * A 429 when this IP is over its budget, else null. At the token endpoint it
+ * is an RFC 6749 error: 5.2 has no rate-limit code, so `invalid_request` with
+ * a description and Retry-After.
+ */
 async function rateLimited(ctx: ActionCtx, request: Request, endpoint: RateLimitEndpoint, asProblem = true): Promise<Response | null> {
   const result = await ctx.runMutation(internal.rateLimits.checkAndIncrementInternal, { key: await ipKey(request), endpoint });
   if (result.allowed) return null;
   const retryAfter = String(Math.max(1, Math.ceil((result.retryAfterMs ?? 60000) / 1000)));
   return asProblem
     ? problem(request, 429, "Too many requests", undefined, { "Retry-After": retryAfter })
-    : new Response(JSON.stringify({ error: "slow_down" }), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": retryAfter, ...cors(request) } });
+    : oauthError(request, "invalid_request", `Too many requests: try again in ${retryAfter} seconds`, 429, { "Retry-After": retryAfter });
 }
 
 /** The body as text, or null if it is over the size limit. */
@@ -81,8 +91,9 @@ async function readBody(request: Request): Promise<string | null> {
 }
 
 const mediaType = (request: Request) => (request.headers.get("Content-Type") ?? "").split(";")[0].trim().toLowerCase();
+/** RFC 6750 3.1: `error="invalid_token"` only when a Bearer credential was presented. */
 const unauthorized = (request: Request, detail?: string) =>
-  problem(request, 401, "Authentication required", detail, { "WWW-Authenticate": 'Bearer error="invalid_token"' });
+  problem(request, 401, "Authentication required", detail, { "WWW-Authenticate": bearerToken(request) === null ? "Bearer" : 'Bearer error="invalid_token"' });
 
 /** POST B/lws-access/requests */
 export const postAccessRequest = httpAction(async (ctx, request) => {
@@ -189,7 +200,8 @@ export const tokenEndpoint = httpAction(async (ctx, request) => {
     }), { status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", Pragma: "no-cache", ...cors(request) } });
   } catch (error) {
     console.error("[lwsHttp] token exchange failed:", error);
-    return oauthError(request, "server_error", undefined, 500);
+    // server_error is an authorization-endpoint code (RFC 6749 4.1.2.1), not a token-endpoint one.
+    return oauthError(request, "invalid_request", "Internal error: try again later", 500);
   }
 });
 
@@ -201,7 +213,9 @@ export function lwsConfiguration(base: string) {
     grant_types_supported: [TOKEN_EXCHANGE_GRANT],
     subject_token_types_supported: [JWT_TOKEN_TYPE],
     subject_identifier_types_supported: ["did:webvh"],
-    // RFC 8414 requires this member; there is no authorization endpoint, only token exchange.
+    // Kept: RFC 8414 2 makes it REQUIRED, LWS Authorization requires RFC 8414
+    // metadata, and its example lists ["token"]. No authorization endpoint
+    // exists; tokens come only from token exchange.
     response_types_supported: ["token"],
     token_endpoint_auth_methods_supported: ["none"],
     claims_supported: ["sub", "iss", "client_id", "aud", "exp", "iat", "jti"],

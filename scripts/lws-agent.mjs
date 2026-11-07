@@ -24,8 +24,8 @@ export const JWT_TYPE = 'urn:ietf:params:oauth:token-type:jwt';
 export const LWS_CONTEXT = 'https://www.w3.org/ns/lws/v1';
 export const STORAGE_REL = 'https://www.w3.org/ns/lws#storage';
 const JWT_LIFETIME_S = 300;
-/** Refresh a cached access token this long before it expires. */
-const TOKEN_MARGIN_MS = 60_000;
+/** Refresh a cached access token this long before it expires (boop's last 300 s). */
+const TOKEN_MARGIN_MS = 30_000;
 
 export class AgentError extends Error {}
 
@@ -269,10 +269,26 @@ export async function token(statePath) {
   return { scope: cached.scope, expiresAt: new Date(cached.expiresAt).toISOString(), tokenEndpoint: found.tokenEndpoint };
 }
 
-async function accessToken(statePath) {
+/** Whether a cached token is missing, expired, or about to expire. */
+export const tokenNeedsRefresh = (cached, now = Date.now()) => !cached?.accessToken || cached.expiresAt - TOKEN_MARGIN_MS < now;
+
+/** A cached access token with some life left, else a new one; `fresh` always gets a new one. */
+async function accessToken(statePath, { fresh = false } = {}) {
   let state = await loadState(statePath);
-  if (!state.token || state.token.expiresAt - TOKEN_MARGIN_MS < Date.now()) { await token(statePath); state = await loadState(statePath); }
+  if (fresh || tokenNeedsRefresh(state.token)) { await token(statePath); state = await loadState(statePath); }
   return state.token.accessToken;
+}
+
+/**
+ * `init` with the access token, sent once; on a 401 invalid_token (it expired
+ * or was cut short since it was cached) a new token is fetched and the
+ * request sent again, once.
+ */
+export async function authorizedSend(statePath, url, init = {}, { sendFn = send, getToken = accessToken } = {}) {
+  const attempt = async (fresh) => sendFn(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${await getToken(statePath, { fresh })}` } });
+  const first = await attempt(false);
+  if (first.status !== 401 || authParams(first.headers['www-authenticate']).error !== 'invalid_token') return first;
+  return attempt(true);
 }
 
 const HEADERS = ['etag', 'last-modified', 'location', 'content-type', 'link', 'allow', 'www-authenticate'];
@@ -285,24 +301,23 @@ async function send(url, init) {
 }
 
 export async function get(statePath, url) {
-  return send(url, { headers: { Authorization: `Bearer ${await accessToken(statePath)}` } });
+  return authorizedSend(statePath, url);
 }
 
 export async function create(statePath, containerUrl, json) {
-  return send(containerUrl, { method: 'POST', headers: { Authorization: `Bearer ${await accessToken(statePath)}`, 'Content-Type': 'application/json' }, body: json });
+  return authorizedSend(statePath, containerUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json });
 }
 
-/** PATCH: merge-patch for an object, JSON Patch for an array; If-Match from a fresh GET unless `etag` is given. */
+/** PATCH: merge-patch for an object, JSON Patch for an array; If-Match from a fresh HEAD unless `etag` is given. */
 export async function patch(statePath, url, json, { etag } = {}) {
-  const auth = `Bearer ${await accessToken(statePath)}`;
-  const ifMatch = etag ?? (await send(url, { method: 'HEAD', headers: { Authorization: auth } })).headers.etag;
+  const ifMatch = etag ?? (await authorizedSend(statePath, url, { method: 'HEAD' })).headers.etag;
   if (!ifMatch) throw new AgentError(`No ETag for ${url}`);
   const type = Array.isArray(JSON.parse(json)) ? 'application/json-patch+json' : 'application/merge-patch+json';
-  return send(url, { method: 'PATCH', headers: { Authorization: auth, 'Content-Type': type, 'If-Match': ifMatch }, body: json });
+  return authorizedSend(statePath, url, { method: 'PATCH', headers: { 'Content-Type': type, 'If-Match': ifMatch }, body: json });
 }
 
 export async function remove(statePath, url, { etag } = {}) {
-  return send(url, { method: 'DELETE', headers: { Authorization: `Bearer ${await accessToken(statePath)}`, ...(etag ? { 'If-Match': etag } : {}) } });
+  return authorizedSend(statePath, url, { method: 'DELETE', headers: { ...(etag ? { 'If-Match': etag } : {}) } });
 }
 
 // --- CLI ---------------------------------------------------------------------------

@@ -349,6 +349,15 @@ test('identifiers and tokens', () => {
   assert.deepEqual(actor.requestCredentials(request), { authToken: undefined, apiKey: undefined });
   const session = new Request(`${B}/x`, { headers: { Authorization: 'Bearer a.b.c' } });
   assert.deepEqual(actor.requestCredentials(session), { authToken: 'a.b.c', apiKey: undefined });
+  // The scheme is case-insensitive: a lower-case `bearer lwsat_…` is still an agent token, never a cookie session.
+  for (const scheme of ['bearer', 'BEARER', 'BeArEr']) {
+    assert.equal(tokens.bearerToken(new Request(`${B}/x`, { headers: { Authorization: `${scheme} lwsat_abc` } })), 'lwsat_abc', scheme);
+    const lower = new Request(`${B}/api/v1/lists`, { headers: { Authorization: `${scheme} lwsat_abc`, Cookie: 'auth_token=session.jwt.here' } });
+    assert.equal(jwtLib.extractTokenFromRequest(lower), null, scheme);
+    assert.equal(actor.requestCredentials(new Request(`${B}/x`, { headers: { Authorization: `${scheme} a.b.c` } })).authToken, 'a.b.c', scheme);
+  }
+  assert.equal(tokens.bearerToken(new Request(`${B}/x`, { headers: { Authorization: 'Basic abc' } })), null);
+  assert.equal(tokens.bearerToken(new Request(`${B}/x`, { headers: { Authorization: 'Bearer' } })), null);
 });
 
 // ---------------------------------------------------------------------------
@@ -432,7 +441,11 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   const requestJwt = () => signJwt(claimsFor(didKey, `${B}/lws-access/requests`), agent.secret);
 
   // Request: unauthenticated, wrong signer, then right.
-  assert.equal((await http(ctx, 'postAccessRequest', postRequest(accessRequestBody(didKey)))).status, 401);
+  const anonymous = await http(ctx, 'postAccessRequest', postRequest(accessRequestBody(didKey)));
+  assert.equal(anonymous.status, 401);
+  assert.equal(anonymous.headers.get('WWW-Authenticate'), 'Bearer', 'no error code without a credential (RFC 6750 3.1)');
+  const garbage = await http(ctx, 'postAccessRequest', postRequest(accessRequestBody(didKey), 'not.a.jwt'));
+  assert.equal(garbage.headers.get('WWW-Authenticate'), 'Bearer error="invalid_token"');
   const stranger = await agentKey();
   const wrongSigner = await http(ctx, 'postAccessRequest', postRequest(accessRequestBody(didKey), signJwt(claimsFor(`did:key:${stranger.multikey}`, `${B}/lws-access/requests`), stranger.secret)));
   assert.equal(wrongSigner.status, 403);
@@ -514,7 +527,7 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   assert.match(issued.body.access_token, /^lwsat_/);
   assert.equal(issued.body.issued_token_type, 'urn:ietf:params:oauth:token-type:access_token');
   assert.equal(issued.body.token_type, 'Bearer');
-  assert.equal(issued.body.expires_in, 3600);
+  assert.equal(issued.body.expires_in, 300, 'LWS Authorization recommends 300 s or less');
   assert.equal(issued.body.scope, 'read', 'the granted actions');
   const [tokenRow] = ctx.rows.lwsAccessTokens;
   assert.equal(tokenRow.tokenHash, hash(issued.body.access_token), 'stored hashed');
@@ -522,7 +535,7 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   assert.deepEqual(tokenRow.actions, ['read']);
   assert.deepEqual(tokenRow.scopes, ['lists:read', 'items:read']);
   assert.ok(ctx.effects.some(([kind, fn]) => kind === 'runAt' && fn === 'lwsAccess:deleteAccessToken'));
-  assert.ok(agentRow.lastUsedAt >= tokenRow.expiresAt - 3600000);
+  assert.ok(agentRow.lastUsedAt >= tokenRow.expiresAt - 300000);
 
   const refused = async (fields, error, what) => { const r = await exchange(fields); assert.equal(r.status, 400, what); assert.equal(r.body.error, error, `${what}: ${JSON.stringify(r.body)}`); };
   await refused(exchangeFields(first), 'invalid_request', 'replayed jti');
@@ -653,6 +666,14 @@ test('requests: deny, expiry, the pending cap, rate limits and someone else\'s r
   for (let i = 0; i < 11; i++) statuses.push((await http(ctx, 'postAccessRequest', postRequest({}, 'x.y.z', { 'CF-Connecting-IP': '192.0.2.77' }))).status);
   assert.equal(statuses.at(-1), 429);
   assert.ok(ctx.rows.rateLimits.every(row => !row.key.includes('192.0.2.77')), 'the IP is stored hashed');
+  // At the token endpoint a 429 is an RFC 6749 5.2 error: invalid_request, with Retry-After.
+  let limited;
+  for (let i = 0; i < 61; i++) limited = await http(ctx, 'tokenEndpoint', tokenRequest({ grant_type: 'x' }));
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get('Retry-After')) >= 1);
+  const body = await limited.json();
+  assert.equal(body.error, 'invalid_request');
+  assert.match(body.error_description, /Too many requests/);
 });
 
 test('metadata documents', async () => {
@@ -662,6 +683,8 @@ test('metadata documents', async () => {
   assert.equal(config.token_endpoint, `${B}/oauth/token`);
   assert.deepEqual(config.grant_types_supported, ['urn:ietf:params:oauth:grant-type:token-exchange']);
   assert.deepEqual(config.subject_token_types_supported, ['urn:ietf:params:oauth:token-type:jwt']);
+  // RFC 8414 2 requires it, and LWS Authorization's example has it.
+  assert.deepEqual(config.response_types_supported, ['token']);
   const prm = await http(ctx, 'getProtectedResourceMetadata', new Request(`https://deployment.convex.site/.well-known/oauth-protected-resource/lws/${U}/L1/I1`));
   assert.deepEqual(await prm.json(), { resource: `${B}/lws/${U}/L1/I1`, authorization_servers: [B], bearer_methods_supported: ['header'] });
   assert.equal((await http(ctx, 'getProtectedResourceMetadata', new Request(`https://deployment.convex.site/.well-known/oauth-protected-resource/lws/admin`))).status, 404);
@@ -751,6 +774,30 @@ test('the CLI agent signs credentials the server accepts', async () => {
   const asUser = lwsJwt.verifyAgentJwt(await cli.agentJwt(key, vm, B), { audience: B, now: Date.now(), document });
   assert.equal(asUser.kid, vm);
   assert.equal(asUser.subject, did);
+  // Access tokens last 300 s: the CLI refreshes before expiry, and once more on a 401 invalid_token.
+  assert.equal(tokens.LWS_ACCESS_TOKEN_TTL_MS, 300_000);
+  assert.equal(cli.tokenNeedsRefresh(undefined), true);
+  assert.equal(cli.tokenNeedsRefresh({ accessToken: 'a', expiresAt: Date.now() + 299_000 }), false);
+  assert.equal(cli.tokenNeedsRefresh({ accessToken: 'a', expiresAt: Date.now() + 10_000 }), true, 'about to expire');
+  const sent = [];
+  const issued = [];
+  const deps = {
+    getToken: async (_path, { fresh }) => { issued.push(fresh); return fresh ? 'lwsat_new' : 'lwsat_old'; },
+    sendFn: async (_url, init) => {
+      sent.push(init.headers.Authorization);
+      return init.headers.Authorization === 'Bearer lwsat_old'
+        ? { status: 401, headers: { 'www-authenticate': 'Bearer resource_metadata="x", error="invalid_token"' }, body: null }
+        : { status: 200, headers: {}, body: { ok: true } };
+    },
+  };
+  const retried = await cli.authorizedSend('state.json', `${B}/lws/${U}/`, { method: 'GET' }, deps);
+  assert.equal(retried.status, 200);
+  assert.deepEqual(sent, ['Bearer lwsat_old', 'Bearer lwsat_new']);
+  assert.deepEqual(issued, [false, true]);
+  sent.length = 0;
+  const forbidden = await cli.authorizedSend('state.json', `${B}/lws/${U}/`, {}, { ...deps, sendFn: async (_u, init) => { sent.push(init.headers.Authorization); return { status: 403, headers: {}, body: null }; } });
+  assert.equal(forbidden.status, 403);
+  assert.equal(sent.length, 1, 'only an invalid token is retried');
   // `request` prints the fingerprint Settings → Agents shows.
   assert.equal(cli.keyFingerprint(key.didKey), multikey.keyFingerprint(key.didKey));
   assert.match(cli.keyFingerprint(key.didKey), /^\S{4} \S{4} \S{4}$/);
