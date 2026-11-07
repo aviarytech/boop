@@ -8,9 +8,10 @@ import { verifyAuthToken } from "./lib/jwt";
 import { hashApiKey } from "./lib/apiKeyHelpers";
 import { AuthError } from "./lib/auth";
 
+// Sessions and API keys only; an LWS agent token is never resolved here (lib/actor.ts requestCredentials).
 export const resolve = internalQuery({
-  args: { authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()) },
-  handler: (ctx, args): Promise<ResolvedActor> => authenticate(ctx, args),
+  args: { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) },
+  handler: (ctx, args): Promise<ResolvedActor> => authenticate(ctx, { authToken: args.authToken, apiKey: args.apiKey }),
 });
 
 // Establishing a record proves possession of a signed session, never a DID.
@@ -82,7 +83,7 @@ export const identity = internalQuery({
 
 export const authorize = internalQuery({
   args: {
-    authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()),
+    authToken: v.optional(v.string()), apiKey: v.optional(v.string()),
     authority: v.union(v.literal("read"), v.literal("edit"), v.literal("owner")),
     scope: v.union(v.literal("lists:read"), v.literal("items:read"), v.literal("items:write"), v.literal("*")),
     resources: v.object({
@@ -93,7 +94,7 @@ export const authorize = internalQuery({
     }),
   },
   handler: async (ctx, args): Promise<void> => {
-    const actor = await authenticate(ctx, args);
+    const actor = await authenticate(ctx, { authToken: args.authToken, apiKey: args.apiKey });
     requireScope(actor, args.scope);
     await authorizeResources(ctx, actor, {
       lists: args.resources.lists?.filter(id => id !== null),

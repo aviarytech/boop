@@ -12,7 +12,12 @@ import { authenticate, requireScope, type ResolvedActor, type Credentials } from
 import { authorizeResources, type ListResources, type ListAuthority } from "./permissions";
 import { AuthError } from "./auth";
 
-const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()), agentToken: v.optional(v.string()) };
+// Sessions and API keys only. An LWS agent token is never accepted here: agents
+// reach boop only through the LWS storage operations (convex/lwsStorage.ts).
+const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) };
+type WrapperCredentials = { authToken?: string; apiKey?: string };
+/** Only the credentials this wrapper accepts, whatever else the arguments carry. */
+const wrapperCredentials = (args: WrapperCredentials): WrapperCredentials => ({ authToken: args.authToken, apiKey: args.apiKey });
 // Temporary wire compatibility only. These assertions never grant access. Keep
 // endpoint names and these fields until deployed browser/mobile versions are confirmed.
 const optionalDid = v.optional(v.string());
@@ -39,11 +44,11 @@ function checkAssertions(actor: ResolvedActor, args: Assertions) {
     }
   }
 }
-function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends PropertyValidators, R>(definition: Definition<C, A, R>, resolve: (ctx: C, args: Credentials) => Promise<ResolvedActor>) {
+function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends PropertyValidators, R>(definition: Definition<C, A, R>, resolve: (ctx: C, args: WrapperCredentials) => Promise<ResolvedActor>) {
   return {
-    args: v.object({ ...assertions, ...definition.args, ...credentials }) as VObject<ObjectType<A> & Assertions & Credentials, A & typeof assertions & typeof credentials>,
-    handler: async (ctx: C, args: ObjectType<A> & Assertions & Credentials): Promise<R> => {
-      const actor = await resolve(ctx, args);
+    args: v.object({ ...assertions, ...definition.args, ...credentials }) as VObject<ObjectType<A> & Assertions & WrapperCredentials, A & typeof assertions & typeof credentials>,
+    handler: async (ctx: C, args: ObjectType<A> & Assertions & WrapperCredentials): Promise<R> => {
+      const actor = await resolve(ctx, wrapperCredentials(args));
       requireScope(actor, definition.scope);
       checkAssertions(actor, args);
       if (ctx && typeof ctx === "object" && "db" in ctx) {
@@ -51,7 +56,7 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
       } else {
         const resources = definition.resources(args);
         await (ctx as ActionCtx).runQuery(internal.actorSession.authorize, {
-          authToken: args.authToken, apiKey: args.apiKey, agentToken: args.agentToken,
+          authToken: args.authToken, apiKey: args.apiKey,
           authority: definition.authority ?? "read",
           scope: definition.scope,
           resources: {
@@ -65,7 +70,7 @@ function prepare<C extends QueryCtx | MutationCtx | ActionCtx, A extends Propert
       // Only declared business arguments reach operations; credentials and old
       // identity assertions cannot be accidentally persisted via an args spread.
       const businessArgs = Object.fromEntries(Object.keys(definition.args).map(key => [key, (args as Record<string, unknown>)[key]])) as ObjectType<A>;
-      return definition.handler(Object.assign({}, ctx, { actor, credentials: { authToken: args.authToken, apiKey: args.apiKey, agentToken: args.agentToken } }), businessArgs);
+      return definition.handler(Object.assign({}, ctx, { actor, credentials: wrapperCredentials(args) }), businessArgs);
     },
   };
 }
@@ -75,7 +80,7 @@ export function actorMutation<A extends PropertyValidators, R>(definition: Defin
   const replay = mutation({
     args: { ...assertions, ...definition.args, ...credentials, replay: replayMetadata },
     handler: async (ctx, args) => {
-      const actor = await authenticate(ctx, args, definition.allowDeletingAccount);
+      const actor = await authenticate(ctx, wrapperCredentials(args), definition.allowDeletingAccount);
       requireScope(actor, definition.scope);
       checkAssertions(actor, args);
       if (!definition.offlineOperation) throw new Error("Offline replay is unsupported");
@@ -86,7 +91,7 @@ export function actorMutation<A extends PropertyValidators, R>(definition: Defin
       // Authenticate before receipt lookup, but allow acknowledgment of a delete
       // whose resource no longer exists. Fresh writes still run all authorization.
       return replayOperation(ctx, actor, definition.offlineOperation, payload, args.replay,
-        () => config.handler(ctx, args as ObjectType<A> & Assertions & Credentials),
+        () => config.handler(ctx, args as ObjectType<A> & Assertions & WrapperCredentials),
         () => authorizeResources(ctx, actor, definition.resources(args), definition.authority ?? "edit"));
     },
   });
@@ -97,6 +102,6 @@ export function actorQuery<A extends PropertyValidators, R>(definition: Definiti
   return { public: query(config), internal: internalQuery(config) };
 }
 export function actorAction<A extends PropertyValidators, R>(definition: Definition<ActionCtx, A, R>) {
-  const config = prepare({ ...definition, authority: definition.authority ?? "edit" }, (ctx, args): Promise<ResolvedActor> => ctx.runQuery(internal.actorSession.resolve, { authToken: args.authToken, apiKey: args.apiKey, agentToken: args.agentToken }));
+  const config = prepare({ ...definition, authority: definition.authority ?? "edit" }, (ctx, args): Promise<ResolvedActor> => ctx.runQuery(internal.actorSession.resolve, wrapperCredentials(args)));
   return { public: action(config), internal: internalAction(config) };
 }

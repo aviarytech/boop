@@ -5,9 +5,12 @@ import { internal } from "../_generated/api";
 import { AuthError } from "./auth";
 import { extractTokenFromRequest } from "./jwt";
 import { hasScope, hashApiKey, type Scope } from "./apiKeyHelpers";
-import { LWS_ACCESS_TOKEN_PREFIX, bearerToken } from "./lwsTokens";
+import { LWS_ACCESS_TOKEN_PREFIX } from "./lwsTokens";
+import type { Doc } from "../_generated/dataModel";
 
-/** `agentToken` is an LWS access token (`lwsat_…`, convex/lwsToken.ts), never a session JWT. */
+/** `agentToken` is an LWS access token (`lwsat_…`, convex/lib/lwsTokens.ts), never a session JWT.
+ * Only the LWS storage operations (convex/lwsStorage.ts) pass one; the generic
+ * operation wrappers (lib/authenticated.ts) never accept it. */
 export type Credentials = { authToken?: string; apiKey?: string; agentToken?: string };
 export type ResolvedActor = {
   did: string;
@@ -35,13 +38,17 @@ export function withoutCredential<T extends { credential?: unknown }>(row: T): O
   return rest;
 }
 
+/**
+ * The credentials of a `/api/*` or `/d/*` request. Never an agent token: an LWS
+ * access token (`Bearer lwsat_…`) is good only on LWS storage resources, whose
+ * handlers (convex/lwsStorageHttp.ts) pass it on themselves. Here it yields no
+ * credential at all, so the request is unauthenticated (extractTokenFromRequest
+ * skips it too).
+ */
 export function requestCredentials(request: Request): Credentials {
-  // An LWS access token is only ever an agentToken; extractTokenFromRequest skips it.
-  const bearer = bearerToken(request);
   return {
     authToken: extractTokenFromRequest(request) ?? undefined,
     apiKey: request.headers.get("X-API-Key") ?? undefined,
-    agentToken: bearer?.startsWith(LWS_ACCESS_TOKEN_PREFIX) ? bearer : undefined,
   };
 }
 
@@ -53,6 +60,35 @@ async function delegatingUser(ctx: QueryCtx | MutationCtx, ownerDid: string, all
   return user as typeof user & { did: string };
 }
 
+/**
+ * An LWS access token → the user it acts for, as that agent, and the token row
+ * (its `storage` is the audience the resource server checks). Throws
+ * INVALID_TOKEN for a token that is unknown, expired, or whose agent was revoked.
+ */
+export async function authenticateAgentToken(
+  ctx: QueryCtx | MutationCtx,
+  agentToken: string,
+  allowDeletingAccount = false,
+): Promise<{ actor: ResolvedActor; token: Doc<"lwsAccessTokens">; agent: Doc<"lwsAgents"> }> {
+  if (!agentToken.startsWith(LWS_ACCESS_TOKEN_PREFIX)) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+  const tokenHash = await hashApiKey(agentToken);
+  const token = await ctx.db.query("lwsAccessTokens").withIndex("by_hash", q => q.eq("tokenHash", tokenHash)).first();
+  if (!token || token.expiresAt <= Date.now()) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+  const agent = await ctx.db.get(token.agentId);
+  if (!agent || agent.revokedAt !== undefined || agent.userId !== token.userId) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+  // The account is found by the agent's DID on every call, as for API keys,
+  // and must still be the account the agent was approved for.
+  const user = await delegatingUser(ctx, agent.ownerDid, allowDeletingAccount);
+  if (user._id !== agent.userId) throw new AuthError("User unavailable", "UNAUTHORIZED");
+  // The token's scopes were the agent's when issued; never more than the agent's now.
+  const scopes = agent.scopes.filter(scope => token.scopes.includes(scope));
+  return {
+    actor: { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes, viaApiKey: true, credential: { kind: "agent", id: agent._id } },
+    token,
+    agent,
+  };
+}
+
 export async function authenticate(
   ctx: QueryCtx | MutationCtx,
   credentials: Credentials,
@@ -61,19 +97,7 @@ export async function authenticate(
   if (credentials.agentToken !== undefined) {
     // One credential per call: an agent token never combines with another.
     if (credentials.apiKey !== undefined || credentials.authToken !== undefined) throw new AuthError("Invalid access token", "INVALID_TOKEN");
-    if (!credentials.agentToken.startsWith(LWS_ACCESS_TOKEN_PREFIX)) throw new AuthError("Invalid access token", "INVALID_TOKEN");
-    const tokenHash = await hashApiKey(credentials.agentToken);
-    const token = await ctx.db.query("lwsAccessTokens").withIndex("by_hash", q => q.eq("tokenHash", tokenHash)).first();
-    if (!token || token.expiresAt <= Date.now()) throw new AuthError("Invalid access token", "INVALID_TOKEN");
-    const agent = await ctx.db.get(token.agentId);
-    if (!agent || agent.revokedAt !== undefined || agent.userId !== token.userId) throw new AuthError("Invalid access token", "INVALID_TOKEN");
-    // The account is found by the agent's DID on every call, as for API keys,
-    // and must still be the account the agent was approved for.
-    const user = await delegatingUser(ctx, agent.ownerDid, allowDeletingAccount);
-    if (user._id !== agent.userId) throw new AuthError("User unavailable", "UNAUTHORIZED");
-    // The token's scopes were the agent's when issued; never more than the agent's now.
-    const scopes = agent.scopes.filter(scope => token.scopes.includes(scope));
-    return { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes, viaApiKey: true, credential: { kind: "agent", id: agent._id } };
+    return (await authenticateAgentToken(ctx, credentials.agentToken, allowDeletingAccount)).actor;
   }
   if (credentials.apiKey !== undefined) {
     const keyHash = await hashApiKey(credentials.apiKey);
@@ -102,7 +126,7 @@ export function requireScope(actor: ResolvedActor, scope: Scope): void {
 /** Compatibility for existing HTTP JWT clients: register verified sessions lazily. */
 export async function authenticatedRequest(ctx: ActionCtx, request: Request): Promise<Credentials> {
   const credentials = requestCredentials(request);
-  if (credentials.apiKey === undefined && credentials.agentToken === undefined && credentials.authToken) {
+  if (credentials.apiKey === undefined && credentials.authToken) {
     await ctx.runMutation(internal.actorSession.establishInternal, { authToken: credentials.authToken });
   }
   return credentials;

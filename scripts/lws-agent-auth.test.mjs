@@ -26,13 +26,14 @@ const entries = {
   lwsJwt: 'convex/lib/lwsJwt.ts', lwsAccessLib: 'convex/lib/lwsAccess.ts', lwsUrls: 'convex/lib/lwsUrls.ts', lwsTokens: 'convex/lib/lwsTokens.ts',
   actor: 'convex/lib/actor.ts', jwt: 'convex/lib/jwt.ts', authorDidShared: 'shared/authorDid.ts',
   lwsAccess: 'convex/lwsAccess.ts', lwsHttp: 'convex/lwsHttp.ts', rateLimits: 'convex/rateLimits.ts', actorSession: 'convex/actorSession.ts',
+  permissions: 'convex/lib/permissions.ts', lists: 'convex/lists.ts', agentReadHttp: 'convex/agentReadHttp.ts',
 };
 await build({
   entryPoints: Object.fromEntries(Object.entries(entries)), outdir, bundle: true, platform: 'node', format: 'esm', target: 'node20',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error',
 });
 const load = name => import(`${pathToFileURL(`${process.cwd()}/${outdir}/${name}.mjs`).href}`);
-const [fixture, lwsJwt, lib, urls, tokens, actor, jwtLib, shared, lwsAccess, lwsHttp, rateLimits, actorSession] = await Promise.all(Object.keys(entries).map(load));
+const [fixture, lwsJwt, lib, urls, tokens, actor, jwtLib, shared, lwsAccess, lwsHttp, rateLimits, actorSession, permissions, lists, agentReadHttp] = await Promise.all(Object.keys(entries).map(load));
 const { mockTurnkey, mintAuthor, agentKey, changeAgentMethod, pinned, authorDidLog } = fixture;
 
 const b64u = value => Buffer.from(typeof value === 'string' ? value : value).toString('base64url');
@@ -324,19 +325,21 @@ test('identifiers and tokens', () => {
   assert.equal(tokens.timingSafeEqual('abc', 'abc'), true);
   assert.equal(tokens.timingSafeEqual('abc', 'abd'), false);
   assert.equal(tokens.timingSafeEqual('abc', 'abcd'), false);
-  // Never a session: the JWT extractor skips it, and requestCredentials files it as an agent token.
-  const request = new Request(`${B}/lws/${U}/`, { headers: { Authorization: 'Bearer lwsat_abc', Cookie: 'auth_token=session.jwt.here' } });
+  // Never a session, and never any credential outside LWS storage: the JWT
+  // extractor skips it (even with a session cookie beside it), and
+  // requestCredentials yields nothing for it.
+  const request = new Request(`${B}/api/v1/lists`, { headers: { Authorization: 'Bearer lwsat_abc', Cookie: 'auth_token=session.jwt.here' } });
   assert.equal(jwtLib.extractTokenFromRequest(request), null);
-  assert.deepEqual(actor.requestCredentials(request), { authToken: undefined, apiKey: undefined, agentToken: 'lwsat_abc' });
+  assert.deepEqual(actor.requestCredentials(request), { authToken: undefined, apiKey: undefined });
   const session = new Request(`${B}/x`, { headers: { Authorization: 'Bearer a.b.c' } });
-  assert.deepEqual(actor.requestCredentials(session), { authToken: 'a.b.c', apiKey: undefined, agentToken: undefined });
+  assert.deepEqual(actor.requestCredentials(session), { authToken: 'a.b.c', apiKey: undefined });
 });
 
 // ---------------------------------------------------------------------------
 // End to end on an in-memory Convex
 // ---------------------------------------------------------------------------
 
-const modules = { lwsAccess, rateLimits, actorSession };
+const modules = { lwsAccess, rateLimits, actorSession, lists };
 function convex(rows) {
   let next = 1;
   const all = () => Object.values(rows).flat();
@@ -529,8 +532,8 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   await assert.rejects(() => actor.authenticate(ctx, { agentToken: issued.body.access_token, authToken: ownerToken }), /Invalid access token/, 'never combined');
   await assert.rejects(() => actor.authenticate(ctx, { agentToken: 'lwsat_forged' }), /Invalid access token/);
   await assert.rejects(() => actor.authenticate(ctx, { agentToken: issued.body.access_token.slice(6) }), /Invalid access token/, 'no prefix');
-  // Owner operations refuse it.
-  await assert.rejects(() => call(ctx, 'activeAgentsInternal', { agentToken: issued.body.access_token }), /scope|unavailable/i);
+  // The operation wrappers never take it, owner operations included.
+  await assert.rejects(() => call(ctx, 'activeAgentsInternal', { agentToken: issued.body.access_token }), /Authentication required/);
   // The account being deleted.
   ctx.rows.users[0].deletionRequestedAt = Date.now();
   await assert.rejects(() => actor.authenticate(ctx, { agentToken: issued.body.access_token }), /unavailable/);
@@ -604,4 +607,67 @@ test('metadata documents', async () => {
   // The challenge points at exactly this document.
   const challenge = urls.lwsChallenge(`https://deployment.convex.site/lws/${U}/L1/I1`);
   assert.match(challenge['WWW-Authenticate'], new RegExp(`resource_metadata="${B}/.well-known/oauth-protected-resource/lws/${U}/L1/I1"`));
+});
+
+// ---------------------------------------------------------------------------
+// Agent tokens are good on LWS storage only, and only for the user's own lists
+// ---------------------------------------------------------------------------
+
+/** world(), plus an approved agent with a live access token, a list shared with the user, and the user's own list. */
+async function agentWorld() {
+  const w = await world();
+  const token = 'lwsat_agent-token-for-tests';
+  Object.assign(w.ctx.rows, {
+    lwsAgents: [{ _id: 'A1', userId: 'U1', ownerDid: w.author.did, fragment: 'agent-abcdefghij', vmId: `${w.author.did}#agent-abcdefghij`, publicKeyMultibase: 'z6Mk', name: 'Bot', actions: ['read', 'create'], scopes: ['lists:read', 'items:read', 'items:write'], requestId: 'r', createdAt: 1 }],
+    lwsAccessTokens: [{ _id: 'T1', tokenHash: hash(token), agentId: 'A1', userId: 'U1', storage: `${B}/lws/${U}`, scopes: ['lists:read', 'items:read', 'items:write'], expiresAt: Date.now() + 3600000 }],
+    lists: [
+      { _id: 'OWN', ownerDid: w.author.did, name: 'Mine', createdAt: 1 },
+      { _id: 'SHARED', ownerDid: 'did:webvh:x:boop.ad:user-friend', name: "A friend's", createdAt: 1 },
+      { _id: 'PUBLISHED', ownerDid: 'did:webvh:x:boop.ad:user-friend', name: 'Published', createdAt: 1 },
+    ],
+    listGrants: [{ _id: 'G1', listId: 'SHARED', recipientId: 'U1', role: 'editor', acceptedAt: 1 }],
+    publications: [{ _id: 'P1', listId: 'PUBLISHED', status: 'active', webvhDid: 'did:webvh:pub', publishedAt: 1 }],
+    bookmarks: [{ _id: 'BM1', userDid: w.author.did, listId: 'PUBLISHED' }],
+  });
+  w.ctx.rows.users.push({ _id: 'U2', did: 'did:webvh:x:boop.ad:user-friend', turnkeySubOrgId: 'friend', displayName: 'Friend', createdAt: 1 });
+  return { ...w, token };
+}
+
+test('an lwsat_ bearer is no credential on /api/* routes', async () => {
+  const { ctx, token, ownerToken } = await agentWorld();
+  assert.equal((await actor.authenticate(ctx, { agentToken: token })).credential.kind, 'agent', 'the token itself is valid');
+  const request = new Request(`${B}/api/v1/lists`, { headers: { Authorization: `Bearer ${token}` } });
+  assert.deepEqual(actor.requestCredentials(request), { authToken: undefined, apiKey: undefined });
+  const response = await agentReadHttp.getLists._handler(ctx, request);
+  assert.equal(response.status, 401);
+  assert.doesNotMatch(await response.text(), /Mine/);
+  // A session still works on the same route.
+  const withSession = new Request(`${B}/api/v1/lists`, { headers: { Authorization: `Bearer ${ownerToken}` } });
+  assert.equal(actor.requestCredentials(withSession).authToken, ownerToken);
+  // Called directly, the operation wrappers ignore an agent token, so there is no credential.
+  await assert.rejects(() => lists.getUserListsInternal._handler(ctx, { agentToken: token }), /Authentication required/);
+  await assert.rejects(() => actorSession.resolve._handler(ctx, { agentToken: token }), /Authentication required/);
+  await assert.rejects(() => actorSession.authorize._handler(ctx, { agentToken: token, authority: 'read', scope: 'lists:read', resources: { lists: ['OWN'] } }), /Authentication required/);
+});
+
+test("an agent is authorized for the user's own lists only", async () => {
+  const { ctx, token, ownerToken } = await agentWorld();
+  const agent = await actor.authenticate(ctx, { agentToken: token });
+  const session = await actor.authenticate(ctx, { authToken: ownerToken });
+  const allowed = (who, lists, authority) => permissions.authorizeResources(ctx, who, { lists }, authority).then(() => true, () => false);
+  for (const authority of ['read', 'edit', 'owner']) assert.equal(await allowed(agent, ['OWN'], authority), true, authority);
+  // The user may use the shared and published lists; the agent may not, at any authority.
+  assert.equal(await allowed(session, ['SHARED'], 'edit'), true);
+  assert.equal(await allowed(session, ['PUBLISHED'], 'read'), true);
+  for (const authority of ['read', 'edit', 'owner']) {
+    assert.equal(await allowed(agent, ['SHARED'], authority), false, `shared, ${authority}`);
+    assert.equal(await allowed(agent, ['PUBLISHED'], authority), false, `published and bookmarked, ${authority}`);
+  }
+  assert.equal(await allowed(agent, ['OWN', 'SHARED'], 'read'), false, 'one foreign list fails the lot');
+  // Items resolve to their list.
+  ctx.rows.items = [{ _id: 'IS', listId: 'SHARED', name: 'x', checked: false, createdAt: 1, createdByDid: 'did:other' }];
+  await assert.rejects(() => permissions.authorizeResources(ctx, agent, { items: ['IS'] }, 'read'), /unavailable/i);
+  // Not while the account is being erased.
+  ctx.rows.users[0].deletionRequestedAt = Date.now();
+  assert.equal(await allowed({ ...agent }, ['OWN'], 'read'), false);
 });
