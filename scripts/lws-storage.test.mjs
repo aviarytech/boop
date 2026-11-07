@@ -502,6 +502,14 @@ test('PATCH and PUT: If-Match, 412, unconditional writes, and read-only members'
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { createdAt: '2020-01-01T00:00:00.000Z' } })).status, 409);
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { parent: `${S}/listsxown/itemsxbread` } })).status, 409);
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { tags: ['x'] } })).status, 400);
+  // A sub-item's parent can't be removed by a patch either; PUT may still leave it out.
+  ctx.rows.items.push({ _id: 'itemsxsub', listId: 'listsxown', parentId: 'itemsxbread', name: 'Rye', checked: false, createdByDid: DID, createdAt: 2200, order: 3 });
+  assert.equal((await call(ctx, '/listsxown/itemsxsub', { method: 'PATCH', headers: merge, body: { parent: null } })).status, 409, 'merge-patch null');
+  assert.equal((await call(ctx, '/listsxown/itemsxsub', { method: 'PATCH', headers: jsonPatch, body: [{ op: 'remove', path: '/parent' }] })).status, 409, 'JSON Patch remove');
+  assert.equal((await call(ctx, '/listsxown/itemsxsub', { method: 'PATCH', headers: merge, body: { name: 'Rye bread' } })).status, 200);
+  assert.equal((await call(ctx, '/listsxown/itemsxsub', { method: 'PUT', headers: json, body: { name: 'Rye' } })).status, 200);
+  assert.equal(ctx.rows.items.find(i => i._id === 'itemsxsub').parentId, 'itemsxbread');
+  assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: merge, body: { parent: null } })).status, 200, 'a top-level item has no parent to remove');
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PATCH', headers: json, body: { name: 'x' } })).status, 415, 'PATCH needs a patch format');
   assert.equal((await call(ctx, '/listsxown/itemsxmilk', { method: 'PUT', headers: merge, body: { name: 'x' } })).status, 415);
 

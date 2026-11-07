@@ -291,7 +291,7 @@ export const writeItem = internalMutation({
       if (!patched.ok) throw lwsFailure(patched.status, patched.status === 400 ? "Invalid patch" : "Patch does not apply", patched.detail);
       next = patched.value;
     }
-    const input = parseItemInput(next, listUri(storage, list._id), current);
+    const input = parseItemInput(next, listUri(storage, list._id), current, { patched: args.mode !== "put" });
     if (!input.ok) throw lwsFailure(input.status, "Invalid item", input.detail);
     const fields = input.value;
 

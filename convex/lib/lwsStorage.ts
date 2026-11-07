@@ -542,9 +542,11 @@ function recurrenceInput(value: unknown): Result<Recurrence | undefined> {
  * Validate an item document. `create` (POST): no read-only members, and
  * `parent` may name an item of `list`. `current` (PUT, or the result of a
  * PATCH): read-only members and `parent` may be left out, or must be what they
- * are now. Unknown members are refused (400): boop can't store them.
+ * are now. `patched` (the result of a PATCH): a sub-item's `parent` missing
+ * means the patch removed it, which is a change, so 409. Unknown members are
+ * refused (400): boop can't store them.
  */
-export function parseItemInput(body: unknown, list: string, current?: ItemDocument): Result<ItemInput> {
+export function parseItemInput(body: unknown, list: string, current?: ItemDocument, { patched = false } = {}): Result<ItemInput> {
   if (!isObject(body)) return fail(400, "An item is a JSON object");
   const unknown = Object.keys(body).filter(key => !(WRITABLE as readonly string[]).includes(key) && !(READ_ONLY as readonly string[]).includes(key));
   if (unknown.length) return fail(400, `Unknown members: ${unknown.join(", ")}`);
@@ -574,6 +576,7 @@ export function parseItemInput(body: unknown, list: string, current?: ItemDocume
   let parentId: string | undefined;
   if (current) {
     if (has(body, "parent") && !jsonEqual(body.parent, current.parent)) return fail(409, "An item's parent can't be changed");
+    if (patched && current.parent !== null && !has(body, "parent")) return fail(409, "An item's parent can't be removed");
   } else if (body.parent !== undefined && body.parent !== null) {
     const match = typeof body.parent === "string" && body.parent.startsWith(list) ? new RegExp(`^${ID_SEGMENT}$`).exec(body.parent.slice(list.length)) : null;
     if (!match) return fail(409, "parent must be an item of this list");
