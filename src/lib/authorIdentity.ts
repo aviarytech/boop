@@ -22,7 +22,7 @@ import {
 } from "./authorDid";
 import { currentWebvhDomain, domainFromDidSafe, forgetLegacyDidKey, userDidPath } from "./webvh";
 import type { EntrySummary, ListAuthor } from "./originalsSigning";
-import { AgentKeyError, publishAgentChange, type AgentKeyDeps, type AgentKeyResult, type AgentKeyStep } from "./agentKeys";
+import { AgentKeyError, publishAgentChange, servedChangeApplied, type AgentKeyDeps, type AgentKeyResult, type AgentKeyStep } from "./agentKeys";
 import type { AgentMethodChange } from "../../shared/authorDid";
 
 export interface CurrentAuthor {
@@ -63,18 +63,27 @@ export async function agentKeySigningReady(): Promise<boolean> {
 
 /**
  * Add or remove an agent key in the signed-in author's DID, then sign
- * Originals at the version that makes. Without a confirmed author (no live
- * Turnkey session at sign-in) it throws AgentKeyError "not-ready": sign in
- * again. `deps` defaults to the real Turnkey session and Convex URL.
+ * Originals at the version that makes. A change the served DID already has
+ * needs no signature, so it goes straight through, even without a confirmed
+ * author or a live Turnkey session, when `account` names whose DID to read
+ * (an approval whose grant failed after its DID update). Otherwise, without
+ * a confirmed author (no live Turnkey session at sign-in), it throws
+ * AgentKeyError "not-ready": sign in again. `deps` defaults to the real
+ * Turnkey session and Convex URL.
  */
 export async function changeAuthorAgentKey(
   change: AgentMethodChange,
   token: string,
   onStep?: (step: AgentKeyStep) => void,
   deps: AgentKeyDeps = { backend: turnkeyAuthorBackend(), ready: authorSigningReady, fetch: (...args) => fetch(...args), httpUrl: getConvexHttpUrl(), token },
+  account?: { subOrgId: string; did: string },
 ): Promise<AgentKeyResult> {
   const author = current;
-  if (!author) throw new AgentKeyError("not-ready", "Sign in again to change your agents: this device hasn't confirmed your signing keys.");
+  if (!author) {
+    const applied = account ? await servedChangeApplied(deps, account, change) : null;
+    if (applied) return applied;
+    throw new AgentKeyError("not-ready", "Sign in again to change your agents: this device hasn't confirmed your signing keys.");
+  }
   const result = await publishAgentChange(author, change, deps, onStep);
   updateCurrentAuthorLog(result.did, result.log, result.versionId);
   return result;

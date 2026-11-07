@@ -52,7 +52,7 @@ await build({
       useAuth: `export const useAuth=()=>({user:{did:${JSON.stringify(DID)},turnkeySubOrgId:"sub-org-0000000000000"},token:"jwt",logout:async()=>{globalThis.__agentsUi.loggedOut=true;}});`,
       convexUrls: `export const getConvexHttpUrl=()=>"https://deploy.convex.site";`,
       authorIdentity: `import {AgentKeyError} from "./agentKeys";
-        export async function changeAuthorAgentKey(change,token,onStep){const s=globalThis.__agentsUi;s.calls.push(["did",change]);
+        export async function changeAuthorAgentKey(change,token,onStep,deps,account){const s=globalThis.__agentsUi;s.calls.push(["did",change]);s.account=account;
           if(s.keyError){const e=s.keyError;s.keyError=null;throw new AgentKeyError(e,e==="not-ready"?"Sign in again to change your agents.":"boop didn't save the DID update (500).");}
           onStep&&onStep("signing");onStep&&onStep("saving");
           if("add" in change)s.didFragments.push(change.add.fragment);else s.didFragments=s.didFragments.filter(f=>f!==change.remove);
@@ -91,6 +91,8 @@ test('approve: the DID update comes first, then the grant, with only the actions
     ['did', { add: { fragment: request.fragment, publicKeyMultibase: request.agentPublicKeyMultibase } }],
     ['lwsAccess:approveAccessRequest', { requestId: 'R1', actions: ['read', 'create'] }],
   ]);
+  // Whose served DID to read, so a key already in it is approved with no signature.
+  assert.deepEqual(state.account, { subOrgId: 'sub-org-0000000000000', did: DID });
 });
 
 test('a grant that fails after the DID update can be retried; nothing is approved with no action ticked', async () => {
@@ -135,6 +137,7 @@ test('revoke asks first, ends access before touching the DID, and a key left beh
   assert.match(alert.textContent, /no longer has access, but its key is still in your DID/);
   assert.deepEqual(state.calls, [['lwsAccess:revokeAgent', { agentId: 'A1' }], ['did', { remove: agent.fragment }]]);
   const remove = await screen.findByRole('button', { name: `Remove key #${agent.fragment} from your DID` });
+  assert.ok(screen.getByText(/turns it away until its old key is gone: Remove key from DID first/));
   fireEvent.click(remove);
   await waitFor(() => assert.ok(!screen.queryByRole('button', { name: /Remove key/ })));
   assert.deepEqual(state.calls.at(-1), ['did', { remove: agent.fragment }]);

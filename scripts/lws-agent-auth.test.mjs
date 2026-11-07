@@ -593,6 +593,17 @@ test('an agent asks, the owner approves, and the agent trades a JWT for an acces
   await refused(exchangeFields(subjectToken()), 'invalid_request', 'revoked agent');
   assert.equal((await (await poll()).json()).status, 'revoked');
   assert.deepEqual(await call(ctx, 'activeAgentsInternal', { authToken: ownerToken }), []);
+
+  // The revoked agent's key is still in the DID: asking again is a 409 that says to remove it first.
+  const leftover = await http(ctx, 'postAccessRequest', postRequest(accessRequestBody(didKey), requestJwt()));
+  assert.equal(leftover.status, 409);
+  const problem = await leftover.json();
+  assert.match(problem.title, /still in the owner's DID/);
+  assert.match(problem.detail, new RegExp(`#${row.fragment}.*Remove key from DID`));
+  assert.equal(ctx.rows.lwsAccessRequests.filter(r => r.status === 'pending').length, 0, 'no request made');
+  // Once the key is gone from the DID, it may ask again.
+  ctx.rows.didLogs[0].log = (await changeAgentMethod(turnkey, { jsonl: updated.jsonl, keys: author.keys }, { remove: row.fragment })).jsonl;
+  assert.equal((await http(ctx, 'postAccessRequest', postRequest(accessRequestBody(didKey), requestJwt()))).status, 201);
 });
 
 test('requests: deny, expiry, the pending cap, rate limits and someone else\'s request', async () => {

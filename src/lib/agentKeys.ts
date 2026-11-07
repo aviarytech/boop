@@ -196,6 +196,26 @@ export async function publishAgentChange(
   }
 }
 
+/**
+ * When the served DID of this account already has `change` (an approval
+ * whose DID update landed but whose grant didn't), the served log as it
+ * stands; null otherwise. Needs no author keys and no Turnkey session: it
+ * only reads. Approval still checks the stored DID on the server.
+ */
+export async function servedChangeApplied(
+  deps: Pick<AgentKeyDeps, "fetch" | "httpUrl">,
+  account: { subOrgId: string; did: string },
+  change: AgentMethodChange,
+): Promise<AgentKeyResult | null> {
+  const served = await fetchServedDidLog(deps, account.subOrgId);
+  let log: DIDLog;
+  try { log = parseCanonicalDidLog(served); } catch { return null; }
+  const { state } = head(log);
+  if (state.id !== account.did || !alreadyApplied(state, change)) return null;
+  const versionId = (log[log.length - 1] as unknown as { versionId: string }).versionId;
+  return { did: account.did, log: served, versionId, changed: false };
+}
+
 /** Add an approved agent's key as `#<fragment>`. */
 export function addAgentKey(author: AgentKeyAuthor, key: { fragment: string; publicKeyMultibase: string }, deps: AgentKeyDeps, onStep?: (step: AgentKeyStep) => void) {
   return publishAgentChange(author, { add: key }, deps, onStep);

@@ -251,4 +251,16 @@ test('after an agent change, Originals signs at the new version, and the list ve
   // Without a confirmed author the change asks for a new sign-in.
   identity.clearCurrentAuthor();
   await assert.rejects(() => identity.changeAuthorAgentKey({ remove: A }, 'jwt', undefined, deps), err => err.code === 'not-ready');
+
+  // ...unless the served DID already has it: then approval goes straight on, no signature, no Turnkey session.
+  const notReady = { ...deps, ready: async () => assert.fail('no readiness check for a change already made') };
+  const account = { subOrgId: SUB_ORG, did: author.did };
+  const before = posts(api).length;
+  const already = await identity.changeAuthorAgentKey({ add: { fragment: A, publicKeyMultibase: agent.multikey } }, 'jwt', undefined, notReady, account);
+  assert.deepEqual(already, { did: author.did, log: api.state.log, versionId: result.versionId, changed: false });
+  assert.equal(posts(api).length, before, 'nothing posted');
+  const other = await agentKey();
+  await assert.rejects(() => identity.changeAuthorAgentKey({ add: { fragment: B, publicKeyMultibase: other.multikey } }, 'jwt', undefined, notReady, account), err => err.code === 'not-ready', 'a change still to make needs the session');
+  await assert.rejects(() => identity.changeAuthorAgentKey({ add: { fragment: A, publicKeyMultibase: other.multikey } }, 'jwt', undefined, notReady, account), err => err.code === 'not-ready', 'another key at the fragment is not the same change');
+  await assert.rejects(() => identity.changeAuthorAgentKey({ add: { fragment: A, publicKeyMultibase: agent.multikey } }, 'jwt', undefined, notReady, { ...account, did: 'did:webvh:x:boop.ad:user-other' }), err => err.code === 'not-ready', "another account's DID");
 });

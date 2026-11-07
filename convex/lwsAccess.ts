@@ -117,6 +117,17 @@ export const createAccessRequestInternal = internalMutation({
     if (existing) {
       return { ok: true, created: false, location: accessRequestUri(existing.requestId, base), document: accessRequestDocument(view(existing), accessRequestUri(existing.requestId, base)) };
     }
+    // The key is still an agent method of the DID, but no active agent or
+    // pending request holds it: a revoked agent's key whose removal failed.
+    // Approving it again would need a second method with the same key, which
+    // the author DID rule refuses, so say what to do instead.
+    const didState = latestDidState(account.log.log);
+    const leftover = (didState?.verificationMethod ?? []).find(vm =>
+      vm.publicKeyMultibase === claims.publicKeyMultibase && isAgentFragment((vm.id ?? "").split("#").pop() ?? ""));
+    if (leftover) {
+      return failure(409, "This key is still in the owner's DID",
+        `A revoked agent's key is still listed in this storage's DID as #${(leftover.id ?? "").split("#").pop()}. The owner must remove it first (Settings → Agents, "Remove key from DID"), then this key can ask again.`);
+    }
     // At the cap, the oldest pending request makes way: refusing new ones would
     // let anyone fill the queue and lock the owner's real agents out for a day.
     // The owner tells requests apart by the key fingerprint their agent printed.

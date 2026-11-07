@@ -189,10 +189,13 @@ export function AgentsSettings() {
     let keyAdded = false;
     setFor(request.requestId, { stage: "signing" });
     try {
+      // A key already in the DID needs no signature: straight on to the grant.
       await changeAuthorAgentKey(
         { add: { fragment: request.fragment, publicKeyMultibase: request.agentPublicKeyMultibase } },
         token,
         stage => setFor(request.requestId, { stage }),
+        undefined,
+        user?.did && subOrgId ? { subOrgId, did: user.did } : undefined,
       );
       keyAdded = true;
       setFor(request.requestId, { stage: "granting" });
@@ -367,6 +370,9 @@ export function AgentsSettings() {
             <p className="mb-2">
               {stray.length === 1 ? "A revoked agent's key is" : `${stray.length} revoked agents' keys are`} still listed in your
               public identity. They can't get access, but you can tidy them away.
+            </p>
+            <p className="mb-2">
+              If that agent asks for access again, boop turns it away until its old key is gone: Remove key from DID first.
             </p>
             <ul className="space-y-1">
               {stray.map(method => (
