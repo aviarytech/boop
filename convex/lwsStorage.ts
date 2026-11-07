@@ -24,7 +24,8 @@ import { accessRequestsUri, storageUri } from "./lib/lwsUrls";
 import { LWS_JSON, type CanonicalAction } from "./lib/lwsAccess";
 import {
   applyJsonPatch, entityTag, evaluatePreconditions, hasPreconditions, itemDocument, itemModified, jsonEqual,
-  linksetDocument, listContainerDocument, listModified, lwsFailure, mergePatch, notFound, parseItemInput,
+  linksetDocument, listContainerDocument, listModified, listModifiedFromLatest, listPageCount, lwsFailure, mergePatch, notFound,
+  paginationLinks, parseItemInput,
   parseTarget, rootContainerDocument, sameRecurrence, storageDescription, itemUri, listUri,
   JSON_MEDIA, LINKSET_JSON, LWS_CID, MAX_CREATE_DESCRIPTION,
   type ItemDocument, type Preconditions, type ResourceTarget, type Validators,
@@ -42,7 +43,8 @@ const preconditions = v.object({
   ifUnmodifiedSince: v.optional(v.string()),
 });
 
-export type Representation = Validators & { contentType: string; body: string };
+/** `links`: `Link` values beyond the resource's own (a paginated list's first, last, prev, next). */
+export type Representation = Validators & { contentType: string; body: string; links?: string[] };
 /**
  * A write's result. `readable` is whether the agent may also read: if not,
  * `body` is empty and the response carries none (204, or 201 without a body).
@@ -107,28 +109,44 @@ async function json(contentType: string, document: unknown, lastModified: number
 const itemRepresentation = (storage: string, item: Doc<"items">) =>
   json(JSON_MEDIA, itemDocument(storage, item), itemModified(item), true);
 
-async function listRepresentation(ctx: QueryCtx | MutationCtx, storage: string, list: Doc<"lists">): Promise<Representation> {
+/**
+ * A page of a list container (the first page is the container itself). The
+ * list's items are read whole, as the app's own list view and addItem do, so
+ * a list an agent reads is no bigger than one the app reads; a page bounds
+ * what is serialized and sent.
+ */
+async function listRepresentation(ctx: QueryCtx | MutationCtx, storage: string, list: Doc<"lists">, page = 1): Promise<Representation> {
   const items = await listItems(ctx, list._id);
+  if (page > listPageCount(items.length)) throw lwsFailure(404, "No such page");
   // Deleting an item leaves no time behind, so a container's Last-Modified is
   // a lower bound and only its ETag is used as a validator.
-  return json(LWS_JSON, listContainerDocument(storage, list, items), listModified(list, items), false);
+  const representation = await json(LWS_JSON, listContainerDocument(storage, list, items, page), listModified(list, items), false);
+  return { ...representation, links: paginationLinks(storage, list._id, items.length, page) };
 }
 
+/**
+ * The storage root: the user's own lists under their current and legacy DID.
+ * Each list's `modified` is one indexed read of its latest item, never a scan
+ * of its items, so the root stays within read limits however big lists get.
+ */
 async function rootRepresentation(ctx: QueryCtx | MutationCtx, storage: string, actor: ResolvedActor): Promise<Representation> {
   const owners = [actor.did, ...(actor.legacyDid && actor.legacyDid !== actor.did ? [actor.legacyDid] : [])];
   const lists = (await Promise.all(owners.map(did => ctx.db.query("lists").withIndex("by_owner", q => q.eq("ownerDid", did)).collect())))
     .flat().filter(list => !isNote(list));
-  const entries = await Promise.all(lists.map(async list => ({ list, modified: listModified(list, await listItems(ctx, list._id)) })));
+  const entries = await Promise.all(lists.map(async list => {
+    const latest = await ctx.db.query("items").withIndex("by_list_updated", q => q.eq("listId", list._id)).order("desc").first();
+    return { list, modified: listModifiedFromLatest(list, latest) };
+  }));
   const user = await ctx.db.get(actor.userId);
   const lastModified = Math.max(user?.createdAt ?? 0, ...entries.map(entry => entry.modified));
   return json(LWS_JSON, rootContainerDocument(storage, entries), lastModified, false);
 }
 
 /** The resource a non-description target names, after checking it is the agent's to see. */
-async function resource(ctx: QueryCtx | MutationCtx, storage: string, actor: ResolvedActor, target: ResourceTarget) {
+async function resource(ctx: QueryCtx | MutationCtx, storage: string, actor: ResolvedActor, target: ResourceTarget, page = 1) {
   if (target.kind === "root") return { target, representation: await rootRepresentation(ctx, storage, actor) };
   const list = await ownList(ctx, actor, target.listId);
-  if (target.kind === "list") return { target, list, representation: await listRepresentation(ctx, storage, list) };
+  if (target.kind === "list") return { target, list, representation: await listRepresentation(ctx, storage, list, page) };
   const item = await ownItem(ctx, list, target.itemId);
   return { target, list, item, representation: await itemRepresentation(storage, item) };
 }
@@ -161,13 +179,14 @@ export const describeStorage = internalQuery({
   },
 });
 
-/** GET/HEAD on a container, an item, or a linkset. */
+/** GET/HEAD on a container (`page` of a list), an item, or a linkset. */
 export const read = internalQuery({
-  args: { agentToken: v.string(), userPath: v.string(), subpath: v.string() },
+  args: { agentToken: v.string(), userPath: v.string(), subpath: v.string(), page: v.optional(v.number()) },
   handler: async (ctx, args): Promise<Representation> => {
     const target = resourceTarget(args.subpath);
     const { actor, storage } = await agentFor(ctx, args.agentToken, args.userPath, "read");
-    const found = await resource(ctx, storage, actor, target);
+    const page = target.kind === "list" && !target.linkset ? args.page ?? 1 : 1;
+    const found = await resource(ctx, storage, actor, target, page);
     if (!target.linkset) return found.representation;
     return json(LINKSET_JSON, linksetDocument(storage, target), found.representation.lastModified, false);
   },

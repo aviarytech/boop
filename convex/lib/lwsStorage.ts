@@ -171,22 +171,66 @@ export const byPosition = (a: ItemRow, b: ItemRow) => (a.order ?? a.createdAt) -
 
 const utf8Length = (text: string) => new TextEncoder().encode(text).length;
 
-/** A list as a container of its items (container-representation.md), with its title. */
-export function listContainerDocument(storage: string, list: ListRow, items: ItemRow[]) {
-  const members = [...items].sort(byPosition).map(item => ({
+/**
+ * Items per page of a list container (lws-media-type.md "Pagination"). A list
+ * with more is paginated: each page lists this many members in list order,
+ * and `totalItems` counts them all.
+ */
+export const LIST_PAGE_SIZE = 500;
+
+export const listPageCount = (total: number) => Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+
+/** A page of a list container: the container itself for the first, `?page=n` after it. Opaque to clients. */
+export const listPageUri = (storage: string, listId: string, page: number) =>
+  page <= 1 ? listUri(storage, listId) : `${listUri(storage, listId)}?page=${page}`;
+
+/** `?page=n` → n; 1 when absent; null when it isn't a page number. */
+export function parsePageParam(value: string | null): number | null {
+  if (value === null) return 1;
+  return /^[1-9][0-9]{0,6}$/.test(value) ? Number(value) : null;
+}
+
+/** The pagination `Link` values of a page (rel first, last, prev, next); none for a list that fits on one. */
+export function paginationLinks(storage: string, listId: string, total: number, page: number): string[] {
+  const pages = listPageCount(total);
+  if (pages === 1) return [];
+  const at = (n: number) => listPageUri(storage, listId, n);
+  return [
+    `<${at(1)}>; rel="first"`,
+    `<${at(pages)}>; rel="last"`,
+    ...(page > 1 ? [`<${at(page - 1)}>; rel="prev"`] : []),
+    ...(page < pages ? [`<${at(page + 1)}>; rel="next"`] : []),
+  ];
+}
+
+/**
+ * A list as a container of its items (container-representation.md), with its
+ * title: page `page` of its members in list order, and the total count.
+ */
+export function listContainerDocument(storage: string, list: ListRow, items: ItemRow[], page = 1) {
+  const sorted = [...items].sort(byPosition);
+  const members = sorted.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE).map(item => ({
     type: "DataResource",
     id: itemUri(storage, item.listId, item._id),
     format: JSON_MEDIA,
     size: utf8Length(JSON.stringify(itemDocument(storage, item))),
     modified: isoTime(itemModified(item)),
   }));
-  return { "@context": LWS_CONTEXT, id: listUri(storage, list._id), type: "Container", title: list.name, totalItems: members.length, items: members };
+  return { "@context": LWS_CONTEXT, id: listUri(storage, list._id), type: "Container", title: list.name, totalItems: sorted.length, items: members };
 }
 
 /** When a list container last changed, as far as boop records it: deletions leave no time. */
 export function listModified(list: ListRow, items: ItemRow[]): number {
   return Math.max(list.createdAt, ...items.map(itemModified));
 }
+
+/**
+ * A list's `modified` in the root container, from its latest item by the
+ * `by_list_updated` index (one read per list, not every item): the list's
+ * `createdAt` when it has none.
+ */
+export const listModifiedFromLatest = (list: ListRow, latest: ItemRow | null) =>
+  Math.max(list.createdAt, latest ? itemModified(latest) : list.createdAt);
 
 /** The storage root: the user's own lists, as containers. */
 export function rootContainerDocument(storage: string, lists: Array<{ list: ListRow; modified: number }>) {

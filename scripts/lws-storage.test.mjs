@@ -52,13 +52,23 @@ function convex(rows) {
     delete: async id => { for (const table of Object.values(rows)) { const at = table.findIndex(row => row._id === id); if (at >= 0) table.splice(at, 1); } },
     query: table => {
       const predicates = [];
+      let index = null;
+      let descending = false;
+      // Index order for the indexes whose order a caller relies on; undefined sorts first, as in Convex.
+      const ORDER = { by_list_updated: 'updatedAt' };
+      const key = r => (r[ORDER[index]] === undefined ? -Infinity : r[ORDER[index]]);
       const q = {
-        withIndex: (_index, fn) => {
+        withIndex: (name, fn) => {
+          index = name;
           const b = { eq: (k, v) => { predicates.push(r => r[k] === v); return b; } };
           fn?.(b); return q;
         },
-        order: () => q,
-        collect: async () => (rows[table] ?? []).filter(r => predicates.every(p => p(r))),
+        order: direction => { descending = direction === 'desc'; return q; },
+        collect: async () => {
+          const found = (rows[table] ?? []).filter(r => predicates.every(p => p(r)));
+          if (ORDER[index]) found.sort((a, b) => key(a) - key(b) || a._creationTime - b._creationTime);
+          return descending ? found.reverse() : found;
+        },
         take: async n => (await q.collect()).slice(0, n),
         first: async () => (await q.collect())[0] ?? null,
         unique: async () => (await q.collect())[0] ?? null,
@@ -206,6 +216,69 @@ test("the root container lists the user's own lists, not notes or shared lists",
   const post = await call(ctx, '/', { method: 'POST', headers: json, body: { name: 'New list' } });
   assert.equal(post.status, 405);
   assert.equal(post.headers.get('Allow'), 'GET, HEAD, OPTIONS');
+});
+
+test("the root includes lists under the user's legacy DID, and reads one item per list", async () => {
+  const ctx = world();
+  const LEGACY = 'did:webvh:QmOld:trypoo.app:user-sub-org';
+  ctx.rows.users[0].legacyDid = LEGACY;
+  ctx.rows.lists.push({ _id: 'listsxlegacy', ownerDid: LEGACY, name: 'From before', createdAt: 900 });
+  ctx.rows.lists.push({ _id: 'listsxempty', ownerDid: DID, name: 'Empty', createdAt: 1300 });
+  ctx.rows.items.push({ _id: 'itemsxold', listId: 'listsxlegacy', name: 'Old', checked: false, createdByDid: LEGACY, createdAt: 950, updatedAt: 4000 });
+  ctx.rows.items.push({ _id: 'itemsxolder', listId: 'listsxlegacy', name: 'Older', checked: false, createdByDid: LEGACY, createdAt: 920 });
+  const reads = [];
+  const query = ctx.db.query;
+  ctx.db.query = table => { const q = query(table); const withIndex = q.withIndex; q.withIndex = (name, fn) => { reads.push(`${table}.${name}`); return withIndex(name, fn); }; return q; };
+  const root = await (await call(ctx, '/')).json();
+  assert.deepEqual(root.items.map(m => [m.title, m.modified]), [
+    ['From before', new Date(4000).toISOString()],
+    ['Groceries', new Date(3000).toISOString()],
+    ['Empty', new Date(1300).toISOString()],
+  ], 'modified is the latest item, else the list');
+  assert.ok(root.items.every(m => !('size' in m)));
+  assert.ok(!reads.includes('items.by_list'), 'no list has its items scanned');
+  assert.equal(reads.filter(r => r === 'items.by_list_updated').length, 3);
+  // The legacy list is the agent's to read, too.
+  assert.equal((await call(ctx, '/listsxlegacy/')).status, 200);
+});
+
+test('a list longer than a page is paginated by Link headers', async () => {
+  const ctx = world();
+  const size = lib.LIST_PAGE_SIZE;
+  for (let i = 0; i < size * 2 + 3; i++) {
+    ctx.rows.items.push({ _id: `itemsxp${i}`, listId: 'listsxown', name: `Item ${i}`, checked: false, createdByDid: DID, createdAt: 5000 + i, order: 10 + i });
+  }
+  const total = size * 2 + 5;
+  const pageLinks = response => Object.fromEntries(links(response).map(l => /<([^>]*)>;\s*rel="(first|last|prev|next)"/.exec(l)).filter(Boolean).map(m => [m[2], m[1]]));
+  const first = await call(ctx, '/listsxown/');
+  assert.equal(first.status, 200);
+  const one = await first.json();
+  assert.equal(one.totalItems, total, 'the whole membership');
+  assert.equal(one.items.length, size);
+  assert.deepEqual(one.items.slice(0, 2).map(i => i.id), [MILK, `${S}/listsxown/itemsxbread`], 'list order across pages');
+  assert.deepEqual(pageLinks(first), { first: `${S}/listsxown/`, last: `${S}/listsxown/?page=3`, next: `${S}/listsxown/?page=2` });
+  assert.ok(hasLink(first, `${S}/`, 'up') && hasLink(first, `${S}/listsxown/.meta`, 'linkset'), 'the container links too');
+  const second = await http.lwsStorage._handler(ctx, new Request(pageLinks(first).next.replace(B, 'https://deployment.convex.site'), { headers: { Authorization: `Bearer ${TOKEN}` } }));
+  assert.equal(second.status, 200);
+  assert.deepEqual(pageLinks(second), { first: `${S}/listsxown/`, last: `${S}/listsxown/?page=3`, prev: `${S}/listsxown/`, next: `${S}/listsxown/?page=3` });
+  const two = await second.json();
+  assert.equal(two.id, `${S}/listsxown/`);
+  assert.equal(two.totalItems, total);
+  assert.equal(two.items.length, size);
+  assert.notEqual(second.headers.get('ETag'), first.headers.get('ETag'));
+  const last = await call(ctx, '/listsxown/?page=3');
+  assert.deepEqual(pageLinks(last), { first: `${S}/listsxown/`, last: `${S}/listsxown/?page=3`, prev: `${S}/listsxown/?page=2` });
+  assert.equal((await last.json()).items.length, 5);
+  const seen = new Set([...one.items, ...two.items].map(i => i.id));
+  assert.equal(seen.size, size * 2, 'no member twice');
+  for (const page of ['4', '0', 'x', '-1']) {
+    const missing = await call(ctx, `/listsxown/?page=${page}`);
+    assert.equal(missing.status, 404, page);
+    assert.ok(hasLink(missing, S, 'https://www.w3.org/ns/lws#storage'), page);
+  }
+  // A list that fits on one page has no pagination links.
+  ctx.rows.items = ctx.rows.items.filter(i => !i._id.startsWith('itemsxp'));
+  assert.deepEqual(pageLinks(await call(ctx, '/listsxown/')), {});
 });
 
 test('a list container: its items as JSON data resources', async () => {

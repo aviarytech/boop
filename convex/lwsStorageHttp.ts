@@ -22,7 +22,7 @@ import { getCorsHeaders } from "./lib/httpResponses";
 import { LWS_ACCESS_TOKEN_PREFIX, bearerToken } from "./lib/lwsTokens";
 import { canonicalRequestUrl, LWS_STORAGE_REL, lwsBaseUrl, lwsChallenge, parseStoragePath, storageUri } from "./lib/lwsUrls";
 import {
-  allowedMethods, evaluatePreconditions, lwsFailureData, parseTarget, resourceLinks, selectRange,
+  allowedMethods, evaluatePreconditions, lwsFailureData, parsePageParam, parseTarget, resourceLinks, selectRange,
   JSON_MEDIA, JSON_PATCH, MAX_STORAGE_BODY_BYTES, MERGE_PATCH, LWS_NS,
   type Preconditions, type StorageTarget,
 } from "./lib/lwsStorage";
@@ -125,7 +125,7 @@ export const lwsStorage = httpAction(async (ctx, request) => {
       "Content-Type": representation.contentType,
       ETag: representation.etag,
       "Last-Modified": new Date(representation.lastModified).toUTCString(),
-      Link: target.kind === "description" ? storageLink.Link : resourceLinks(storage, target).join(", "),
+      Link: target.kind === "description" ? storageLink.Link : [...resourceLinks(storage, target), ...(representation.links ?? [])].join(", "),
       "Cache-Control": representationCacheControl(target),
       Vary: [getCorsHeaders(request).Vary, target.kind === "description" ? undefined : "Authorization"].filter(Boolean).join(", "),
       ...extra,
@@ -172,7 +172,10 @@ export const lwsStorage = httpAction(async (ctx, request) => {
     }
 
     if (method === "GET" || method === "HEAD") {
-      return respond(await ctx.runQuery(internal.lwsStorage.read, { agentToken, userPath, subpath }));
+      // A list container's later pages (lws-media-type.md "Pagination"): `?page=n`, from its Link headers.
+      const page = target.kind === "list" && !target.linkset ? parsePageParam(new URL(request.url).searchParams.get("page")) : 1;
+      if (page === null) return problem(request, 404, "No such page", undefined, storageLink);
+      return respond(await ctx.runQuery(internal.lwsStorage.read, { agentToken, userPath, subpath, page }));
     }
     if (method === "DELETE") {
       await ctx.runMutation(internal.lwsStorage.deleteItem, { agentToken, userPath, subpath, preconditions: requestPreconditions(request) });
