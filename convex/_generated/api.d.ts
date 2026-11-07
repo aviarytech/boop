@@ -65,6 +65,7 @@ import type * as lib_itemCategories from "../lib/itemCategories.js";
 import type * as lib_jwt from "../lib/jwt.js";
 import type * as lib_listGrants from "../lib/listGrants.js";
 import type * as lib_lwsAccess from "../lib/lwsAccess.js";
+import type * as lib_lwsAgentRevocation from "../lib/lwsAgentRevocation.js";
 import type * as lib_lwsJwt from "../lib/lwsJwt.js";
 import type * as lib_lwsStorage from "../lib/lwsStorage.js";
 import type * as lib_lwsTokens from "../lib/lwsTokens.js";
@@ -175,6 +176,7 @@ declare const fullApi: ApiFromModules<{
   "lib/jwt": typeof lib_jwt;
   "lib/listGrants": typeof lib_listGrants;
   "lib/lwsAccess": typeof lib_lwsAccess;
+  "lib/lwsAgentRevocation": typeof lib_lwsAgentRevocation;
   "lib/lwsJwt": typeof lib_lwsJwt;
   "lib/lwsStorage": typeof lib_lwsStorage;
   "lib/lwsTokens": typeof lib_lwsTokens;
