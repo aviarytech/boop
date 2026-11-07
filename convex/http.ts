@@ -35,6 +35,7 @@ import { createApiKey, listApiKeys, revokeApiKey } from "./apiKeysHttp";
 import { getActionRecords, getLists, getListWithItems } from "./agentReadHttp";
 import { getAccessRequest, getLwsConfiguration, getProtectedResourceMetadata, lwsOptions, postAccessRequest, tokenEndpoint } from "./lwsHttp";
 import { lwsStorage } from "./lwsStorageHttp";
+import { hasRequiredCapabilities, UPGRADE_REQUIRED_MESSAGE } from "../shared/clientCapabilities";
 const RATE_LIMITS = {
   initiate: { windowMs: 60000, maxAttempts: 5 },
   verify: { windowMs: 60000, maxAttempts: 5 },
@@ -209,13 +210,11 @@ const verify = httpAction(async (ctx, request) => {
       }
     }
 
-    if (!encryptedOtpBundle) {
-      return jsonResponse(
-        { error: "This version of boop can no longer sign in. Please update or reload the app." },
-        426,
-        {},
-        request
-      );
+    // Old builds: a plaintext code (pre-#286), or no `agent-keys` capability
+    // (they misread a DID that lists LWS agent keys). Sessions they already
+    // hold run until they expire; only new sign-ins are refused.
+    if (!encryptedOtpBundle || !hasRequiredCapabilities(body.clientCapabilities)) {
+      return jsonResponse({ error: UPGRADE_REQUIRED_MESSAGE }, 426, {}, request);
     }
 
     console.log(`[authHttp] Verifying OTP for session: ${sessionId}`);

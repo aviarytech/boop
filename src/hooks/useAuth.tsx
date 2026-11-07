@@ -37,6 +37,7 @@ import {
 } from "react";
 import { useAuthorDid } from "./useAuthorDid";
 import { clearCurrentAuthor, ensureAuthorDid } from "../lib/authorIdentity";
+import { CLIENT_CAPABILITIES } from "../../shared/clientCapabilities";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
 import { identifyUser, resetAnalytics } from "../lib/analytics";
@@ -357,6 +358,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             sessionId: otpFlowState.sessionId,
             encryptedOtpBundle,
             platform: Capacitor.getPlatform(),
+            // Without it the server answers 426 (shared/clientCapabilities.ts).
+            clientCapabilities: CLIENT_CAPABILITIES,
           }),
         });
 
