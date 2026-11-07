@@ -21,7 +21,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { didLogPathForSubOrg } from "./lib/didLogAuth";
+import { assertDidLogOwnership, didLogPathForSubOrg } from "./lib/didLogAuth";
 import { deleteActionRecords } from "./lib/actionRecords";
 
 const SUB_ORG_PATTERN = /^lws-e2e-[a-z0-9]{8,32}$/;
@@ -77,6 +77,8 @@ export const seed = internalAction({
     if (!checked.ok) throw new Error(`devLws: the log was refused: ${checked.error}`);
     if (!checked.author) throw new Error(`devLws: not an author DID: ${checked.authorProblems.join("; ")}`);
     if (!checked.did.endsWith(`:${path}`)) throw new Error("devLws: the DID is not at this account's path");
+    // The same ownership rule every didLogs writer applies (scripts/did-log-auth.test.mjs).
+    assertDidLogOwnership({ subOrgId: args.subOrgId, userDid: checked.did, path });
     const seeded = await ctx.runMutation(internal.devLws.insertSeedRows, {
       subOrgId: args.subOrgId, email, displayName: `LWS e2e ${args.n}`, did: checked.did, lists: args.lists,
     });
@@ -135,6 +137,7 @@ export const storeDidContinuation = internalAction({
     });
     if (!checked.ok) throw new Error(`devLws: the log was refused: ${checked.error}`);
     if (checked.did !== user.did || !checked.author) throw new Error(`devLws: not this account's author DID: ${checked.ok ? checked.authorProblems.join("; ") : ""}`);
+    assertDidLogOwnership({ subOrgId: user.turnkeySubOrgId!, userDid: user.did, path });
     await ctx.runMutation(internal.didLogs.upsertDidLog, {
       userDid: user.did, path, log: args.log, scid: checked.scid, versionId: checked.versionId, author: true,
       expected: { userDid: served.userDid, log: served.log },
