@@ -19,7 +19,20 @@ export const RATE_LIMITS = {
     maxAttempts: 5, // 5 attempts per window
     windowMs: 60 * 1000, // 1 minute window
   },
+  // LWS (lwsHttp.ts), keyed by a hash of the caller's IP. Access requests are
+  // unauthenticated (a self-signed did:key), so they get the tight budget.
+  lwsAccessRequest: {
+    maxAttempts: 10,
+    windowMs: 60 * 1000,
+  },
+  // The token endpoint and access-request polling.
+  lwsToken: {
+    maxAttempts: 60,
+    windowMs: 60 * 1000,
+  },
 } as const;
+
+const endpointValidator = v.union(v.literal("initiate"), v.literal("verify"), v.literal("lwsAccessRequest"), v.literal("lwsToken"));
 
 export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
 
@@ -32,7 +45,7 @@ export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
 export const checkAndIncrementInternal = internalMutation({
   args: {
     key: v.string(),
-    endpoint: v.union(v.literal("initiate"), v.literal("verify")),
+    endpoint: endpointValidator,
   },
   returns: v.object({
     allowed: v.boolean(),
@@ -111,7 +124,7 @@ export const checkAndIncrementInternal = internalMutation({
 export const checkStatusInternal = internalQuery({
   args: {
     key: v.string(),
-    endpoint: v.union(v.literal("initiate"), v.literal("verify")),
+    endpoint: endpointValidator,
   },
   returns: v.object({
     allowed: v.boolean(),

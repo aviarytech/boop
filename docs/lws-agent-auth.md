@@ -115,3 +115,31 @@ also allows agent methods, each of which must:
 `authentication` is `#key-0` followed by agent methods only. A DID can have at
 most 25 agent methods. Every other rule is unchanged, and the check still
 applies to every version of the log.
+
+## Implementation notes
+
+Where the server (phase 1) fills in what the sections above leave open:
+
+- **`modify` is accepted as well as `update`.** The LWS access profile names
+  the action `modify`; agents written to the spec send it. Both map to
+  `items:write` and are stored as sent.
+- **`name` is optional.** Spec-only agents don't send it; the label is then
+  `Agent`. It is trimmed, NFC, 1–60 characters, with no control or bidi
+  override characters.
+- **One `AccessPolicy`, no constraints.** A request with several policies, a
+  target other than the storage root, or any `constraint` is refused rather
+  than partly honoured. An absent `target` means the storage root.
+- **A retry gets the same request.** A second POST signed by the same key while
+  its request is pending returns that request (`200`, same `Location`), not a
+  new one. A key that is already an active agent gets `409`.
+- **Polling is signed too.** `GET B/lws-access/requests/{id}` takes a fresh
+  did:key JWT (single-use `jti`, `aud` ∋ the requests URL or the request's
+  own URL). Another key's request reads as `404`. An approved request whose
+  agent was revoked reads `status: "revoked"`, without the grant.
+- **The did:key JWT's `kid` is optional**; when present it must be
+  `did:key:z…#z…`. The did:webvh JWT's `kid` is required and absolute.
+- **`scope` at the token endpoint** may narrow the agent's scopes; anything
+  beyond them is `invalid_scope`. A bad subject token is `invalid_request`
+  (RFC 8693 §2.2.2); a wrong `resource` is `invalid_target`.
+- **Owner operations refuse every delegated credential**, not only those
+  without `*`: an API key or agent never approves, denies or revokes.

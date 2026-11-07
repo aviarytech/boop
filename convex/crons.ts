@@ -15,4 +15,10 @@ crons.interval(
   internal.siteActions.pollPendingCustomHostnames
 );
 
+crons.interval(
+  "expire LWS access requests, spent jtis and access tokens",
+  { minutes: 15 },
+  internal.lwsAccess.cleanupInternal
+);
+
 export default crons;
