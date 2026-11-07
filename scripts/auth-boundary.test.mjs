@@ -514,7 +514,7 @@ test('OTP HTTP signup stores neutral attribution and returning login preserves s
     const [verify] = modules.http.default.lookup('/auth/verify', 'POST');
     const response = await verify._handler(ctx, new Request('https://test/auth/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: 'signup-session', encryptedOtpBundle: 'sealed-code' }),
+      body: JSON.stringify({ sessionId: 'signup-session', encryptedOtpBundle: 'sealed-code', clientCapabilities: ['agent-keys'] }),
     }));
     assert.equal(response.status, 200);
     const body = await response.json();
@@ -583,4 +583,25 @@ test('/auth/verify refuses a plaintext OTP code without calling Turnkey', async 
   }));
   assert.equal(response.status, 426);
   assert.match((await response.json()).error, /update/);
+});
+
+// docs/lws-agent-auth.md: builds before agent keys misread a DID that lists
+// them, so a sign-in that doesn't declare the capability is refused unread.
+test('/auth/verify refuses a client that does not declare agent-keys support', async () => {
+  for (const clientCapabilities of [undefined, [], ['something-else'], 'agent-keys']) {
+    const ctx = fixture();
+    ctx.rows.authSessions = [{
+      _id: 'otp', sessionId: 'old-build', email: 'owner@example.test', subOrgId: 'owner', otpId: 'otp',
+      timestamp: Date.now(), verified: false, expiresAt: Date.now() + 60000,
+    }];
+    ctx.runAction = async (ref) => assert.fail(`Unexpected action ${getFunctionName(ref)}`);
+    const [verify] = modules.http.default.lookup('/auth/verify', 'POST');
+    const response = await verify._handler(ctx, new Request('https://test/auth/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: 'old-build', encryptedOtpBundle: 'sealed-code', clientCapabilities }),
+    }));
+    assert.equal(response.status, 426, JSON.stringify(clientCapabilities));
+    assert.match((await response.json()).error, /update or reload/);
+    assert.equal(ctx.rows.authSessions.length, 1, 'the OTP session is left for an updated client');
+  }
 });

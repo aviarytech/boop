@@ -177,3 +177,34 @@ export async function handOver(attacker: Awaited<ReturnType<typeof mintAuthor>>,
   });
   return authorDid.serializeDidLog(result.log);
 }
+
+/** A fresh Ed25519 agent key: its secret and `z6Mk…` Multikey. */
+export async function agentKey() {
+  const secret = utils.randomSecretKey();
+  const multikey = multibaseEncode(new Uint8Array([0xed, 0x01, ...(await getPublicKeyAsync(secret))]), MultibaseEncoding.BASE58_BTC);
+  return { secret, multikey };
+}
+
+/**
+ * A DID update, signed through Turnkey by the author key, that adds (or
+ * removes) an agent method: the state comes from shared nextAgentDocument,
+ * as the app builds it. Returns the new log and a ListAuthor at its version.
+ */
+export async function changeAgentMethod(turnkey: MockTurnkey, minted: { jsonl: string; keys: authorDid.AuthorKeys }, change: shared.AgentMethodChange) {
+  const signer = authorDid.authorUpdateSigner(turnkey, "sub-org", minted.keys.author);
+  const log = authorDid.parseDidLog(minted.jsonl);
+  const last = log[log.length - 1] as unknown as { state: shared.DidDocumentLike };
+  const updateKeys = [minted.keys.author.multikey];
+  const next = shared.nextAgentDocument(last.state, updateKeys, change);
+  const result = await updateDID({
+    log, signer, verifier: signer, updateKeys,
+    verificationMethods: next.verificationMethod as never,
+    authentication: next.authentication as string[],
+    assertionMethod: next.assertionMethod as string[],
+  });
+  const jsonl = authorDid.serializeDidLog(result.log);
+  const listAuthor = authorDid.buildListAuthor({
+    backend: turnkey, subOrgId: "sub-org", keys: minted.keys, did: result.did, versionId: result.meta.versionId, log: jsonl,
+  });
+  return { jsonl, did: result.did, versionId: result.meta.versionId, doc: result.doc, listAuthor, keys: minted.keys };
+}

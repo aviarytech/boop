@@ -5,17 +5,24 @@ import { internal } from "../_generated/api";
 import { AuthError } from "./auth";
 import { extractTokenFromRequest } from "./jwt";
 import { hasScope, hashApiKey, type Scope } from "./apiKeyHelpers";
+import { LWS_ACCESS_TOKEN_PREFIX } from "./lwsTokens";
+import { canonicalActions, scopesForActions, type CanonicalAction } from "./lwsAccess";
+import type { Doc } from "../_generated/dataModel";
 
-export type Credentials = { authToken?: string; apiKey?: string };
+/** `agentToken` is an LWS access token (`lwsat_…`, convex/lib/lwsTokens.ts), never a session JWT.
+ * Only the LWS storage operations (convex/lwsStorage.ts) pass one; the generic
+ * operation wrappers (lib/authenticated.ts) never accept it. */
+export type Credentials = { authToken?: string; apiKey?: string; agentToken?: string };
 export type ResolvedActor = {
   did: string;
   userId: import("../_generated/dataModel").Id<"users">;
   legacyDid?: string;
   turnkeySubOrgId?: string;
   scopes: string[];
+  /** True for every delegated credential (API keys and LWS agents): never a signed-in person. */
   viaApiKey: boolean;
   /** Authenticated credential identity, separate from the account authorizing it. */
-  credential: { kind: "session" | "apiKey"; id: string };
+  credential: { kind: "session" | "apiKey" | "agent"; id: string };
 };
 
 /** The credential behind an actor-wrapped operation, for audit rows written by shared
@@ -32,10 +39,58 @@ export function withoutCredential<T extends { credential?: unknown }>(row: T): O
   return rest;
 }
 
+/**
+ * The credentials of a `/api/*` or `/d/*` request. Never an agent token: an LWS
+ * access token (`Bearer lwsat_…`) is good only on LWS storage resources, whose
+ * handlers (convex/lwsStorageHttp.ts) pass it on themselves. Here it yields no
+ * credential at all, so the request is unauthenticated (extractTokenFromRequest
+ * skips it too).
+ */
 export function requestCredentials(request: Request): Credentials {
   return {
     authToken: extractTokenFromRequest(request) ?? undefined,
     apiKey: request.headers.get("X-API-Key") ?? undefined,
+  };
+}
+
+/** Find the account a delegated credential acts for, by its owner DID (current or pre-migration). */
+async function delegatingUser(ctx: QueryCtx | MutationCtx, ownerDid: string, allowDeletingAccount: boolean) {
+  const user = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", ownerDid)).first()
+    ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", ownerDid)).first();
+  if (!user?.did || (!allowDeletingAccount && user.deletionRequestedAt !== undefined)) throw new AuthError("User unavailable", "UNAUTHORIZED");
+  return user as typeof user & { did: string };
+}
+
+/**
+ * An LWS access token → the user it acts for, as that agent, and the token row
+ * (its `storage` is the audience the resource server checks). Throws
+ * INVALID_TOKEN for a token that is unknown, expired, or whose agent was revoked.
+ */
+export async function authenticateAgentToken(
+  ctx: QueryCtx | MutationCtx,
+  agentToken: string,
+  allowDeletingAccount = false,
+): Promise<{ actor: ResolvedActor; token: Doc<"lwsAccessTokens">; agent: Doc<"lwsAgents">; actions: CanonicalAction[] }> {
+  if (!agentToken.startsWith(LWS_ACCESS_TOKEN_PREFIX)) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+  const tokenHash = await hashApiKey(agentToken);
+  const token = await ctx.db.query("lwsAccessTokens").withIndex("by_hash", q => q.eq("tokenHash", tokenHash)).first();
+  if (!token || token.expiresAt <= Date.now()) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+  const agent = await ctx.db.get(token.agentId);
+  if (!agent || agent.revokedAt !== undefined || agent.userId !== token.userId) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+  // The account is found by the agent's DID on every call, as for API keys,
+  // and must still be the account the agent was approved for.
+  const user = await delegatingUser(ctx, agent.ownerDid, allowDeletingAccount);
+  if (user._id !== agent.userId) throw new AuthError("User unavailable", "UNAUTHORIZED");
+  // The token's actions were the agent's (or fewer) when issued; never more
+  // than the agent's now. A token that records no actions grants none (fail
+  // closed). Scopes, which the app's operations check, follow from the actions.
+  const actions = canonicalActions(agent.actions).filter(action => (token.actions ?? []).includes(action));
+  const scopes: string[] = scopesForActions(actions).filter(scope => agent.scopes.includes(scope) && token.scopes.includes(scope));
+  return {
+    actor: { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes, viaApiKey: true, credential: { kind: "agent", id: agent._id } },
+    token,
+    agent,
+    actions,
   };
 }
 
@@ -44,15 +99,18 @@ export async function authenticate(
   credentials: Credentials,
   allowDeletingAccount = false,
 ): Promise<ResolvedActor> {
+  if (credentials.agentToken !== undefined) {
+    // One credential per call: an agent token never combines with another.
+    if (credentials.apiKey !== undefined || credentials.authToken !== undefined) throw new AuthError("Invalid access token", "INVALID_TOKEN");
+    return (await authenticateAgentToken(ctx, credentials.agentToken, allowDeletingAccount)).actor;
+  }
   if (credentials.apiKey !== undefined) {
     const keyHash = await hashApiKey(credentials.apiKey);
     const key = await ctx.db.query("agentApiKeys")
       .withIndex("by_hash", q => q.eq("keyHash", keyHash)).first();
     if (!key || key.revokedAt !== undefined) throw new AuthError("Invalid API key", "INVALID_TOKEN");
     // Resolve the account on every operation, including keys minted before a DID migration.
-    const user = await ctx.db.query("users").withIndex("by_did", q => q.eq("did", key.ownerDid)).first()
-      ?? await ctx.db.query("users").withIndex("by_legacy_did", q => q.eq("legacyDid", key.ownerDid)).first();
-    if (!user?.did || (!allowDeletingAccount && user.deletionRequestedAt !== undefined)) throw new AuthError("User unavailable", "UNAUTHORIZED");
+    const user = await delegatingUser(ctx, key.ownerDid, allowDeletingAccount);
     return { userId: user._id, did: user.did, legacyDid: user.legacyDid, scopes: key.scopes, viaApiKey: true, credential: { kind: "apiKey", id: key._id } };
   }
   const session = await requireSession(ctx, credentials.authToken);

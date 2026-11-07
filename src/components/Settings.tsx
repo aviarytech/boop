@@ -18,6 +18,7 @@ import { Icon, type IconName } from './ui/Icon';
 import { useMutation, useQuery } from "../lib/authenticatedConvex";
 import { api } from '../../convex/_generated/api';
 import { useToast } from '../hooks/useToast';
+import { AgentsSettings } from './AgentsSettings';
 
 interface SettingsProps {
   onClose: () => void;
@@ -529,6 +530,9 @@ export function Settings({ onClose }: SettingsProps) {
             </span>
           </button>
         </section>
+
+        {/* Agents Section (docs/lws-agent-auth.md) */}
+        <AgentsSettings />
 
         {/* Feedback Section */}
         <section>

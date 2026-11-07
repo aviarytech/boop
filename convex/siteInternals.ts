@@ -5,12 +5,13 @@ import { isResourceOwner } from "./lib/permissions";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
+// Sessions and API keys only: an LWS agent token is good only on LWS storage resources.
 const credentials = { authToken: v.optional(v.string()), apiKey: v.optional(v.string()) };
 
 async function requireSiteWriter(ctx: MutationCtx, args: Credentials, ownerDid: string) {
   // Re-resolve credentials in the write transaction: a revoked key/session or
   // account erasure during the action must prevent finalization.
-  const actor = await authenticate(ctx, args);
+  const actor = await authenticate(ctx, { authToken: args.authToken, apiKey: args.apiKey });
   requireScope(actor, "*");
   if (![actor.did, actor.legacyDid].includes(ownerDid)) throw new Error("Not authorized");
 }

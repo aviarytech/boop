@@ -17,7 +17,7 @@ import type { Doc, Id, TableNames } from "./_generated/dataModel";
  * Delete all data for a user (GDPR right to erasure).
  * Removes lists, items, tags, comments, activities, presence, publications,
  * categories, bookmarks, push tokens, referrals, feedback, subscriptions,
- * and the user record itself.
+ * LWS agents with their requests and tokens, and the user record itself.
  */
 export const { public: deleteUserData, internal: deleteUserDataInternal } = actorMutation({
   resources: args => ({ accounts: [args.userId] }),
@@ -111,6 +111,10 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
     }
     if (await drain(ctx.db.query("didLogs").withIndex("by_user_did", q => q.eq("userDid", did)).take(DELETE_BATCH_SIZE))) return false;
   }
+  // LWS agents: tokens first, then requests and the agents themselves.
+  if (await drain(ctx.db.query("lwsAccessTokens").withIndex("by_user", q => q.eq("userId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("lwsAccessRequests").withIndex("by_user_status", q => q.eq("userId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("lwsAgents").withIndex("by_user", q => q.eq("userId", userId)).take(DELETE_BATCH_SIZE))) return false;
   if (await drain(ctx.db.query("listGrants").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
   if (await drain(ctx.db.query("listGrantRevocations").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;
   if (await drain(ctx.db.query("listInvitations").withIndex("by_recipient", q => q.eq("recipientId", userId)).take(DELETE_BATCH_SIZE))) return false;

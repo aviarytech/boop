@@ -389,6 +389,7 @@ test('OTP verification sends only the encrypted bundle and completes the Turnkey
   await act(async () => result.current.startOtp(user.email));
   await act(async () => result.current.verifyOtp('123456'));
   assert.equal(verifyBody.encryptedOtpBundle, 'sealed:enclave-target');
+  assert.deepEqual(verifyBody.clientCapabilities, ['agent-keys'], 'this build declares it handles agent keys, or the server answers 426');
   assert.ok(!('code' in verifyBody), 'the plaintext code never leaves the device');
   assert.ok(!JSON.stringify(verifyBody).includes('123456'));
   assert.deepEqual(turnkeyCalls.find(c => c[0] === 'encrypt'), ['encrypt', '123456', 'enclave-target']);

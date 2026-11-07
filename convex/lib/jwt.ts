@@ -5,6 +5,7 @@
  */
 
 import * as jose from "jose";
+import { bearerCredential, LWS_ACCESS_TOKEN_PREFIX } from "./lwsTokens";
 
 /**
  * Result of a successful token verification.
@@ -124,9 +125,14 @@ export async function verifyAuthToken(token: string): Promise<AuthTokenPayload> 
  */
 export function extractTokenFromRequest(request: Request): string | null {
   // Check Authorization header first
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7); // Remove "Bearer " prefix
+  // The scheme is case-insensitive (RFC 9110 11.1): `bearer lwsat_…` is
+  // the same credential as `Bearer lwsat_…`, so it must not fall through to a cookie.
+  const bearer = bearerCredential(request.headers.get("Authorization"));
+  if (bearer !== null) {
+    // An LWS access token (lib/lwsTokens.ts) is an agent credential, never a
+    // session: no session lookup, and no falling back to a cookie either.
+    if (bearer.startsWith(LWS_ACCESS_TOKEN_PREFIX)) return null;
+    return bearer;
   }
 
   // Fall back to cookie

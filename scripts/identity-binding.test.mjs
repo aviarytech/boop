@@ -520,3 +520,57 @@ test('a logged-out token cannot be revived by re-encoding its signature', async 
   assert.equal(ctx.rows.accessSessions.filter(s => s.revokedAt === undefined).length, 0, 'no live session was created');
   await assert.rejects(() => call('lists', 'getUserLists', ctx, { authToken: fresh }), /restore your session/);
 });
+
+// LWS agents (docs/lws-agent-auth.md): their keys are in the DID a re-mint
+// replaces, and their rows belong to the account deletion erases.
+function withLwsAgents(ctx) {
+  const did = ctx.rows.users[0].did;
+  Object.assign(ctx.rows, {
+    lwsAgents: [
+      { _id: 'LA1', userId: 'U1', ownerDid: did, fragment: 'agent-aaaaaaaaaa', vmId: `${did}#agent-aaaaaaaaaa`, actions: ['read'], scopes: ['lists:read', 'items:read'], createdAt: 1 },
+      { _id: 'LA2', userId: 'U1', ownerDid: did, fragment: 'agent-bbbbbbbbbb', vmId: `${did}#agent-bbbbbbbbbb`, actions: ['read'], scopes: ['lists:read', 'items:read'], createdAt: 1, revokedAt: 5 },
+      { _id: 'LA-other', userId: 'U2', ownerDid: VICTIM, fragment: 'agent-cccccccccc', vmId: `${VICTIM}#agent-cccccccccc`, actions: ['read'], scopes: [], createdAt: 1 },
+    ],
+    lwsAccessTokens: [
+      { _id: 'LT1', userId: 'U1', agentId: 'LA1', tokenHash: 'a', storage: 's', scopes: [], actions: ['read'], expiresAt: Date.now() + 300000 },
+      { _id: 'LT-other', userId: 'U2', agentId: 'LA-other', tokenHash: 'b', storage: 's', scopes: [], actions: ['read'], expiresAt: Date.now() + 300000 },
+    ],
+    lwsAccessRequests: [
+      { _id: 'LR1', requestId: 'r1', userId: 'U1', ownerDid: did, status: 'pending', createdAt: 1, expiresAt: Date.now() + 1000 },
+      { _id: 'LR2', requestId: 'r2', userId: 'U1', ownerDid: did, status: 'approved', createdAt: 1, expiresAt: 2 },
+      { _id: 'LR-other', requestId: 'r3', userId: 'U2', ownerDid: VICTIM, status: 'pending', createdAt: 1, expiresAt: Date.now() + 1000 },
+    ],
+  });
+}
+
+test('a re-mint revokes the account\'s LWS agents and deletes their tokens', async () => {
+  for (const oneShot of [false, true]) {
+    const ctx = fixture();
+    withLwsAgents(ctx);
+    const old = ctx.rows.users[0].did;
+    const remint = 'migrations/remintUserDidDb';
+    if (oneShot) await call(remint, 'applyRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+    else {
+      await call(remint, 'beginRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN });
+      await call(remint, 'finishRemint', ctx, { userId: 'U1', oldDid: old, newDid: OWN, path: 'user-owner', log: OWN_LOG, scid: 's', versionId: 'v', author: true });
+    }
+    const agent = id => ctx.rows.lwsAgents.find(a => a._id === id);
+    assert.ok(agent('LA1').revokedAt > 5, `${oneShot}: the active agent is revoked`);
+    assert.equal(agent('LA2').revokedAt, 5, 'an already revoked agent keeps its time');
+    assert.equal(agent('LA-other').revokedAt, undefined, "another account's agent is untouched");
+    assert.deepEqual(ctx.rows.lwsAccessTokens.map(t => t._id), ['LT-other']);
+    assert.equal(ctx.rows.lwsAccessRequests.find(r => r._id === 'LR1').status, 'expired');
+    assert.equal(ctx.rows.lwsAccessRequests.find(r => r._id === 'LR-other').status, 'pending');
+  }
+});
+
+test('deleting an account erases its LWS agents, requests and tokens', async () => {
+  const ctx = fixture();
+  withLwsAgents(ctx);
+  ctx.rows.users[0].deletionRequestedAt = Date.now();
+  for (let i = 0; i < 200 && ctx.rows.users.some(u => u._id === 'U1'); i++) await call('users', 'continueUserDeletion', ctx, { userId: 'U1' });
+  assert.ok(!ctx.rows.users.some(u => u._id === 'U1'), 'the account is gone');
+  assert.deepEqual(ctx.rows.lwsAgents.map(a => a._id), ['LA-other']);
+  assert.deepEqual(ctx.rows.lwsAccessTokens.map(t => t._id), ['LT-other']);
+  assert.deepEqual(ctx.rows.lwsAccessRequests.map(r => r._id), ['LR-other']);
+});

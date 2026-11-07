@@ -8,10 +8,10 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-// The authenticated session or specific API key that acted (#236). Absent on system
-// rows and on rows written before credential attribution existed.
+// The authenticated session, API key or LWS agent that acted (#236). Absent on
+// system rows and on rows written before credential attribution existed.
 const actingCredential = v.optional(v.object({
-  kind: v.union(v.literal("session"), v.literal("apiKey")),
+  kind: v.union(v.literal("session"), v.literal("apiKey"), v.literal("agent")),
   id: v.string(),
 }));
 
@@ -147,6 +147,68 @@ export default defineSchema({
   })
     .index("by_hash", ["keyHash"])
     .index("by_owner", ["ownerDid"]),
+
+  // Linked Web Storage agents (docs/lws-agent-auth.md). An agent asks for
+  // access with its did:key; the owner approves it by adding the key to their
+  // did:webvh as `#<fragment>` and then calling approveAccessRequest.
+  lwsAccessRequests: defineTable({
+    requestId: v.string(), // Random, unguessable; the request's URL is B/lws-access/requests/{requestId}
+    storage: v.string(), // B/lws/{u}
+    userId: v.id("users"),
+    ownerDid: v.string(), // The user's DID when the request was made
+    agentDidKey: v.string(), // The assignee, did:key:z6Mk…
+    agentPublicKeyMultibase: v.string(),
+    fragment: v.string(), // agent-<10 base32>, assigned by the server
+    name: v.string(),
+    actions: v.array(v.string()),
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("denied"), v.literal("expired")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    decidedAt: v.optional(v.number()),
+    agentId: v.optional(v.id("lwsAgents")),
+  })
+    .index("by_request_id", ["requestId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_status_expires", ["status", "expiresAt"]),
+  lwsAgents: defineTable({
+    userId: v.id("users"),
+    ownerDid: v.string(), // The account's DID; the token's subject
+    fragment: v.string(),
+    vmId: v.string(), // `${ownerDid}#${fragment}`, the JWT kid
+    publicKeyMultibase: v.string(),
+    name: v.string(),
+    actions: v.array(v.string()),
+    scopes: v.array(v.string()),
+    requestId: v.string(),
+    createdAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_vm", ["vmId"]),
+  // Opaque `lwsat_` bearer tokens, stored as SHA-256 hashes.
+  lwsAccessTokens: defineTable({
+    tokenHash: v.string(),
+    agentId: v.id("lwsAgents"),
+    userId: v.id("users"),
+    storage: v.string(),
+    scopes: v.array(v.string()),
+    // The canonical actions (read, create, update, delete) this token may use;
+    // absent on tokens issued before they were recorded, which then grant none.
+    actions: v.optional(v.array(v.string())),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_agent", ["agentId"])
+    .index("by_user", ["userId"])
+    .index("by_expires_at", ["expiresAt"]),
+  // JWT ids already accepted, until the JWT itself expires: each is good once.
+  lwsJtis: defineTable({
+    jtiHash: v.string(),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["jtiHash"])
+    .index("by_expires_at", ["expiresAt"]),
 
   // Categories table - user-specific list organization (Phase 2)
   categories: defineTable({
@@ -319,6 +381,7 @@ export default defineSchema({
     }))),
   })
     .index("by_list", ["listId"])
+    .index("by_list_updated", ["listId", "updatedAt"])
     .index("by_parent", ["parentId"])
     .index("by_due_date", ["listId", "dueDate"]),
 

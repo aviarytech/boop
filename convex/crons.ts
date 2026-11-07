@@ -15,4 +15,11 @@ crons.interval(
   internal.siteActions.pollPendingCustomHostnames
 );
 
+crons.interval(
+  // Reschedules itself while a batch was full (lwsAccess.ts cleanupInternal).
+  "expire LWS access requests, spent jtis and access tokens",
+  { minutes: 15 },
+  internal.lwsAccess.cleanupInternal
+);
+
 export default crons;

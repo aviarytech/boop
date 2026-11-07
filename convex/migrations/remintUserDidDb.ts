@@ -17,6 +17,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { revokeAllLwsAgents } from "../lib/lwsAgentRevocation";
 
 /**
  * Tables holding a user DID by value, as (table -> exact-match fields).
@@ -264,6 +265,8 @@ export const applyRemint = internalMutation({
       const rows = (await ctx.db.query(table as never).collect()) as unknown as Row[];
       for (const row of rows) if (await rewriteRow(ctx, table, row, [args.oldDid], args.newDid)) rewritten += 1;
     }
+    // The new DID lists none of the account's LWS agent keys: end the agents.
+    await revokeAllLwsAgents(ctx, args.userId);
     // The identity row moves last: if anything above throws, `did` still points
     // at the old value and the whole run is safe to retry.
     await ctx.db.patch(args.userId, { did: args.newDid });
@@ -380,6 +383,9 @@ export const finishRemint = internalMutation({
         for (const row of rows) await rewriteRow(ctx, table, row, fromDids(pending), args.newDid);
       }
     }
+    // The new DID lists none of the account's LWS agent keys, and the agents'
+    // rows name the old DID: revoke them and delete their tokens.
+    await revokeAllLwsAgents(ctx, args.userId);
     // The identity row and the served log move together, last.
     await ctx.db.patch(args.userId, { did: args.newDid, pendingRemint: undefined });
     const row = {

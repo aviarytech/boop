@@ -83,12 +83,15 @@ export async function authorizeResources(
       listIds.add(item.listId);
     }
   }
+  // An LWS agent acts only on the user's own storage: lists the user owns, never
+  // ones shared with, bookmarked by or published to the user, whatever the authority.
+  const ownedOnly = actor.credential.kind === "agent";
   for (const listId of listIds) {
-    const allowed = authority === "read"
-      ? await canUserViewList(ctx, listId, actor.did, actor.legacyDid)
-      : authority === "edit"
-        ? await canUserEditList(ctx, listId, actor.did, actor.legacyDid)
-        : await listRole(ctx, listId, actor.did, actor.legacyDid) === "owner";
+    const allowed = ownedOnly || authority === "owner"
+      ? await listRole(ctx, listId, actor.did, actor.legacyDid) === "owner"
+      : authority === "read"
+        ? await canUserViewList(ctx, listId, actor.did, actor.legacyDid)
+        : await canUserEditList(ctx, listId, actor.did, actor.legacyDid);
     if (!allowed) throw resourceUnavailable();
   }
 }

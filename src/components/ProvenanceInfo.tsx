@@ -533,7 +533,7 @@ function ActionRecordRow({
   }
   const { status, detail, tone } = actionRecordPresentation(record, check);
   const credential = described.credential
-    ? `${described.credential.kind === "apiKey" ? "API key" : "signed-in session"} …${described.credential.id.slice(-6)}`
+    ? `${described.credential.kind === "apiKey" ? "API key" : described.credential.kind === "agent" ? "agent" : "signed-in session"} …${described.credential.id.slice(-6)}`
     : null;
   const attested = [
     credential ? `Via ${credential}` : null,

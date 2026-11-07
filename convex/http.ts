@@ -33,6 +33,9 @@ import { stripeWebhook, createCheckout, createPortal, getSubscription } from "./
 import { resolveSiteHost, resolveSiteAsset } from "./sitesHttp";
 import { createApiKey, listApiKeys, revokeApiKey } from "./apiKeysHttp";
 import { getActionRecords, getLists, getListWithItems } from "./agentReadHttp";
+import { getAccessRequest, getLwsConfiguration, getProtectedResourceMetadata, lwsOptions, postAccessRequest, tokenEndpoint } from "./lwsHttp";
+import { lwsStorage } from "./lwsStorageHttp";
+import { hasRequiredCapabilities, UPGRADE_REQUIRED_MESSAGE } from "../shared/clientCapabilities";
 const RATE_LIMITS = {
   initiate: { windowMs: 60000, maxAttempts: 5 },
   verify: { windowMs: 60000, maxAttempts: 5 },
@@ -207,13 +210,11 @@ const verify = httpAction(async (ctx, request) => {
       }
     }
 
-    if (!encryptedOtpBundle) {
-      return jsonResponse(
-        { error: "This version of boop can no longer sign in. Please update or reload the app." },
-        426,
-        {},
-        request
-      );
+    // Old builds: a plaintext code (pre-#286), or no `agent-keys` capability
+    // (they misread a DID that lists LWS agent keys). Sessions they already
+    // hold run until they expire; only new sign-ins are refused.
+    if (!encryptedOtpBundle || !hasRequiredCapabilities(body.clientCapabilities)) {
+      return jsonResponse({ error: UPGRADE_REQUIRED_MESSAGE }, 426, {}, request);
     }
 
     console.log(`[authHttp] Verifying OTP for session: ${sessionId}`);
@@ -460,6 +461,25 @@ http.route({ path: "/api/v1/lists/items", method: "GET", handler: getListWithIte
 http.route({ path: "/api/v1/lists/items", method: "OPTIONS", handler: corsHandler });
 http.route({ path: "/api/v1/action-records", method: "GET", handler: getActionRecords });
 http.route({ path: "/api/v1/action-records", method: "OPTIONS", handler: corsHandler });
+
+// ============================================================================
+// Linked Web Storage agent enrollment and tokens (docs/lws-agent-auth.md)
+// ============================================================================
+http.route({ path: "/lws-access/requests", method: "POST", handler: postAccessRequest });
+http.route({ path: "/lws-access/requests", method: "OPTIONS", handler: lwsOptions });
+http.route({ pathPrefix: "/lws-access/requests/", method: "GET", handler: getAccessRequest });
+http.route({ pathPrefix: "/lws-access/requests/", method: "OPTIONS", handler: lwsOptions });
+http.route({ path: "/oauth/token", method: "POST", handler: tokenEndpoint });
+http.route({ path: "/oauth/token", method: "OPTIONS", handler: lwsOptions });
+http.route({ path: "/.well-known/lws-configuration", method: "GET", handler: getLwsConfiguration });
+http.route({ path: "/.well-known/lws-configuration", method: "OPTIONS", handler: lwsOptions });
+http.route({ pathPrefix: "/.well-known/oauth-protected-resource/lws/", method: "GET", handler: getProtectedResourceMetadata });
+http.route({ pathPrefix: "/.well-known/oauth-protected-resource/lws/", method: "OPTIONS", handler: lwsOptions });
+// Storage resources. A different prefix from /lws-access/, so neither shadows the other.
+// HEAD is routed to the GET handler, which answers it without a body.
+for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const) {
+  http.route({ pathPrefix: "/lws/", method, handler: lwsStorage });
+}
 
 // ============================================================================
 // Health check endpoint (public, no auth)
