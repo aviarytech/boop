@@ -30,3 +30,16 @@ export function decodeEd25519DidKey(did: unknown): { multikey: string; publicKey
   const publicKey = decodeEd25519Multikey(multikey);
   return publicKey ? { multikey, publicKey } : null;
 }
+
+/**
+ * What the app (Settings → Agents) and agents (scripts/lws-agent.mjs) show
+ * so a person can tell that a pending request is their agent's: the last 12
+ * characters of the Multikey, in groups of four ("aB3d eF5h iJ7k"). The
+ * leading `z6Mk` is the same for every Ed25519 key, so it is left out; 12
+ * base58 characters are too many to grind a lookalike key for.
+ */
+export function keyFingerprint(key: string): string {
+  const multikey = key.replace(/^did:key:/, "").split("#")[0];
+  const tail = multikey.length > 12 ? multikey.slice(-12) : multikey;
+  return tail.match(/.{1,4}/g)?.join(" ") ?? "";
+}

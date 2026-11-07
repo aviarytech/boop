@@ -18,6 +18,7 @@ import { updateDID } from "didwebvh-ts";
 import type { DIDLog, VerificationMethod } from "didwebvh-ts";
 import { agentMethods, nextAgentDocument, type AgentMethodChange, type DidDocumentLike } from "../../shared/authorDid";
 import { parseCanonicalDidLog } from "../../shared/didLogSignatures";
+import { keyFingerprint } from "../../shared/multikey";
 import { authorUpdateSigner, inspectAuthorDid, type AuthorKeyBackend, type AuthorKeys } from "./authorDid";
 import { userDidPath } from "./webvh";
 import { getConvexHttpUrl } from "./convexUrls";
@@ -225,10 +226,9 @@ export function servedDocument(jsonl: string): DidDocumentLike | null {
   try { return head(parseCanonicalDidLog(jsonl)).state; } catch { return null; }
 }
 
-/** `did:key:z6Mk…` → `z6Mk…a1b2c3`: enough to tell keys apart at a glance. */
+/** `did:key:z6Mk…` → its fingerprint (shared/multikey.ts keyFingerprint), as the agent CLI prints it. */
 export function shortKey(didKey: string): string {
-  const key = didKey.replace(/^did:key:/, "").split("#")[0];
-  return key.length > 14 ? `${key.slice(0, 4)}…${key.slice(-6)}` : key;
+  return keyFingerprint(didKey);
 }
 
 /**

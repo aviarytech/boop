@@ -49,6 +49,17 @@ export const ed25519Multikey = (publicKey) => `z${base58(new Uint8Array([0xed, 0
 
 // --- keys and JWTs -------------------------------------------------------------
 
+/**
+ * The key's fingerprint as Settings → Agents shows it next to a pending
+ * request (shared/multikey.ts keyFingerprint): the Multikey's last 12
+ * characters in groups of four.
+ */
+export function keyFingerprint(key) {
+  const multikey = key.replace(/^did:key:/, '').split('#')[0];
+  const tail = multikey.length > 12 ? multikey.slice(-12) : multikey;
+  return tail.match(/.{1,4}/g)?.join(' ') ?? '';
+}
+
 export async function newKey() {
   const secret = ed.utils.randomSecretKey();
   return keyFromSecret(secret);
@@ -206,7 +217,7 @@ export async function keygen(statePath, { force = false } = {}) {
   }
   const key = await newKey();
   await saveState(statePath, { key });
-  return { didKey: key.didKey, state: statePath };
+  return { didKey: key.didKey, fingerprint: keyFingerprint(key.didKey), state: statePath };
 }
 
 export async function request(statePath, storageUrl, { name, actions }) {
@@ -230,7 +241,8 @@ export async function request(statePath, storageUrl, { name, actions }) {
   if (response.status !== 201 && response.status !== 200) throw new AgentError(`Access request: ${response.status} ${document.detail ?? document.title ?? ''}`);
   const location = new URL(response.headers.get('Location'), endpoint).href;
   await saveState(statePath, { ...state, storage, requestsEndpoint: endpoint, requestUrl: location, grant: undefined, token: undefined });
-  return { status: response.status, requestUrl: location, request: document.status };
+  // The owner checks this against the fingerprint the app shows before approving.
+  return { status: response.status, requestUrl: location, request: document.status, fingerprint: keyFingerprint(state.key.didKey) };
 }
 
 export async function status(statePath) {

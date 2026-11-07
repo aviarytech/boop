@@ -27,14 +27,14 @@ const entries = {
   actor: 'convex/lib/actor.ts', jwt: 'convex/lib/jwt.ts', authorDidShared: 'shared/authorDid.ts',
   lwsAccess: 'convex/lwsAccess.ts', lwsHttp: 'convex/lwsHttp.ts', rateLimits: 'convex/rateLimits.ts', actorSession: 'convex/actorSession.ts',
   permissions: 'convex/lib/permissions.ts', lists: 'convex/lists.ts', agentReadHttp: 'convex/agentReadHttp.ts',
-  devLws: 'convex/devLws.ts',
+  devLws: 'convex/devLws.ts', multikey: 'shared/multikey.ts',
 };
 await build({
   entryPoints: Object.fromEntries(Object.entries(entries)), outdir, bundle: true, platform: 'node', format: 'esm', target: 'node20',
   outExtension: { '.js': '.mjs' }, packages: 'external', logLevel: 'error',
 });
 const load = name => import(`${pathToFileURL(`${process.cwd()}/${outdir}/${name}.mjs`).href}`);
-const [fixture, lwsJwt, lib, urls, tokens, actor, jwtLib, shared, lwsAccess, lwsHttp, rateLimits, actorSession, permissions, lists, agentReadHttp, devLws] = await Promise.all(Object.keys(entries).map(load));
+const [fixture, lwsJwt, lib, urls, tokens, actor, jwtLib, shared, lwsAccess, lwsHttp, rateLimits, actorSession, permissions, lists, agentReadHttp, devLws, multikey] = await Promise.all(Object.keys(entries).map(load));
 const { mockTurnkey, mintAuthor, agentKey, changeAgentMethod, pinned, authorDidLog } = fixture;
 
 const b64u = value => Buffer.from(typeof value === 'string' ? value : value).toString('base64url');
@@ -590,9 +590,20 @@ test('requests: deny, expiry, the pending cap, rate limits and someone else\'s r
     assert.equal(response.status, 201);
     ids.push(requestId);
   }
-  assert.equal((await make('198.51.100.200')).response.status, 429, 'at most 10 pending per user');
+  // At the cap, a new request expires the oldest pending one rather than being refused,
+  // so a flood can't lock the owner's own agent out.
+  ctx.rows.lwsAccessRequests.forEach((row, i) => { row.createdAt -= (10 - i) * 1000; });
+  const eleventh = await make('198.51.100.200');
+  assert.equal(eleventh.response.status, 201, 'the newest request always gets in');
+  assert.equal(ctx.rows.lwsAccessRequests[0].status, 'expired', 'the oldest made way');
+  assert.equal(ctx.rows.lwsAccessRequests.filter(row => row.status === 'pending').length, 10);
+  await assert.rejects(() => call(ctx, 'approveAccessRequestInternal', { authToken: ownerToken, requestId: ids[0] }), /expired/);
+  // From here the newest stands where the evicted one was.
+  ctx.rows.lwsAccessRequests.splice(0, 1);
+  ctx.rows.lwsAccessRequests.unshift(ctx.rows.lwsAccessRequests.pop());
+  ids[0] = eleventh.requestId;
   await call(ctx, 'denyAccessRequestInternal', { authToken: ownerToken, requestId: ids[0] });
-  assert.equal(ctx.rows.lwsAccessRequests[0].status, 'denied');
+  assert.equal(ctx.rows.lwsAccessRequests.find(row => row.requestId === ids[0]).status, 'denied');
   await assert.rejects(() => call(ctx, 'approveAccessRequestInternal', { authToken: ownerToken, requestId: ids[0] }), /denied/);
   // A pending request past its day is expired, lazily or by the cron.
   ctx.rows.lwsAccessRequests[1].expiresAt = Date.now() - 1;
@@ -711,6 +722,9 @@ test('the CLI agent signs credentials the server accepts', async () => {
   const asUser = lwsJwt.verifyAgentJwt(await cli.agentJwt(key, vm, B), { audience: B, now: Date.now(), document });
   assert.equal(asUser.kid, vm);
   assert.equal(asUser.subject, did);
+  // `request` prints the fingerprint Settings → Agents shows.
+  assert.equal(cli.keyFingerprint(key.didKey), multikey.keyFingerprint(key.didKey));
+  assert.match(cli.keyFingerprint(key.didKey), /^\S{4} \S{4} \S{4}$/);
   assert.deepEqual(cli.authParams('Bearer resource_metadata="https://x/.well-known/a", error="invalid_token"'),
     { resource_metadata: 'https://x/.well-known/a', error: 'invalid_token' });
   assert.deepEqual(cli.parseLinks('<https://x/s>; rel="https://www.w3.org/ns/lws#storage", <https://x/>; rel=up'),

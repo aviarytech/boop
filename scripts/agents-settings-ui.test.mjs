@@ -73,7 +73,8 @@ test('shows the storage URL to copy, a pending request and an approved agent, an
   assert.ok(screen.getByText(/how many agents you\s+have, but not their names/));
   assert.ok(screen.getByText(/other devices need the latest version/));
   assert.ok(screen.getByText('Shopping bot'));
-  assert.ok(screen.getByText('z6Mk…ta2doK'));
+  assert.ok(screen.getByText('pbnn EGta 2doK'), 'the key fingerprint, as the agent CLI prints it');
+  assert.ok(screen.getByText('Only approve a request you started just now from your own agent. Check the key fingerprint matches what your agent printed.'));
   assert.ok(screen.getByText(/asked 5 minutes ago/));
   assert.ok(screen.getByText('Calendar sync'));
   assert.ok(screen.getByText('Read, Update'));

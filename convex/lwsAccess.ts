@@ -117,7 +117,11 @@ export const createAccessRequestInternal = internalMutation({
     if (existing) {
       return { ok: true, created: false, location: accessRequestUri(existing.requestId, base), document: accessRequestDocument(view(existing), accessRequestUri(existing.requestId, base)) };
     }
-    if (pending.length >= MAX_PENDING_ACCESS_REQUESTS) return failure(429, "Too many pending access requests for this storage");
+    // At the cap, the oldest pending request makes way: refusing new ones would
+    // let anyone fill the queue and lock the owner's real agents out for a day.
+    // The owner tells requests apart by the key fingerprint their agent printed.
+    const evicted = [...pending].sort((a, b) => a.createdAt - b.createdAt).slice(0, Math.max(0, pending.length - MAX_PENDING_ACCESS_REQUESTS + 1));
+    for (const row of evicted) await ctx.db.patch(row._id, { status: "expired" as const });
     if (await ctx.db.query("lwsAccessRequests").withIndex("by_request_id", q => q.eq("requestId", args.requestId)).first()) throw new Error("Request id collision");
 
     // A fragment no method of this DID has, nor any request or agent of this account.

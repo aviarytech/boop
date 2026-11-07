@@ -9,7 +9,7 @@ export const LWS_ACCESS_TOKEN_PREFIX = "lwsat_";
 export const LWS_ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000;
 /** Access requests the owner hasn't decided expire after a day. */
 export const LWS_ACCESS_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
-/** Most pending access requests one user can have. */
+/** Most pending access requests one user can have; a new one past this expires the oldest. */
 export const MAX_PENDING_ACCESS_REQUESTS = 10;
 
 const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";

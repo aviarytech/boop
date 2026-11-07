@@ -81,7 +81,7 @@ function PendingRow({ request, inDid, onApprove, onDeny, progress, onSignIn }: {
         <div className="min-w-0">
           <p id={labelId} className="font-medium text-[var(--boop-ink)] break-words">{request.name}</p>
           <p className="text-sm text-[var(--boop-muted)]">
-            Key <span className="font-mono" title={request.agentDidKey}>{shortKey(request.agentDidKey)}</span>
+            Key fingerprint <span className="font-mono" title={request.agentDidKey}>{shortKey(request.agentDidKey)}</span>
             {" · "}asked {formatRelativeTime(request.createdAt)}
           </p>
         </div>
@@ -287,6 +287,10 @@ export function AgentsSettings() {
           ) : pending.length === 0 ? (
             <p className="text-sm text-[var(--boop-muted)]">No agent is asking for access.</p>
           ) : (
+            <>
+            <p className={`${warn} mb-2`}>
+              Only approve a request you started just now from your own agent. Check the key fingerprint matches what your agent printed.
+            </p>
             <ul className="space-y-2">
               {pending.map(request => (
                 <PendingRow
@@ -300,6 +304,7 @@ export function AgentsSettings() {
                 />
               ))}
             </ul>
+            </>
           )}
         </div>
 
