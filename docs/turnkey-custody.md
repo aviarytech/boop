@@ -159,9 +159,13 @@ without checking each step in a test parent org first.
      one is rejected, remove that term and note it here.
    - Confirm `CREATE_SUB_ORGANIZATION_V8` is not caught by the resource deny
      (it creates a user and wallet inside the new sub-org).
-4. **Confirm the server no longer signs.** Nothing in Convex calls
-   `SIGN_RAW_PAYLOAD` any more; after deploy, confirm the Turnkey activity log
-   shows none from boop's API user.
+4. **Confirm the server does not sign as a user.** Nothing in
+   `convex/authInternal.ts` calls `SIGN_RAW_PAYLOAD`; after deploy, confirm
+   the Turnkey activity log shows none from boop's API user. The one signing
+   path Convex has is the receipt signer (#286 P3, `docs/service-did.md`): a
+   separate API user that signs as the parent org with the Boop service DID's
+   receipt key, and only once `ACTION_RECEIPTS_ENABLED` is set. It cannot
+   reach a sub-org, and the relay user's policies are unchanged by it.
 5. **Existing sub-orgs** keep `EMAIL_AUTH` until their user next signs in. To
    see how many are left, list sub-org features (read-only) for boop's accounts.
 

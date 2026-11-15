@@ -102,6 +102,8 @@ These are injected at build time as `import.meta.env.*`.
 | `TURNKEY_API_PUBLIC_KEY` | ✅ | Turnkey API public key |
 | `TURNKEY_API_PRIVATE_KEY` | ✅ | Turnkey API private key |
 | `TURNKEY_ORGANIZATION_ID` | ✅ | Turnkey organization ID |
+| `TURNKEY_RECEIPT_API_PUBLIC_KEY`, `TURNKEY_RECEIPT_API_PRIVATE_KEY` | ⚪ | API key of the receipt signer, a separate Turnkey user that can only sign with the Boop service DID's receipt key. Needed only when receipts are enabled. See `docs/service-did.md`. |
+| `ACTION_RECEIPTS_ENABLED` | ⚪ | Set `"true"` to countersign accepted action records with the Boop service DID. Off by default; do not enable before the owner setup in `docs/service-did.md`. |
 | `JWT_SECRET` | ✅ | Secret used to sign session JWTs — keep long and random |
 | `STRIPE_SECRET_KEY` | ✅ | Stripe secret API key (`sk_live_...`) |
 | `STRIPE_WEBHOOK_SECRET` | ✅ | Stripe webhook signing secret (`whsec_...`) — get from Stripe dashboard → Webhooks |

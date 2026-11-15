@@ -13,11 +13,14 @@ are no longer written.
 | Storage and reads | `convex/actionRecords.ts`, table `actionRecords` |
 | Signing on the author's device | `src/lib/actionSigning.ts`, attached by `src/lib/actionSigner.ts` |
 | Standalone check | `scripts/verify-action-records.mjs` |
+| Receipts: format and verifier | `shared/receipt.ts` `verifyReceipt` |
+| Receipts: signing, and the Boop service DID | `convex/receipts.ts`, `docs/service-did.md` |
 
 ## Custody: who signs
 
 Decided on #244 and #286: **the author, on their own device**, never boop's
-server. Each account's did:webvh (`shared/authorDid.ts`) has two Turnkey
+server. (boop's own signature appears only on a [receipt](#receipts), which
+says when boop accepted a record and nothing about who made it.) Each account's did:webvh (`shared/authorDid.ts`) has two Turnkey
 Ed25519 keys in the account's own sub-org, both usable only through the
 author's client-side Turnkey session (`docs/turnkey-custody.md`):
 
@@ -113,7 +116,8 @@ replay, or the HTTP API:
 
 A batch writes one record per item, identical in shape to the record the
 individual call writes, and the device signs each one. Recording happens inside
-the mutation and schedules nothing.
+the mutation and schedules nothing, unless [receipts](#receipts) are enabled:
+then it schedules the countersigning of the signed records it accepted.
 
 Not recorded: item edits other than the above, deletion, reordering, and
 assignment. Minting a list's Original (on the owner's device, when the list is
@@ -183,8 +187,9 @@ did not sign (`ActionRecordAttested`):
 }
 ```
 
-The stored row also has `digest` (lowercase hex SHA-256 of `payload`) and
-index columns `listId`, `itemId`, `ownerUserId`. The verifier requires the
+The stored row also has `digest` (lowercase hex SHA-256 of `payload`), index
+columns `listId`, `itemId`, `ownerUserId`, and, once one is issued, `receipt`
+([below](#receipts)). The verifier requires the
 index columns to agree with the payload where the payload names them.
 
 Nothing in a record comes from a caller-supplied DID, and it never contains
@@ -277,7 +282,121 @@ key for the old DID.
 
 Nothing in a record says when a key stopped being valid, and a holder of a
 compromised key can backdate `signedAt`. boop's `occurredAt` in the attested
-context narrows that only for someone who trusts boop.
+context is unsigned, so it narrows that only for someone who trusts the copy
+of the record they were handed. A [receipt](#receipts) is the same time,
+signed by boop, and is what closes this gap.
+
+## Receipts
+
+A **receipt** is boop's signed statement that it accepted the record with a
+given hash at a given time (#286 P3; `plans/002-agent-signing-decisions.md`
+D10, D11). It is signed by the **Boop service DID**, a did:webvh served from
+the boop domain whose receipt key is in the Turnkey parent org
+(`docs/service-did.md`), and stored on the record as `receipt`:
+
+```jsonc
+{
+  "type": "BoopActionRecordReceipt",
+  "recordHash": "<the record's digest: lowercase hex SHA-256 of payload>",
+  "receivedAt": 1700000000001,                        // boop's clock when the mutation accepted the record; equals attested.occurredAt
+  "signer": "did:webvh:…:boop.ad:boop-service#receipt-1",
+  "versionId": "1-Qm…",                               // service DID log version the key is to be read from
+  "proof": {
+    "type": "DataIntegrityProof",
+    "cryptosuite": "eddsa-jcs-2022",
+    "verificationMethod": "did:webvh:…:boop.ad:boop-service#receipt-1",   // equals signer
+    "proofPurpose": "assertionMethod",
+    "created": "2023-11-14T22:13:20.001Z",            // receivedAt as ISO 8601; a receipt has one clock
+    "proofValue": "z…"                                // Ed25519, multibase base58btc
+  }
+}
+```
+
+**Signing convention.** A receipt is a W3C Data Integrity document with the
+`eddsa-jcs-2022` cryptosuite: the signature is over
+`SHA-256(JCS(proof without proofValue)) || SHA-256(JCS(receipt without proof))`.
+Action records keep their own form (`SHA-256(domain) || SHA-256(payload)`)
+because the payload is a stored string the author's device signs under a time
+budget. A receipt is different on each count: it is a small JSON object, it is
+handed to third parties, and it is signed by a service identity. The standard
+suite means any Data Integrity verifier can check one without boop's code; it
+is the suite did:webvh log entries already use here and the one the planned
+agent delegations use (D5a), so P6 has one proof format, not three; and the
+signed proof options (type, cryptosuite, purpose) separate these signatures
+from anything else, which is what the domain prefix does for records. The
+canonical form is the same RFC 8785 `canonicalize` the records use.
+
+**When one is issued.** Only behind the Convex env flag
+`ACTION_RECEIPTS_ENABLED=true`, which is **unset by default**: until P6 turns
+it on, no record gets a receipt and `recordActions` behaves exactly as before.
+With it on, `recordActions` schedules `receipts.issueForRecords` for the
+records it stored as `signed`, in jobs of 25. Unsigned and failed records get
+none: there is no author signature to countersign, and a receipt on one would
+suggest otherwise. The job calls the internal action
+`receipts.signReceipt({ recordHash, receivedAt })`, which signs through
+Turnkey with the receipt key of the latest version of the served service DID
+and checks the result against that log before returning it. `storeReceipt`
+attaches it only if it verifies and matches that record's digest and
+`occurredAt`. A record keeps its first receipt.
+
+The receipt is signed after the mutation, never on its path: a write does not
+wait for Turnkey and does not fail because of it. If signing fails, the job
+retries after 5 s, 30 s and 3 min, then stops, and the record stays without a
+receipt. `receivedAt` is always the accepting mutation's clock, whenever the
+signature is made.
+
+**Checking one.** `verifyReceipt(receipt, serviceDidLog, { expected? })` is
+pure and synchronous. It:
+
+1. requires exactly the members above, a lowercase hex `recordHash`, a whole
+   number `receivedAt`, and proof options that follow from the statement;
+2. requires `expected.recordHash` (the record's `digest`) and
+   `expected.serviceDid`, when given, to match;
+3. takes the key from the service DID log at `versionId`, where `signer` must
+   be a `Multikey` listed in `assertionMethod` (`assertionKeyAt`, as for
+   records);
+4. verifies the Ed25519 signature.
+
+Rejections: `malformed_receipt`, `binding_mismatch`, `unknown_did_version`,
+`not_assertion_key`, `bad_signature`. Like `verifyActionRecord` it takes the
+log **as given**: resolve `https://<domain>/boop-service/did.jsonl` and
+validate it as any did:webvh. **Pass `expected.serviceDid`.** A receipt names
+its own signer, so without the DID you trust, anyone's did:webvh would do.
+
+**How this closes the backdating gap (D10).** A record signed with a key that
+was later revoked (an agent's delegation ended, or a key was replaced) is
+judged by boop's signed time, not the author's:
+
+> a record is valid if and only if it has a receipt that verifies and whose
+> `receivedAt` is before the revocation.
+
+A record received after the revocation fails; so does one with no receipt. A
+holder of a leaked key can write any `signedAt`, but cannot get a `receivedAt`
+earlier than the moment boop actually accepted the record, and boop refuses
+writes from a revoked key from then on. Honest history from before the
+revocation keeps its receipts and stays valid. P6 applies this rule to agent
+records; nothing enforces it yet, and human records, whose keys do not rotate
+today, do not need one to verify.
+
+**What a receipt proves, and does not.** It proves that the receipt key of the
+Boop service DID, at the named version, signed that this hash was accepted at
+this time. Since boop issues one only for a record whose author signature it
+verified at receipt, it also says that check passed. It does not prove who
+made the record (the record's own signature does), that the action was
+permitted, or that the record set is complete. It is boop's word about time:
+someone who does not trust boop's clock or its key gets nothing from it.
+
+Limits:
+
+- A service-key rotation does not invalidate receipts made with the earlier
+  key, and `verifyReceipt` does not compare `receivedAt` with the time of the
+  version that retired it. Someone who obtained a retired receipt key could
+  sign receipts naming the old version. The key never leaves Turnkey, so this
+  needs a Turnkey compromise; a verifier that wants the bound can reject
+  receipts whose `receivedAt` is later than the next version's `versionTime`.
+- Records accepted while receipts were off, or whose receipt could not be
+  signed after the retries, have none, and none is issued later.
+- Receipts are deleted with their record.
 
 ## What a signature proves
 
@@ -294,8 +413,9 @@ It does **not** prove:
   boop's attested context, unsigned;
 - that the action was permitted (authorization is enforced at write time and is
   not part of the evidence);
-- when the action happened, beyond the author's own `signedAt` and boop's own
-  `occurredAt`;
+- when the action happened, beyond the author's own `signedAt`, boop's own
+  unsigned `occurredAt` and, when the record has a [receipt](#receipts), the
+  time boop signed for;
 - the prior state, the server-assigned id of a created item or list, or the
   list an item belongs to: attested, not signed;
 - that the record set is complete. Records are deleted with their item or list,
@@ -391,7 +511,17 @@ update keeping older records verifiable; reads, the HTTP export and the
 standalone verifier with a DID log, a pinned key and a forged log; deletion;
 the re-mint migration leaving records untouched; version-1 records staying
 readable and unsigned; all rendered statuses, including a DID that cannot be
-resolved and a log that does not validate.
+resolved and a log that does not validate. Receipts
+(`scripts/service-receipts.test.mjs`, and the wiring in
+`scripts/signed-action-records.test.mjs`): sign and verify round trip against
+a real service did:webvh with a mocked Turnkey; the signed bytes agreeing with
+`didwebvh-ts`'s eddsa-jcs-2022; every altered field, a foreign signer and a
+foreign log rejected; receipts from before and after a key rotation verifying
+from the rotated log, each only under its own version's key; nothing scheduled
+with the flag off; one receipt per signed record with it on, none for unsigned
+or failed records; retries and a record left receipt-less when Turnkey
+refuses; publishing refused for anything but a valid continuation of the
+service log.
 
 Not done or not verified:
 
@@ -400,6 +530,12 @@ Not done or not verified:
   so a wrong assumption fails closed (recorded unsigned).
 - Agent (API-key) writes are unsigned until delegated agent keys exist (#286 PR d).
 - No revocation or validity window for signing keys beyond the DID version.
+  Receipts are the mechanism (D10), and they are built but **off**: no Boop
+  service DID exists yet, the Turnkey calls and policy have run only against a
+  mock, and nothing applies the receipt-before-revocation rule until P6
+  (`docs/service-did.md`).
+- `scripts/verify-action-records.mjs` and the provenance UI do not check or
+  show receipts.
 - Records are not chained or anchored; completeness and ordering are not
   provable.
 - Existing historical placeholders and version-1 records are not converted,

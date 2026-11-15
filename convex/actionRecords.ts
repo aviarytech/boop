@@ -27,6 +27,8 @@ function evidence(record: Doc<"actionRecords">) {
     publicKeyMultibase: record.publicKeyMultibase,
     signedAt: record.signedAt,
     error: record.error,
+    // Boop's countersigned receipt (shared/receipt.ts), when one was issued.
+    ...(record.receipt ? { receipt: record.receipt } : {}),
   };
 }
 

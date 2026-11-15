@@ -29,6 +29,7 @@ import {
   type ActionRecordAttested,
   type ActionSignatureEnvelope,
 } from "../../shared/actionRecord";
+import { receiptsEnabled } from "./serviceReceipts";
 
 /** Mutation argument: the author's signatures over the records this call will write. */
 export const actionSignatureEnvelope = v.object({
@@ -37,6 +38,26 @@ export const actionSignatureEnvelope = v.object({
   signedAt: v.number(),
   signatures: v.array(v.object({ subject: v.string(), signature: v.string() })),
 });
+
+/** Stored form of shared/receipt.ts ActionRecordReceipt. */
+export const actionRecordReceipt = v.object({
+  type: v.literal("BoopActionRecordReceipt"),
+  recordHash: v.string(),
+  receivedAt: v.number(),
+  signer: v.string(),
+  versionId: v.string(),
+  proof: v.object({
+    type: v.literal("DataIntegrityProof"),
+    cryptosuite: v.literal("eddsa-jcs-2022"),
+    verificationMethod: v.string(),
+    proofPurpose: v.literal("assertionMethod"),
+    created: v.string(),
+    proofValue: v.string(),
+  }),
+});
+
+/** Records per scheduled receipt action: each one is a Turnkey round trip. */
+export const RECEIPT_BATCH = 25;
 
 /** What the server knows about an action beyond what the author signs. */
 type Attested = Omit<ActionRecordAttested, "occurredAt" | "userId" | "credential"> & { listId: Id<"lists">; itemId?: Id<"items"> };
@@ -101,6 +122,7 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: Recorde
   const occurredAt = Date.now();
   const did = ctx.actor.did;
   const signer = signed ? await resolveSigner(ctx, signed) : null;
+  const accepted: Id<"actionRecords">[] = [];
   for (const { change, attested } of actions) {
     const row = {
       attested: canonicalize({ ...attested, occurredAt, userId: ctx.actor.userId, credential: ctx.actor.credential } satisfies ActionRecordAttested),
@@ -119,10 +141,18 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: Recorde
     const author = { did, verificationMethod: signed.verificationMethod, versionId: signed.versionId };
     const built = buildActionRecord(change, author, signed.signedAt);
     if (!verifyActionSignature(built.payload, signature, signer.key)) { await failed("bad_signature"); continue; }
-    await ctx.db.insert("actionRecords", {
+    accepted.push(await ctx.db.insert("actionRecords", {
       ...built, ...row, status: "signed", signature: offered.signature,
       verificationMethod: signed.verificationMethod, publicKeyMultibase: signer.publicKeyMultibase, signedAt: signed.signedAt,
-    });
+    }));
+  }
+  // Off by default (#286 P3): until P6 turns it on, nothing is scheduled and
+  // no record gets a receipt. The receipt is signed outside this mutation, so
+  // a write never waits on, or fails because of, the receipt.
+  if (receiptsEnabled()) {
+    for (let start = 0; start < accepted.length; start += RECEIPT_BATCH) {
+      await ctx.scheduler.runAfter(0, internal.receipts.issueForRecords, { recordIds: accepted.slice(start, start + RECEIPT_BATCH) });
+    }
   }
 }
 
