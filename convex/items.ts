@@ -12,7 +12,7 @@ import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
-import { actionSignatureEnvelope, deleteActionRecords, itemCompleted, itemCreated, itemReopened, recordActions, type ListRef } from "./lib/actionRecords";
+import { actionSignatureEnvelope, itemCompleted, itemCreated, itemDeleted, itemEdited, itemReopened, recordActions, type ListRef } from "./lib/actionRecords";
 
 /**
  * Add an item to a list.
@@ -159,6 +159,7 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
     clearUrl: v.optional(v.boolean()),
     clearPriority: v.optional(v.boolean()),
     clearAssigneeDid: v.optional(v.boolean()),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => withMutationObservability("items.updateItem", async () => {
     if (args.description !== undefined && args.description.length > MAX_NOTE_LENGTH) {
@@ -203,6 +204,8 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
       await changeAssignments(ctx, item, ctx.actor.did, { legacy: args.clearAssigneeDid ? null : args.assigneeDid });
     }
     await ctx.db.patch(args.itemId, updates);
+    const edited = itemEdited(await ctx.db.get(item.listId) ?? { _id: item.listId }, item, args);
+    if (edited) await recordActions(ctx, [edited], args.signed);
     return args.itemId;
   }),
 });
@@ -386,6 +389,7 @@ export const { public: removeItem, internal: removeItemInternal, replay: removeI
   scope: "items:write",
   args: {
     itemId: v.id("items"),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => {
     const item = await ctx.db.get(args.itemId);
@@ -405,8 +409,9 @@ export const { public: removeItem, internal: removeItemInternal, replay: removeI
     }
 
     await deleteAssignments(ctx, args.itemId);
-    await deleteActionRecords(ctx, { itemId: args.itemId });
+    // The item's action records stay (docs/action-records.md): they outlive it.
     await ctx.db.delete(args.itemId);
+    await recordActions(ctx, [itemDeleted(await ctx.db.get(item.listId) ?? { _id: item.listId }, args.itemId)], args.signed);
   },
 });
 
@@ -699,9 +704,13 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, rep
   scope: "items:write",
   args: {
     itemIds: v.array(v.id("items")),
+    signed: v.optional(actionSignatureEnvelope),
   },
   handler: async (ctx, args) => {
     let listId: Id<"lists"> | null = null;
+    let list: ListRef | null = null;
+    const actions = [];
+    const named = new Set<string>(args.itemIds);
 
     for (const itemId of args.itemIds) {
       const item = await ctx.db.get(itemId);
@@ -709,6 +718,7 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, rep
 
       if (listId !== item.listId) {
         listId = item.listId;
+        list = await ctx.db.get(item.listId) ?? { _id: item.listId };
         const canEdit = await canUserEditList(ctx, item.listId, ctx.actor.did, ctx.actor.legacyDid);
         if (!canEdit) {
           throw resourceUnavailable();
@@ -723,14 +733,17 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, rep
       
       for (const subItem of subItems) {
         await deleteAssignments(ctx, subItem._id);
-        await deleteActionRecords(ctx, { itemId: subItem._id });
         await ctx.db.delete(subItem._id);
+        // A sub-item the author also named is their own deletion, not a cascade.
+        actions.push(itemDeleted(list!, subItem._id, named.has(subItem._id) ? undefined : itemId));
       }
 
       await deleteAssignments(ctx, itemId);
-      await deleteActionRecords(ctx, { itemId });
       await ctx.db.delete(itemId);
+      actions.push(itemDeleted(list!, itemId));
     }
+    // Action records stay when their item goes (docs/action-records.md).
+    await recordActions(ctx, actions, args.signed);
   },
 });
 

@@ -13,6 +13,7 @@ export type ActionSigner = (mutation: string, args: Record<string, unknown>) => 
 /** The mutations whose records the author signs (they declare a `signed` argument). */
 export const SIGNED_MUTATIONS: ReadonlySet<string> = new Set([
   "addItem", "checkItem", "uncheckItem", "batchCheckItems", "batchUncheckItems", "createList", "renameList",
+  "updateItem", "removeItem", "batchDeleteItems",
 ]);
 
 let signer: ActionSigner | null = null;

@@ -188,6 +188,27 @@ test('list-level records and historical placeholders are presented side by side 
   await waitFor(() => assert.match(container.textContent, /not independently verified here/));
 });
 
+test('an edit names the fields it changed, and a deleted item\'s record is shown with its list and verifies there', async () => {
+  const a = await author();
+  a.serveLog();
+  const edited = await actionRecord('R1', { action: 'item.edited', subject: { itemId: 'I' }, after: { name: 'Oat milk', description: { sha256: 'ab'.repeat(32) }, dueDate: null } }, a,
+    { attested: { before: { name: 'Milk', description: null, dueDate: 5 } } });
+  serve({ 'actionRecords:getItemActionRecords': [edited] });
+  const item = render(React.createElement(ItemProvenanceInfo, { item: { _id: 'I', name: 'Oat milk', createdByDid: a.did, createdAt: 1, checked: false } }));
+  fireEvent.click(item.container.querySelector('button'));
+  assert.match(item.container.textContent, /Edit recordChanged: name, notes, due dateSigned/);
+  await waitFor(() => assert.match(item.container.textContent, /Signature verified in this browser/));
+  cleanup();
+
+  const deleted = await actionRecord('R2', { action: 'item.deleted', subject: { itemId: 'item-row-9f8e7d' }, after: { deleted: true } }, a);
+  serve({ 'actionRecords:getDeletedItemActionRecords': [deleted] });
+  const { container } = openList({ _id: 'L', name: 'List', ownerDid: a.did, createdAt: 1 });
+  assert.match(container.textContent, /Deleted items \(1\)/);
+  assert.match(container.textContent, /Deletion recordItem …9f8e7dSigned/);
+  assert.doesNotMatch(container.textContent, /Action records \(/);
+  await waitFor(() => assert.match(container.textContent, /Signature verified in this browser/));
+});
+
 /** The list provenance panel, opened. */
 function openList(list) {
   const view = render(React.createElement(MemoryRouter, null, React.createElement(ListProvenanceInfo, { list })));

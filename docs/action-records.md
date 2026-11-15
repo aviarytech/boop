@@ -110,13 +110,18 @@ replay, or the HTTP API:
 | `list.created` | `createList` (lists and notes) | yes |
 | `list.created` | `createListFromTemplate` | no (`origin` attested) |
 | `list.renamed` | `renameList` | yes |
+| `item.edited` | `updateItem`, when it sets a field an edit record covers (below) | yes |
+| `item.deleted` | `removeItem`; each item named in `batchDeleteItems` | yes |
+| `item.deleted` | a sub-item removed with its parent by `batchDeleteItems` | no (the author named the parent; `origin` attested) |
 
 A batch writes one record per item, identical in shape to the record the
 individual call writes, and the device signs each one. Recording happens inside
 the mutation and schedules nothing.
 
-Not recorded: item edits other than the above, deletion, reordering, and
-assignment. Minting a list's Original (on the owner's device, when the list is
+Not recorded: reordering, assignment (an `updateItem` that changes only
+assignees writes no record), aisle overrides, and promoting or demoting a
+sub-item. Deleting a list is not recorded either: its records go with it.
+Minting a list's Original (on the owner's device, when the list is
 opened) is recorded in the Original's own signed history, not here.
 
 ## Payload (version 2)
@@ -150,6 +155,43 @@ before the server has run anything.
 | `item.reopened` | `{ itemId }` | `{ checked: false }` |
 | `list.created` | `{ createdAt }` (the creation time the author chose) | `{ name, kind: "list" \| "note" }` |
 | `list.renamed` | `{ listId }` | `{ name }` |
+| `item.edited` | `{ itemId }` | the fields the author set (below) |
+| `item.deleted` | `{ itemId }` | `{ deleted: true }` |
+
+**`item.edited`** states what the author set, not a diff the server computed:
+`after` holds only the fields this call set, each with its new value, and
+`null` for a field the author cleared. The device can build that from the
+arguments it sends, offline included, without knowing the server's state; the
+prior values are boop's to attest (`before`, below).
+
+| Field in `after` | Value |
+| --- | --- |
+| `name`, `url`, `groceryAisle` | the new string; `null` when cleared (`url`, `groceryAisle`) |
+| `dueDate` | ms since epoch, or `null` when cleared |
+| `priority` | `"high"` \| `"medium"` \| `"low"`, or `null` when cleared |
+| `recurrence` | `{ frequency, interval?, nextDue?, endDate? }`, or `null` when cleared |
+| `description` | `{ "sha256": "<lowercase hex SHA-256 of the UTF-8 text>" }` |
+
+A description is named by its digest, never its text. A note body can be
+50,000 characters and is saved as it is typed, and the record outlives the
+item, so the text itself would be kept after the item is deleted. Anyone
+holding a version of the text can check it against the digest. A clear flag
+wins over a value sent in the same call, as it does in the mutation. A number
+JSON cannot carry (`NaN`, `Infinity`) is left out of the record and does not
+fail the write. `shared/actionRecord.ts` `itemEdit` is the one definition, used
+by the device and the server.
+
+**`item.deleted`** names the item by id and carries nothing else of it: no
+name, no description, no prior state, signed or attested. The item's earlier
+records (its creation, edits, completions) are what say what it was, and they
+are kept (see [Lifetime and deletion](#lifetime-and-deletion)).
+
+Both types use the version-2 envelope, canonicalization and signing input
+unchanged. A version bump was not needed: a new `action` value is a new
+statement in the same shape, and the action is inside the signed bytes, so a
+signature over one action cannot be presented as another. A build from before
+these types reads such a record as unreadable (`malformed_payload`) and never
+as some other action.
 
 The subject names identifiers the author has at action time. A new list has
 no Original yet (the owner's device mints it when the list is opened), so it
@@ -177,15 +219,23 @@ did not sign (`ActionRecordAttested`):
   "listId": "<lists row id>",
   "itemId": "<items row id>",                  // item.* actions; for item.created the id the server assigned
   "listAssetDid": "did:vh:…",                   // when the list has an Original
-  "before": { "checked": false },              // prior state; null for *.created
+  "before": { "checked": false },              // prior state; null for *.created; absent for item.deleted
   "checkedAt": 1700000000000,                  // item.completed: the value stored on the item, when finite
-  "origin": { "kind": "recurrence", "sourceItemId": "…" }  // server-originated creations
+  "origin": { "kind": "recurrence", "sourceItemId": "…" }  // server-originated records
 }
 ```
 
+For `item.edited`, `before` has the same keys as the signed `after`, with the
+values the item held before the edit in the same form (a description by
+digest), and `null` where the field was unset. For a sub-item removed with its
+parent, `origin` is `{ "kind": "cascade", "parentItemId": "…" }`.
+
 The stored row also has `digest` (lowercase hex SHA-256 of `payload`) and
-index columns `listId`, `itemId`, `ownerUserId`. The verifier requires the
-index columns to agree with the payload where the payload names them.
+index columns `listId`, `itemId`, `ownerUserId`, `action`. The verifier requires
+`listId` and `itemId` to agree with the payload where the payload names them.
+`action` copies the payload's action so a list's deletions can be read once the
+items are gone; it is not returned with the evidence, and rows written before
+`item.deleted` existed do not have it.
 
 Nothing in a record comes from a caller-supplied DID, and it never contains
 tokens, token hashes, API keys or key hashes, or Turnkey identifiers.
@@ -250,7 +300,11 @@ wrapped by `convex/lib/authorDidLog.ts` on the server, `src/lib/authorDid.ts`
 `inspectAuthorDid` in the browser, and `scripts/verify-action-records.mjs`.
 
 Records can be fetched with `GET /api/v1/action-records?itemId=…` or
-`?listId=…` (see `API.md`) and checked outside boop:
+`?listId=…` (see `API.md`) and checked outside boop. A deleted item cannot
+authorize a read, so its records are read through its list:
+`?listId=…&itemId=…` for one item's whole history, `?listId=…&deleted=true`
+for the list's deletion records (`getListItemActionRecords`,
+`getDeletedItemActionRecords`).
 
 ```
 # resolve each author's did.jsonl from the domain the DID names
@@ -298,8 +352,11 @@ It does **not** prove:
   `occurredAt`;
 - the prior state, the server-assigned id of a created item or list, or the
   list an item belongs to: attested, not signed;
-- that the record set is complete. Records are deleted with their item or list,
-  and nothing chains them together, so an absent record proves nothing.
+- that the record set is complete. Records are deleted with their list, and
+  nothing chains them together, so an absent record proves nothing;
+- for an edit, the text of a description (only its digest is signed), or that
+  the edit changed anything: the author signs the values they set, and the
+  prior values are attested.
 
 An **unsigned** record proves nothing cryptographically. It is boop's own
 account of what happened.
@@ -363,25 +420,37 @@ domain the DID names, validates it with `inspectAuthorDid` (signatures, head,
 author-DID shape), and runs `verifyActionRecord` against it. Each row names the
 authorizing account and, for signed records, the key fragment and DID version;
 the credential used and boop's receipt time are shown separately, marked as
-boop's unsigned record.
+boop's unsigned record. An **Edit record** lists the fields it changed. A
+deleted item has no panel of its own, so its **Deletion record** is listed in
+its list's panel under **Deleted items**, named by the end of its item id.
 
 ## Lifetime and deletion
 
-Action records are deleted with their subject: an item's records when the item
-is removed, a list's records when the list or its owner's account is deleted.
-Records an account wrote on someone else's list stay with that list, as
-`createdByDid` does.
+**An item's records outlive the item.** Removing an item (`removeItem`,
+`batchDeleteItems`, sub-items included) deletes none of its records and adds
+an `item.deleted` record to them, so "who deleted this, and what was it" has
+an answer afterwards. What stays is what was recorded while the item existed:
+its name from `item.created` and from any rename, other edited values, and
+description digests, never description text.
 
-Every toggle adds a record, so a long-lived list can hold many. Deletion removes
-up to 500 in the deleting mutation and schedules `actionRecords.deleteRemaining`
-for the rest, so deleting a list or item never hits Convex's per-mutation limits.
+Records are deleted with their **list**: when the list is deleted, or when its
+owner's account is, the records of its deleted items included. Records an
+account wrote on someone else's list stay with that list, as `createdByDid`
+does.
+
+Every toggle and edit adds a record, so a long-lived list can hold many.
+Deleting a list removes up to 500 in the deleting mutation and schedules
+`actionRecords.deleteRemaining` for the rest, so it never hits Convex's
+per-mutation limits.
 
 ## Verification status and remaining gaps
 
 Covered by `scripts/signed-action-records.test.mjs`,
 `scripts/provenance-presentation.test.mjs` and the share-modal E2E tests:
 canonical determinism and the client/server payload agreement; create,
-complete, reopen, batch, recurring, template and rename flows; individual
+complete, reopen, edit, delete, batch, recurring, template and rename flows;
+an item's records surviving its deletion and staying readable through its
+list; individual
 versus batch equivalence; device-side signing with a real author did:webvh and
 a mocked Turnkey, verified at receipt; every `failed` reason code, with nothing
 from a bad envelope stored; session versus distinct API keys; verification from
@@ -404,5 +473,9 @@ Not done or not verified:
   provable.
 - Existing historical placeholders and version-1 records are not converted,
   and never will be signed retroactively.
-- Item edits, deletions, reordering and assignment are not recorded.
+- Reordering and assignment are not recorded.
+- Every saved edit is signed, a note's autosaves included; nothing coalesces
+  them, so a long note produces many `item.edited` records.
+- `removeItem` on an item with sub-items leaves the sub-items in place, as
+  before, and records only the item removed.
 - Native builds and live flows have not been exercised.

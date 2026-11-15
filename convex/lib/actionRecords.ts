@@ -23,6 +23,7 @@ import {
   buildActionRecord,
   canonicalize,
   decodeSignature,
+  itemEdit,
   parseEd25519PublicKey,
   verifyActionSignature,
   type ActionChange,
@@ -72,6 +73,25 @@ export const listRenamed = (list: ListRef & { name: string }, name: string): Rec
   attested: { ...listContext(list), before: { name: list.name } },
 });
 
+/** Null when the call changes nothing an edit record covers. `args` are updateItem's own. */
+export const itemEdited = (list: ListRef, item: Doc<"items">, args: Record<string, unknown>): RecordedAction | null => {
+  const after = itemEdit(args);
+  if (!after) return null;
+  const prior: Record<string, unknown> = itemEdit(item) ?? {};
+  const before = Object.fromEntries(Object.keys(after).map(key => [key, prior[key] ?? null]));
+  return {
+    change: { action: "item.edited", subject: { itemId: item._id }, after },
+    attested: { ...listContext(list), itemId: item._id, before },
+  };
+};
+
+// Carries nothing of the item but its id: the record outlives it. `parentItemId` marks a
+// sub-item removed with its parent, which the author did not name (and so did not sign).
+export const itemDeleted = (list: ListRef, itemId: Id<"items">, parentItemId?: Id<"items">): RecordedAction => ({
+  change: { action: "item.deleted", subject: { itemId }, after: { deleted: true } },
+  attested: { ...listContext(list), itemId, ...(parentItemId ? { origin: { kind: "cascade", parentItemId } } : {}) },
+});
+
 type Signer = { key: Uint8Array; publicKeyMultibase: string } | { error: string };
 
 /**
@@ -104,7 +124,7 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: Recorde
   for (const { change, attested } of actions) {
     const row = {
       attested: canonicalize({ ...attested, occurredAt, userId: ctx.actor.userId, credential: ctx.actor.credential } satisfies ActionRecordAttested),
-      listId: attested.listId, itemId: attested.itemId, ownerUserId: ctx.actor.userId,
+      listId: attested.listId, itemId: attested.itemId, ownerUserId: ctx.actor.userId, action: change.action,
     };
     const offered = signed?.signatures.find(entry => entry.subject === actionSubjectKey(change));
     if (!signed || !signer || !offered) {
@@ -129,8 +149,10 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: Recorde
 // Records grow with every toggle, so deletion is bounded per mutation.
 export const DELETE_RECORDS_BATCH = 500;
 
-/** Records name their subject, so they are removed with it like vcProofs were.
- * Deletes one batch now and schedules the remainder. */
+/** A list's records are removed with the list (or its owner's account). An
+ * item's records outlive the item: removing an item deletes none of them, so
+ * the item target is only reached by continuations scheduled before that
+ * changed. Deletes one batch now and schedules the remainder. */
 export async function deleteActionRecords(
   ctx: MutationCtx, target: { listId: Id<"lists"> } | { itemId: Id<"items"> },
 ): Promise<void> {

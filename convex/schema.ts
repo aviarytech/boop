@@ -335,6 +335,9 @@ export default defineSchema({
     listId: v.id("lists"),
     itemId: v.optional(v.id("items")),
     ownerUserId: v.id("users"), // Account that authorized the action
+    // The payload's action, as an index column so a list's deletions can be read
+    // after the items are gone. Absent on records written before item.deleted existed.
+    action: v.optional(v.string()),
     status: v.union(
       v.literal("pending"), // Reserved: awaiting a signature (not written today)
       v.literal("signed"), // Verified at receipt against the author's DID log
@@ -348,6 +351,7 @@ export default defineSchema({
     error: v.optional(v.string()), // Non-secret reason code, set when failed
   })
     .index("by_list", ["listId", "itemId"])
+    .index("by_list_action", ["listId", "action"])
     .index("by_item", ["itemId"]),
 
   // Item assignees table - tracks who is assigned to each item (Phase 1 foundation)
