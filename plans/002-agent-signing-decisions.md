@@ -76,6 +76,33 @@ reads **"agent X, delegated by Y"**.
 | D16 | Parallel work | **Start the protocol-independent PRs now,** alongside the spike. | Starts the release clock for tolerant builds and ships edit/delete for humans sooner. | Only edit/delete now, and nothing until the spike ends. |
 | D17 | Reach | Boop first. Formats stay app-neutral so B3 and the Originals SDK can adopt `@originals/auth/agent` after P8. | Follows from D4. | Building a shared library now. |
 
+### Decisions after the spike (2026-11-15)
+
+The spike (`spike/pws-agent-zcap` @ `f994ebd`, `plans/pws-spike-findings.md`)
+passed all three gates. Gate 1 used a local key behind the Turnkey signer
+interface; the live Turnkey check is still an owner action.
+
+| # | Topic | Decision | Why | Rejected |
+|---|---|---|---|---|
+| D5 (final) | Delegation format | **PWS zCap**, rooted in the user's did:webvh. Agents launch **after P2 adoption**. | All gates passed, and it's standards-aligned with a single format. | The D5c VC now with zCap later (two formats plus a migration), and the D5c VC only (gives up PWS alignment). |
+| D13a | Measuring adoption | A **report-only capability string** at sign-in (P2b) and an owner script that prints adoption. No enforcement. | Real numbers instead of guessing a date. | A fixed date after store release, and date plus metric. |
+| D8a | Description edits | `item.edited` signs the description as a **SHA-256 digest**. | Notes reach 50k characters, and deleted notes shouldn't live on in records. | Full text, and text under a size cap. |
+| D8b | Autosave | **One signed `item.edited` per edit session**, sent on blur/close or after idle. Saves still persist immediately. | Fewer Turnkey calls and records. | Signing every save, and measuring first. |
+
+P5 must handle these points from the spike:
+- Users' DIDs need `capabilityDelegation: ["#orig-1"]`. didwebvh-ts 2.8 can't
+  write that cleanly (it leaves a stray `purpose`), so the log entry is built
+  by hand. Test the new shape against `@originals/sdk` 6 first.
+- The verifying route must check the body against `Digest` itself, because the
+  library doesn't.
+- Add replay protection (a seen-nonce or ID cache) for the 600-second
+  invocation window.
+- The document loader must make key references absolute.
+- The record verifier verifies **as of the receipt time** (P3), not against the
+  current DID as PWS does. The root target names the owner DID.
+- Bundle size is about 80 kB gzipped for the verifier and the client
+  delegation code, and about 20 kB for an agent's signer.
+
 ### What happens to #308's open review threads
 
 - **Request spam** is answered by D14 (enrollment code).
@@ -103,12 +130,13 @@ owner.
 | P2 | `feat/tolerant-did-parsing` | Fable agent C | `authorDidProblems` (`shared/authorDid.ts`) accepts `#orig-1` also listed under `capabilityDelegation` and `capabilityInvocation`. Tests cover it. Ship in the next web and native store builds. **No DID changes.** | The builds are released, and an adoption metric or date is noted. |
 | P3 | `feat/boop-service-did` | Fable agent D | Boop service did:webvh with its key in the Turnkey parent org. Convex action `signReceipt(recordHash, receivedAt)`. Receipt schema plus a verifier helper in `shared/`. | A receipt round-trips and verifies offline. |
 | P4 | `feat/agent-enrollment-codes` | Fable agent E | Short-lived one-time codes: a table, a Settings UI to mint them, and an internal `redeemEnrollmentCode`. No consumer yet, behind a flag. | Codes mint, expire and redeem once in tests. |
+| P2b | `feat/client-capability-report` (base P2) | Fable agent C2 | Clients send a report-only capability string at sign-in. The server records it, and an owner script prints the 7/30-day adoption share. No enforcement (D13a). | The owner can read adoption before any DID change. |
 
 ### Track B: after the spike decision (stacked, in order)
 
 | PR | Branch (base) | Agent | Scope |
 |---|---|---|---|
-| P5 | `feat/agent-delegation` (base `main` after P2–P4) | Fable agent F | Delegation in the chosen format (zCap or VC) in `shared/agentDelegation.ts`. Approval UI signs it with `#orig-1` (30-day expiry, re-approve to renew). Enrollment requires a P4 code. Salvage #308's request, token and UI code **without** DID updates. If zCap: add `capabilityDelegation` to DIDs **only after P2 adoption** (D13). Then close #308 with a link. |
+| P5 | `feat/agent-delegation` (base `main` after P2–P4) | Fable agent F | zCap delegation (D5 final; see the spike points above) in `shared/agentDelegation.ts`. Approval UI signs it with `#orig-1` (30-day expiry, re-approve to renew). Enrollment requires a P4 code. Salvage #308's request, token and UI code **without** DID updates. If zCap: add `capabilityDelegation` to DIDs **only after P2 adoption** (D13). Then close #308 with a link. |
 | P6 | `feat/agent-signed-records` (base P5) | Fable agent G | Record version where `author` is the agent's did:key, plus `onBehalfOf` and the delegation proof. Verifier accepts it only for action records. `recordActions` accepts agent signatures, attaches P3 receipts and **rejects unsigned agent writes** (D6). `items.createdByAgent`/`checkedByAgent`. UI and verifier show "agent X, delegated by Y". Covers the existing 5 types plus P1's types. |
 | P7 | `chore/remove-api-v1-keys` (base P6) | Fable agent H | Remove the X-API-Key path (`convex/lib/actor.ts`, `convex/apiKeysHttp.ts`, `agentApiKeys`, `API.md`, the matching Settings UI). Ships in the **same release** as P6 (D7). |
 | P8 | `feat/agent` in the `@originals/auth` repo, plus a Boop bump PR | Fable agent I | Move `shared/agentDelegation.ts` and the agent record helpers to `@originals/auth/agent` (no Turnkey dependencies). Boop switches imports. Opens the way for B3 and the SDK (D17). |
