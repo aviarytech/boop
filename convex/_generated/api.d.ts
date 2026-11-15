@@ -13,6 +13,7 @@ import type * as activity from "../activity.js";
 import type * as activityHttp from "../activityHttp.js";
 import type * as actorSession from "../actorSession.js";
 import type * as adminGrants from "../adminGrants.js";
+import type * as agentEnrollment from "../agentEnrollment.js";
 import type * as agentReadHttp from "../agentReadHttp.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as apiKeysHttp from "../apiKeysHttp.js";
@@ -113,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   activityHttp: typeof activityHttp;
   actorSession: typeof actorSession;
   adminGrants: typeof adminGrants;
+  agentEnrollment: typeof agentEnrollment;
   agentReadHttp: typeof agentReadHttp;
   apiKeys: typeof apiKeys;
   apiKeysHttp: typeof apiKeysHttp;

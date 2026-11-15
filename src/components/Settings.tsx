@@ -9,6 +9,8 @@ import { useSettings } from '../hooks/useSettings';
 import { useNotifications } from '../hooks/useNotifications';
 import { useAuth } from '../hooks/useAuth';
 import { ReferralInviteCurrentUser } from './ReferralInvite';
+import { AgentEnrollmentCode } from './AgentEnrollmentCode';
+import { AGENT_ENROLLMENT_CODES_ENABLED } from '../lib/featureFlags';
 import { supportsHaptics } from '../lib/haptics';
 import { supportsPushNotifications } from '../lib/notifications';
 import { biometrics } from '../lib/biometrics';
@@ -487,6 +489,18 @@ export function Settings({ onClose }: SettingsProps) {
             <ReferralInviteCurrentUser />
           </div>
         </section>
+
+        {/* Agents Section: off unless VITE_AGENT_ENROLLMENT_CODES=true */}
+        {AGENT_ENROLLMENT_CODES_ENABLED && (
+          <section>
+            <h3 className="text-[13px] font-semibold text-[var(--boop-muted)] mb-2">
+              Agents
+            </h3>
+            <div className="p-4 bg-[var(--boop-panel)] rounded-xl">
+              <AgentEnrollmentCode />
+            </div>
+          </section>
+        )}
 
         {/* Account Section */}
         <section>

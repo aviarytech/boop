@@ -6,7 +6,7 @@
  * Uses a fixed window approach with Convex database storage (serverless-compatible).
  */
 
-import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 
 // Rate limit configuration
@@ -19,9 +19,85 @@ export const RATE_LIMITS = {
     maxAttempts: 5, // 5 attempts per window
     windowMs: 60 * 1000, // 1 minute window
   },
+  // Minting agent enrollment codes (agentEnrollment.ts), keyed by account.
+  enrollmentCodeMint: {
+    maxAttempts: 10,
+    windowMs: 60 * 60 * 1000, // 1 hour window
+  },
 } as const;
 
 export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
+
+const endpointValidator = v.union(v.literal("initiate"), v.literal("verify"), v.literal("enrollmentCodeMint"));
+
+export type RateLimitResult = { allowed: boolean; retryAfterMs?: number; currentAttempts: number };
+
+/**
+ * The fixed-window check behind `checkAndIncrementInternal`, for mutations
+ * that spend a budget in their own transaction. A refusal writes nothing.
+ */
+export async function consumeRateLimit(ctx: MutationCtx, key: string, endpoint: RateLimitEndpoint): Promise<RateLimitResult> {
+  const now = Date.now();
+  const config = RATE_LIMITS[endpoint];
+
+  // Find existing rate limit record
+  const existing = await ctx.db
+    .query("rateLimits")
+    .withIndex("by_key_endpoint", (q) => q.eq("key", key).eq("endpoint", endpoint))
+    .first();
+
+  if (existing) {
+    // Check if window has expired
+    const windowExpired = now - existing.windowStart >= config.windowMs;
+
+    if (windowExpired) {
+      // Reset window
+      await ctx.db.patch(existing._id, {
+        attempts: 1,
+        windowStart: now,
+        expiresAt: now + config.windowMs * 2, // Keep for 2x window for cleanup buffer
+      });
+      return { allowed: true, currentAttempts: 1 };
+    }
+
+    // Window still active - check if over limit
+    if (existing.attempts >= config.maxAttempts) {
+      const retryAfterMs = config.windowMs - (now - existing.windowStart);
+      return {
+        allowed: false,
+        retryAfterMs: Math.max(0, retryAfterMs),
+        currentAttempts: existing.attempts,
+      };
+    }
+
+    // Increment counter
+    const newAttempts = existing.attempts + 1;
+    await ctx.db.patch(existing._id, { attempts: newAttempts });
+
+    // Check if this increment puts us at the limit
+    if (newAttempts >= config.maxAttempts) {
+      const retryAfterMs = config.windowMs - (now - existing.windowStart);
+      return {
+        allowed: true, // Still allowed for this request
+        retryAfterMs: Math.max(0, retryAfterMs), // But next one will be blocked
+        currentAttempts: newAttempts,
+      };
+    }
+
+    return { allowed: true, currentAttempts: newAttempts };
+  }
+
+  // No existing record - create new one
+  await ctx.db.insert("rateLimits", {
+    key,
+    endpoint,
+    attempts: 1,
+    windowStart: now,
+    expiresAt: now + config.windowMs * 2,
+  });
+
+  return { allowed: true, currentAttempts: 1 };
+}
 
 /**
  * Check if a rate limit has been exceeded and increment the counter.
@@ -32,75 +108,14 @@ export type RateLimitEndpoint = keyof typeof RATE_LIMITS;
 export const checkAndIncrementInternal = internalMutation({
   args: {
     key: v.string(),
-    endpoint: v.union(v.literal("initiate"), v.literal("verify")),
+    endpoint: endpointValidator,
   },
   returns: v.object({
     allowed: v.boolean(),
     retryAfterMs: v.optional(v.number()),
     currentAttempts: v.number(),
   }),
-  handler: async (ctx, { key, endpoint }) => {
-    const now = Date.now();
-    const config = RATE_LIMITS[endpoint];
-
-    // Find existing rate limit record
-    const existing = await ctx.db
-      .query("rateLimits")
-      .withIndex("by_key_endpoint", (q) => q.eq("key", key).eq("endpoint", endpoint))
-      .first();
-
-    if (existing) {
-      // Check if window has expired
-      const windowExpired = now - existing.windowStart >= config.windowMs;
-
-      if (windowExpired) {
-        // Reset window
-        await ctx.db.patch(existing._id, {
-          attempts: 1,
-          windowStart: now,
-          expiresAt: now + config.windowMs * 2, // Keep for 2x window for cleanup buffer
-        });
-        return { allowed: true, currentAttempts: 1 };
-      }
-
-      // Window still active - check if over limit
-      if (existing.attempts >= config.maxAttempts) {
-        const retryAfterMs = config.windowMs - (now - existing.windowStart);
-        return {
-          allowed: false,
-          retryAfterMs: Math.max(0, retryAfterMs),
-          currentAttempts: existing.attempts,
-        };
-      }
-
-      // Increment counter
-      const newAttempts = existing.attempts + 1;
-      await ctx.db.patch(existing._id, { attempts: newAttempts });
-
-      // Check if this increment puts us at the limit
-      if (newAttempts >= config.maxAttempts) {
-        const retryAfterMs = config.windowMs - (now - existing.windowStart);
-        return {
-          allowed: true, // Still allowed for this request
-          retryAfterMs: Math.max(0, retryAfterMs), // But next one will be blocked
-          currentAttempts: newAttempts,
-        };
-      }
-
-      return { allowed: true, currentAttempts: newAttempts };
-    }
-
-    // No existing record - create new one
-    await ctx.db.insert("rateLimits", {
-      key,
-      endpoint,
-      attempts: 1,
-      windowStart: now,
-      expiresAt: now + config.windowMs * 2,
-    });
-
-    return { allowed: true, currentAttempts: 1 };
-  },
+  handler: (ctx, { key, endpoint }) => consumeRateLimit(ctx, key, endpoint),
 });
 
 /**
@@ -111,7 +126,7 @@ export const checkAndIncrementInternal = internalMutation({
 export const checkStatusInternal = internalQuery({
   args: {
     key: v.string(),
-    endpoint: v.union(v.literal("initiate"), v.literal("verify")),
+    endpoint: endpointValidator,
   },
   returns: v.object({
     allowed: v.boolean(),
