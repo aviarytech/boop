@@ -20,6 +20,7 @@ lets agents genuinely use the current stack.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
 | 001 | Agent access slice: API keys + read/write over HTTP | P1 | L | — | DONE (steps 0–4,6 on branch `feat/agent-api-keys`; step 5 attribution deferred). `tsc`/`bun test`/`bun run build` green; smoke-tested end-to-end on `dev:basic-bloodhound-21`. |
+| 002 | Agents sign their own action records (decision record + stacked PR plan, #286) | P1 | XL | PWS spike | DECIDED 2026-11-15; Track A not started |
 
 ## Dependency notes
 
