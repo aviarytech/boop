@@ -33,6 +33,7 @@ import { stripeWebhook, createCheckout, createPortal, getSubscription } from "./
 import { resolveSiteHost, resolveSiteAsset } from "./sitesHttp";
 import { createApiKey, listApiKeys, revokeApiKey } from "./apiKeysHttp";
 import { getActionRecords, getLists, getListWithItems } from "./agentReadHttp";
+import { clientPlatform, declaredCapabilities } from "../shared/clientCapabilities";
 const RATE_LIMITS = {
   initiate: { windowMs: 60000, maxAttempts: 5 },
   verify: { windowMs: 60000, maxAttempts: 5 },
@@ -281,6 +282,19 @@ const verify = httpAction(async (ctx, request) => {
     });
 
     await ctx.runMutation(internal.actorSession.establishInternal, { authToken: authResult.token });
+
+    // Report-only (plans/002 D13): which builds sign in, for the owner's
+    // adoption read. A build that sends nothing is recorded with none, and a
+    // failure here never reaches the sign-in.
+    try {
+      await ctx.runMutation(internal.clientCapabilities.recordInternal, {
+        subject: result.subOrgId,
+        clientCapabilities: declaredCapabilities(body.clientCapabilities),
+        platform: clientPlatform(body.platform),
+      });
+    } catch (error) {
+      console.error("[authHttp] Could not record client capabilities:", error);
+    }
 
     // Clean up session
     await ctx.runMutation(internal.authSessions.deleteSessionInternal, { sessionId });

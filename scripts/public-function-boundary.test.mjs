@@ -40,6 +40,7 @@ const PUBLIC = {
 const SELF_AUTHENTICATED = new Set([
   'actorSession:establish', 'actorSession:revoke',
   'auth:getUserByTurnkeyId', 'auth:getUserByEmail', 'auth:upsertUser',
+  'clientCapabilities:report',
 ]);
 /** Compatibility names that reject every caller (#241/#251). */
 const REJECTING = new Set([

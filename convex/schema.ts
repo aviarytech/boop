@@ -60,6 +60,16 @@ export default defineSchema({
   })
     .index("by_hash", ["tokenHash"])
     .index("by_expires_at", ["expiresAt"]),
+  // What each account's builds last said they support (plans/002 D13, #286 P2b).
+  // Report-only: read by clientCapabilities.adoption, never by an access check.
+  clientCapabilityReports: defineTable({
+    subject: v.string(), // Turnkey sub-org id, as in accessSessions
+    platform: v.string(), // "web" | "ios" | "android" | "unknown"
+    capabilities: v.array(v.string()), // Empty for a build that declared none
+    lastSeenAt: v.number(),
+  })
+    .index("by_subject_platform", ["subject", "platform"])
+    .index("by_last_seen", ["lastSeenAt"]),
   // DID logs table - stores did:webvh logs for resolution
   didLogs: defineTable({
     userDid: v.string(), // The user's did:webvh
