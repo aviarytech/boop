@@ -114,7 +114,10 @@ device did not build itself.
 - An author DID is one where **every version**, genesis included, has exactly
   the two keys (`#key-0` the only update key and only `authentication`,
   `#orig-1` the only `assertionMethod`, nothing else) and both are the
-  sub-org's own. Checking only the latest version would let a genesis under
+  sub-org's own. `#orig-1` may also be referenced, as the same method, under
+  `capabilityDelegation` and `capabilityInvocation`: nothing mints that yet,
+  but builds accept it so a later DID change needs no forced update
+  (plans/002 D13). Checking only the latest version would let a genesis under
   someone else's key hand over to the victim's public keys while keeping an
   assertion key of its own. Log parameters are an allowlist.
 - The server adopts or re-genesises an account only onto an author DID whose
