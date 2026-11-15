@@ -339,6 +339,7 @@ export const { public: deleteList, internal: deleteListInternal, replay: deleteL
       await ctx.db.delete(item._id);
     }
     await deleteActionRecords(ctx, { listId: args.listId });
+    for (const row of await ctx.db.query("pendingItemEdits").withIndex("by_list", q => q.eq("listId", args.listId)).collect()) await ctx.db.delete(row._id);
 
     // Includes historical orphan membership rows whose items were already removed.
     for (const row of await ctx.db.query("itemAssignees").withIndex("by_list", q => q.eq("listId", args.listId)).collect()) await ctx.db.delete(row._id);

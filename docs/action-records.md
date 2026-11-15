@@ -12,6 +12,7 @@ are no longer written.
 | The one writer, and the check at receipt | `convex/lib/actionRecords.ts` `recordActions` |
 | Storage and reads | `convex/actionRecords.ts`, table `actionRecords` |
 | Signing on the author's device | `src/lib/actionSigning.ts`, attached by `src/lib/actionSigner.ts` |
+| Edit sessions (one record per run of saves) | `src/lib/editSessions.ts`, `src/hooks/useEditSessionRecords.ts`; table `pendingItemEdits` |
 | Standalone check | `scripts/verify-action-records.mjs` |
 
 ## Custody: who signs
@@ -74,6 +75,79 @@ The replay fingerprint for offline operations excludes `signed`: a retry of the
 same operation carries a fresh signature (new `signedAt`) and must still be
 recognized as the same operation (`convex/lib/authenticated.ts`).
 
+## Edit sessions
+
+A note autosaves 600 ms after each pause in typing, and an item's fields can
+be saved one after another. Recording and signing every save would bury the
+record of what the author actually did. So the app records **one signed
+`item.edited` per edit session**: a run of saves of one item by one account
+from one device.
+
+**Saves are not delayed.** Each `updateItem` is sent and applied at once, as
+before. Only the record waits.
+
+1. The device gives every save of the item the same `editSession` id (a random
+   UUID) and does not sign it.
+2. `updateItem` applies the save and, instead of writing a record, adds it to
+   the session's row in `pendingItemEdits` (per item, account and session id):
+   `after` takes each field's latest value, `before` keeps the value each field
+   had when the session first touched it. This row is working state, not
+   evidence, and is never returned by a read.
+3. When the session ends, the device signs the session's final `after` once
+   and calls `recordItemEdit({ itemId, editSession, signed })`. The server
+   builds the payload from **its own** row, verifies the signature against
+   those bytes, writes the record through `recordActions`, and deletes the
+   row.
+
+The server never takes the device's word for what was edited: the record's
+`after` is what the server applied under that session. A signature over
+anything else is recorded as `failed` (`bad_signature`), like any other.
+
+A session ends, on the device:
+
+| When | How |
+| --- | --- |
+| 5 seconds after the item's last save was answered (`EDIT_SESSION_IDLE_MS`) | idle timer, restarted by each save |
+| The route changes: leaving a note, an item, or a list (list switch included) | `flushEditSessions()` |
+| The tab is hidden, or the page is unloading (`visibilitychange`, `pagehide`) | `flushEditSessions()`, best effort |
+| The browser reports it is back online, or the account signs out | `flushEditSessions()` |
+
+Five seconds is long enough that a pause to think stays inside one session
+(autosave fires at 600 ms, plus a round trip, so anything under about two
+seconds would split ordinary typing into several records), and short enough
+that the record is normally written while the author is still on the page.
+Closing an item's details form does not end the session by itself, because
+that save is queued and sent in the background; the idle timer ends it. A
+session is never closed while one of its saves is unanswered: it closes when
+the answer arrives, so the record cannot race a save. A save that fails is no
+part of the session on either side. Two tabs, or two accounts, editing one
+item have separate sessions and separate records. If the record cannot be
+sent (offline), the device keeps it and retries at the next flush, three
+attempts in all.
+
+**What can go unrecorded.** The record is written after the edit, so a crash,
+a killed tab, or an unload the browser cuts short can leave the last session
+open: the edit is saved, and no record of it exists yet. It is not lost for
+good in the common cases:
+
+- when the same account next edits that item, any session of theirs on it
+  that has had no save for 10 minutes (`EDIT_SESSION_ABANDONED_MS`) is
+  recorded then, **unsigned**, since its device never signed it;
+- when the same account removes the item, their open session on it is
+  recorded unsigned first, so the edit precedes the deletion.
+
+An edit stays unrecorded if neither happens: the author never touches the item
+again, or someone else removes it (another account's open session cannot be
+recorded in their name, and is dropped), or the list is deleted. A record
+written this way carries boop's `occurredAt` of when it was written, not of
+the edit.
+
+A save sent without `editSession` is recorded on its own, at once: the HTTP
+API, and app builds from before sessions. Offline edits join a session when
+the sync queue sends them, so a queue of edits to one item replayed together
+becomes one record. `editSession`, like `signed`, is not part of an offline
+operation's replay fingerprint.
+
 ## Authenticated identity
 
 `authenticate` resolves an account from a verified, active session or API key.
@@ -110,7 +184,9 @@ replay, or the HTTP API:
 | `list.created` | `createList` (lists and notes) | yes |
 | `list.created` | `createListFromTemplate` | no (`origin` attested) |
 | `list.renamed` | `renameList` | yes |
-| `item.edited` | `updateItem`, when it sets a field an edit record covers (below) | yes |
+| `item.edited` | `recordItemEdit`, closing an [edit session](#edit-sessions) of `updateItem` saves from the app | yes, once per session |
+| `item.edited` | `updateItem` sent without a session (the HTTP API, builds from before sessions), when it sets a field an edit record covers | only if the caller signs it |
+| `item.edited` | an edit session its device never closed, recorded when its author next edits or removes the item | no |
 | `item.deleted` | `removeItem`; each item named in `batchDeleteItems` | yes |
 | `item.deleted` | a sub-item removed with its parent by `batchDeleteItems` | no (the author named the parent; `origin` attested) |
 
@@ -159,10 +235,12 @@ before the server has run anything.
 | `item.deleted` | `{ itemId }` | `{ deleted: true }` |
 
 **`item.edited`** states what the author set, not a diff the server computed:
-`after` holds only the fields this call set, each with its new value, and
-`null` for a field the author cleared. The device can build that from the
-arguments it sends, offline included, without knowing the server's state; the
-prior values are boop's to attest (`before`, below).
+`after` holds only the fields the author set, each with its final value, and
+`null` for a field the author cleared. For an [edit session](#edit-sessions)
+that is every field any of its saves set, with the value the last such save
+gave it. The device can build that from the arguments it sends, offline
+included, without knowing the server's state; the prior values are boop's to
+attest (`before`, below).
 
 | Field in `after` | Value |
 | --- | --- |
@@ -173,9 +251,18 @@ prior values are boop's to attest (`before`, below).
 | `description` | `{ "sha256": "<lowercase hex SHA-256 of the UTF-8 text>" }` |
 
 A description is named by its digest, never its text. A note body can be
-50,000 characters and is saved as it is typed, and the record outlives the
-item, so the text itself would be kept after the item is deleted. Anyone
-holding a version of the text can check it against the digest. A clear flag
+50,000 characters and the record outlives the item, so the text itself would
+be kept after the item is deleted.
+
+**A verifier can confirm a description only if it already has the text.** The
+record does not contain the description and it cannot be recovered from the
+digest. Someone holding a candidate text (the item's current description, an
+export, a copy the author gave them) hashes its UTF-8 bytes with SHA-256 and
+compares; a match shows the author signed an edit that set exactly that text.
+Without the text, the record shows only that the description was changed, and
+by whom. Action records never hold the text, so once the description is
+edited again or the item is deleted, the text behind an older digest cannot be
+obtained from them. A clear flag
 wins over a value sent in the same call, as it does in the mutation. A number
 JSON cannot carry (`NaN`, `Infinity`) is left out of the record and does not
 fail the write. `shared/actionRecord.ts` `itemEdit` is the one definition, used
@@ -227,7 +314,8 @@ did not sign (`ActionRecordAttested`):
 
 For `item.edited`, `before` has the same keys as the signed `after`, with the
 values the item held before the edit in the same form (a description by
-digest), and `null` where the field was unset. For a sub-item removed with its
+digest), and `null` where the field was unset. For an edit session it is each
+field's value before the session's first save touched it. For a sub-item removed with its
 parent, `origin` is `{ "kind": "cascade", "parentItemId": "…" }`.
 
 The stored row also has `digest` (lowercase hex SHA-256 of `payload`) and
@@ -354,9 +442,11 @@ It does **not** prove:
   list an item belongs to: attested, not signed;
 - that the record set is complete. Records are deleted with their list, and
   nothing chains them together, so an absent record proves nothing;
-- for an edit, the text of a description (only its digest is signed), or that
-  the edit changed anything: the author signs the values they set, and the
-  prior values are attested.
+- for an edit, the text of a description: only its digest is signed, so a
+  verifier who does not already have the text learns nothing about it;
+- for an edit, that it changed anything, or how many saves it took: the author
+  signs the final values they set in the session, and the prior values are
+  attested.
 
 An **unsigned** record proves nothing cryptographically. It is boop's own
 account of what happened.
@@ -438,7 +528,10 @@ owner's account is, the records of its deleted items included. Records an
 account wrote on someone else's list stay with that list, as `createdByDid`
 does.
 
-Every toggle and edit adds a record, so a long-lived list can hold many.
+An open edit session (`pendingItemEdits`) is removed when it is recorded, when
+its item is removed, and with its list or the list owner's account.
+
+Every toggle and edit session adds a record, so a long-lived list can hold many.
 Deleting a list removes up to 500 in the deleting mutation and schedules
 `actionRecords.deleteRemaining` for the rest, so it never hits Convex's
 per-mutation limits.
@@ -450,7 +543,10 @@ Covered by `scripts/signed-action-records.test.mjs`,
 canonical determinism and the client/server payload agreement; create,
 complete, reopen, edit, delete, batch, recurring, template and rename flows;
 an item's records surviving its deletion and staying readable through its
-list; individual
+list; edit sessions (`scripts/edit-sessions.test.mjs` for the device: one
+session per item, the idle timer, flushing, saves in flight, retries; the
+server's merge, separate sessions per tab and account, abandoned sessions,
+sessions open at deletion, and the device and server end to end); individual
 versus batch equivalence; device-side signing with a real author did:webvh and
 a mocked Turnkey, verified at receipt; every `failed` reason code, with nothing
 from a bad envelope stored; session versus distinct API keys; verification from
@@ -474,8 +570,11 @@ Not done or not verified:
 - Existing historical placeholders and version-1 records are not converted,
   and never will be signed retroactively.
 - Reordering and assignment are not recorded.
-- Every saved edit is signed, a note's autosaves included; nothing coalesces
-  them, so a long note produces many `item.edited` records.
+- A crash or a cut-short unload in the middle of an edit session can leave
+  that edit unrecorded, or recorded later and unsigned (see
+  [Edit sessions](#edit-sessions)).
+- Flushing on tab hide and page unload is best effort: a signature through
+  Turnkey and a request may not finish before the browser stops the page.
 - `removeItem` on an item with sub-items leaves the sub-items in place, as
   before, and records only the item removed.
 - Native builds and live flows have not been exercised.

@@ -12,7 +12,7 @@ import { internal } from "./_generated/api";
 import { withMutationObservability } from "./lib/observability";
 import { canUserEditList, canUserViewList } from "./lib/permissions";
 import { MAX_NOTE_LENGTH, isNote } from "./lib/noteBody";
-import { actionSignatureEnvelope, itemCompleted, itemCreated, itemDeleted, itemEdited, itemReopened, recordActions, type ListRef } from "./lib/actionRecords";
+import { actionSignatureEnvelope, closeItemEditSessions, deferItemEdit, itemCompleted, itemCreated, itemDeleted, itemEdited, itemReopened, recordActions, recordDeferredItemEdit, validEditSession, type ListRef } from "./lib/actionRecords";
 
 /**
  * Add an item to a list.
@@ -160,6 +160,9 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
     clearPriority: v.optional(v.boolean()),
     clearAssigneeDid: v.optional(v.boolean()),
     signed: v.optional(actionSignatureEnvelope),
+    // Set by a device that signs its saves once per edit session: this save is added to
+    // the session and recorded by recordItemEdit, not here (lib/actionRecords.ts).
+    editSession: v.optional(v.string()),
   },
   handler: async (ctx, args) => withMutationObservability("items.updateItem", async () => {
     if (args.description !== undefined && args.description.length > MAX_NOTE_LENGTH) {
@@ -205,8 +208,27 @@ export const { public: updateItem, internal: updateItemInternal, replay: updateI
     }
     await ctx.db.patch(args.itemId, updates);
     const edited = itemEdited(await ctx.db.get(item.listId) ?? { _id: item.listId }, item, args);
-    if (edited) await recordActions(ctx, [edited], args.signed);
+    if (edited && validEditSession(args.editSession)) await deferItemEdit(ctx, edited, args.editSession);
+    else if (edited) await recordActions(ctx, [edited], args.signed);
     return args.itemId;
+  }),
+});
+
+/**
+ * Close an edit session: write the one item.edited record for everything the
+ * caller's saves set on the item since the session began, with the device's
+ * signature over it. Returns false when the session has nothing to record.
+ */
+export const { public: recordItemEdit, internal: recordItemEditInternal } = actorMutation({
+  resources: args => ({ items: [args.itemId] }),
+  scope: "items:write",
+  args: {
+    itemId: v.id("items"),
+    editSession: v.string(),
+    signed: v.optional(actionSignatureEnvelope),
+  },
+  handler: async (ctx, args) => withMutationObservability("items.recordItemEdit", async () => {
+    return recordDeferredItemEdit(ctx, args.itemId, args.editSession, args.signed);
   }),
 });
 
@@ -409,6 +431,7 @@ export const { public: removeItem, internal: removeItemInternal, replay: removeI
     }
 
     await deleteAssignments(ctx, args.itemId);
+    await closeItemEditSessions(ctx, args.itemId);
     // The item's action records stay (docs/action-records.md): they outlive it.
     await ctx.db.delete(args.itemId);
     await recordActions(ctx, [itemDeleted(await ctx.db.get(item.listId) ?? { _id: item.listId }, args.itemId)], args.signed);
@@ -733,12 +756,14 @@ export const { public: batchDeleteItems, internal: batchDeleteItemsInternal, rep
       
       for (const subItem of subItems) {
         await deleteAssignments(ctx, subItem._id);
+        await closeItemEditSessions(ctx, subItem._id);
         await ctx.db.delete(subItem._id);
         // A sub-item the author also named is their own deletion, not a cascade.
         actions.push(itemDeleted(list!, subItem._id, named.has(subItem._id) ? undefined : itemId));
       }
 
       await deleteAssignments(ctx, itemId);
+      await closeItemEditSessions(ctx, itemId);
       await ctx.db.delete(itemId);
       actions.push(itemDeleted(list!, itemId));
     }

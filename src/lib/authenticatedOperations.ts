@@ -71,6 +71,7 @@ export const authenticatedOperations = new Set([
   api.items.getOfflineDraftAccess,
   api.items.getSubItems,
   api.items.promoteItem,
+  api.items.recordItemEdit,
   api.items.removeItem,
   api.items.reorderItems,
   api.items.setAisleOverride,

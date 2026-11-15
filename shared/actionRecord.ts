@@ -373,6 +373,12 @@ export function clientActionChanges(mutation: string, args: Record<string, unkno
       const itemId = str("itemId"), after = itemEdit(args);
       return itemId !== null && after !== null ? [{ action: "item.edited", subject: { itemId }, after }] : [];
     }
+    // An edit session closing: `after` is what the session's saves set (src/lib/editSessions.ts).
+    case "recordItemEdit": {
+      const itemId = str("itemId"), after = args.after;
+      return itemId !== null && isRecord(after) && Object.keys(after).length > 0
+        ? [{ action: "item.edited", subject: { itemId }, after: after as ItemEdit }] : [];
+    }
     case "removeItem": {
       const itemId = str("itemId");
       return itemId !== null ? [{ action: "item.deleted", subject: { itemId }, after: { deleted: true } }] : [];

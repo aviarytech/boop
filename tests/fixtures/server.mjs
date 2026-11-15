@@ -143,6 +143,8 @@ function query(account, path, args) {
     case 'originalsHost:getAccepted': return null;
     case 'actionRecords:getListActionRecords': return account.actionRecords.filter(r => r.listId === args.listId && !r.itemId);
     case 'actionRecords:getItemActionRecords': return account.actionRecords.filter(r => r.itemId === args.itemId);
+    case 'actionRecords:getListItemActionRecords': return account.actionRecords.filter(r => r.listId === args.listId && r.itemId === args.itemId);
+    case 'actionRecords:getDeletedItemActionRecords': return account.actionRecords.filter(r => r.listId === args.listId && JSON.parse(r.payload).action === 'item.deleted');
     case 'listGrants:getSharedWithMe':
     case 'listGrants:getListGrants':
     case 'invitations:getListInvitations':
@@ -285,9 +287,13 @@ async function apply(account, endpoint, args) {
       item.updatedAt = Date.now();
       break;
     case 'items:removeItem':
+      // Mirrors convex/items.ts: the item's records outlive it, and the deletion joins them.
+      if (item) await recordAction(account, { action: 'item.deleted', subject: { itemId: item._id }, after: { deleted: true } },
+        { listId: item.listId, itemId: item._id });
       account.items = account.items.filter(i => i._id !== args.itemId);
-      account.actionRecords = account.actionRecords.filter(r => r.itemId !== args.itemId);
       break;
+    // No fixture mutation opens an edit session, so there is never one to record.
+    case 'items:recordItemEdit': result = false; break;
     case 'publication:publishList': account.published = true; break;
     case 'publication:unpublishList': account.published = false; break;
     case 'referrals:getOrCreateReferralCode': result = 'e2e-code'; break;

@@ -7,6 +7,7 @@
  * server records them as such.
  */
 import type { ActionSignatureEnvelope } from "../../shared/actionRecord";
+import { beginItemEdit, editSessionsEnabled, settleItemEdit } from "./editSessions";
 
 export type ActionSigner = (mutation: string, args: Record<string, unknown>) => Promise<ActionSignatureEnvelope | undefined>;
 
@@ -20,6 +21,32 @@ let signer: ActionSigner | null = null;
 
 export function setActionSigner(next: ActionSigner | null): void {
   signer = next;
+}
+
+/** The author's signatures for `mutation` called with `args`, when a signer is installed and can sign now. */
+export async function signActionRecords(mutation: string, args: Record<string, unknown>): Promise<ActionSignatureEnvelope | undefined> {
+  return signer ? signer(mutation, args) : undefined;
+}
+
+/**
+ * Sends a mutation with what its action records need. Recorded actions are
+ * signed before they are sent. An item save is not signed on its own: it
+ * joins the item's edit session, which is signed once when it ends
+ * (src/lib/editSessions.ts). Every mutation the app sends goes through here.
+ */
+export async function sendWithActionRecords<T extends Record<string, unknown>, R>(mutation: string, args: T, send: (args: T) => Promise<R>): Promise<R> {
+  const itemId = mutation === "updateItem" && editSessionsEnabled() && args.signed === undefined && args.editSession === undefined
+    && typeof args.itemId === "string" ? args.itemId : null;
+  if (itemId === null) return send(await withActionSignatures(mutation, args));
+  const editSession = beginItemEdit(itemId);
+  let saved = false;
+  try {
+    const result = await send({ ...args, editSession });
+    saved = true;
+    return result;
+  } finally {
+    settleItemEdit(itemId, editSession, saved ? args : null);
+  }
 }
 
 /**

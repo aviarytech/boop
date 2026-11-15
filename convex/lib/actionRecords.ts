@@ -92,6 +92,78 @@ export const itemDeleted = (list: ListRef, itemId: Id<"items">, parentItemId?: I
   attested: { ...listContext(list), itemId, ...(parentItemId ? { origin: { kind: "cascade", parentItemId } } : {}) },
 });
 
+/** A device that never closes a session (a crash, a closed tab) leaves it open this long before it counts as abandoned. */
+export const EDIT_SESSION_ABANDONED_MS = 10 * 60 * 1000;
+const MAX_EDIT_SESSION_ID = 100;
+export const validEditSession = (editSession: string | undefined): editSession is string =>
+  editSession !== undefined && editSession.length > 0 && editSession.length <= MAX_EDIT_SESSION_ID;
+
+type PendingEdit = Doc<"pendingItemEdits">;
+const pendingEdits = (ctx: MutationCtx, itemId: Id<"items">, userId: Id<"users">) =>
+  ctx.db.query("pendingItemEdits").withIndex("by_item_user", q => q.eq("itemId", itemId).eq("userId", userId)).collect();
+
+/** Writes a session's one record, from what this server applied, and closes the session. */
+async function recordPendingEdit(ctx: ActorCtx<MutationCtx>, pending: PendingEdit, signed?: ActionSignatureEnvelope): Promise<void> {
+  const list: ListRef = await ctx.db.get(pending.listId) ?? { _id: pending.listId };
+  await ctx.db.delete(pending._id);
+  await recordActions(ctx, [{
+    change: { action: "item.edited", subject: { itemId: pending.itemId }, after: JSON.parse(pending.after) },
+    attested: { ...listContext(list), itemId: pending.itemId, before: JSON.parse(pending.before) },
+  }], signed);
+}
+
+/**
+ * Adds one save to the actor's edit session on the item instead of recording
+ * it. Later saves win per field in `after`; `before` keeps the value each
+ * field had when the session first touched it. A session of the same account
+ * on the same item that its device abandoned is recorded here, unsigned, so it
+ * is not lost for good.
+ */
+export async function deferItemEdit(ctx: ActorCtx<MutationCtx>, edited: RecordedAction, editSession: string): Promise<void> {
+  const itemId = edited.attested.itemId!;
+  const now = Date.now();
+  const sessions = await pendingEdits(ctx, itemId, ctx.actor.userId);
+  for (const other of sessions) {
+    if (other.editSession !== editSession && other.updatedAt < now - EDIT_SESSION_ABANDONED_MS) await recordPendingEdit(ctx, other);
+  }
+  const open = sessions.find(session => session.editSession === editSession);
+  const { after } = edited.change, before = edited.attested.before as Record<string, unknown>;
+  if (!open) {
+    await ctx.db.insert("pendingItemEdits", {
+      itemId, listId: edited.attested.listId, userId: ctx.actor.userId, editSession,
+      after: canonicalize(after), before: canonicalize(before), updatedAt: now,
+    });
+    return;
+  }
+  await ctx.db.patch(open._id, {
+    after: canonicalize({ ...JSON.parse(open.after), ...after }),
+    before: canonicalize({ ...before, ...JSON.parse(open.before) }),
+    updatedAt: now,
+  });
+}
+
+/** Closes the actor's edit session with the device's signature over it. False when there is nothing to record. */
+export async function recordDeferredItemEdit(ctx: ActorCtx<MutationCtx>, itemId: Id<"items">, editSession: string, signed?: ActionSignatureEnvelope): Promise<boolean> {
+  const open = (await pendingEdits(ctx, itemId, ctx.actor.userId)).find(session => session.editSession === editSession);
+  if (!open) return false;
+  await recordPendingEdit(ctx, open, signed);
+  return true;
+}
+
+/**
+ * Before an item is removed: the remover's own open sessions on it are
+ * recorded (unsigned; their device has not signed them), so the edit precedes
+ * the deletion in the item's history. Other accounts' open sessions cannot be
+ * recorded in their name here and are dropped.
+ */
+export async function closeItemEditSessions(ctx: ActorCtx<MutationCtx>, itemId: Id<"items">): Promise<void> {
+  const sessions = await ctx.db.query("pendingItemEdits").withIndex("by_item_user", q => q.eq("itemId", itemId)).collect();
+  for (const session of sessions) {
+    if (session.userId === ctx.actor.userId) await recordPendingEdit(ctx, session);
+    else await ctx.db.delete(session._id);
+  }
+}
+
 type Signer = { key: Uint8Array; publicKeyMultibase: string } | { error: string };
 
 /**
