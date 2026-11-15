@@ -1,0 +1,20 @@
+OK   V8 route: agent invokes zCap delegated by #orig-1: 200 v8 verified=true 10ms
+     invoker: did:key:z6Mkk46EpMiycTbmCNVKcyaczu4qX8qUFyUPve1kMjUXZyec 
+     chain: [{"id":"urn:zcap:root:http%3A%2F%2F127.0.0.1%3A3211%2Flws%2F","controller":"did:webvh:QmcSqq7gVipiUtr7T4dbku76yqnQMX6ur3BJjfxDCkPcqi:spike.boop.test:u-spike","expires":null,"delegatedBy":null},{"id":"urn:uuid:76639d47-7ee1-48bd-9b9f-c1e091f16a6f","controller":"did:key:z6Mkk46EpMiycTbmCNVKcyaczu4qX8qUFyUPve1kMjUXZyec","expires":"2026-12-15T19:53:50Z","delegatedBy":"did:webvh:QmcSqq7gVipiUtr7T4dbku76yqnQMX6ur3BJjfxDCkPcqi:spike.boop.test:u-spike#orig-1"}] 
+     request header bytes: 1384 seen url: http://127.0.0.1:3211/lws/items
+OK   "use node" action: the same verifier module: 200 node verified=true 5ms
+OK   zCap rooted at /node/lws/ invoked on the /lws/ route: 403 v8 verified=false (Actual root capability (urn:zcap:root:http%3A%2F%2F127.0.0.1%3A3211%2Fnode%2Flws%2F) does not match expected root capability (urn:zcap:root:http%3A%2F%2F127.0.0.1%3A3211%2Flws%2F).) 11ms
+OK   another key invokes the agent's zCap: 403 v8 verified=false (The capability controller does not match the verification method (or its controller) used to invoke.) 12ms
+OK   action outside allowedAction: 403 v8 verified=false (Capability action "item.deleted" is not allowed by the capability; allowed actions are: "item.created", "item.completed", "item.reopened", "list.created", "list.renamed") 13ms
+OK   action signed differs from the action the route performs: 403 v8 verified=false (Capability action "item.created" does not match the expected action of "list.renamed".) 13ms
+OK   body changed after signing (digest): 403 v8 verified=false (The request body does not match the signed Digest header.) 15ms
+OK   zCap tampered after delegation: 403 v8 verified=false (Invalid signature.) 12ms
+OK   zCap delegated by a key that is not the owner's: 403 v8 verified=false (The capability controller does not match the verification method (or its controller) used to delegate.) 11ms
+OK   zCap delegated by the owner's #key-0 (not under capabilityDelegation): 403 v8 verified=false (Verification method "did:webvh:QmcSqq7gVipiUtr7T4dbku76yqnQMX6ur3BJjfxDCkPcqi:spike.boop.test:u-spike#key-0" not authorized by controller for proof purpose "capabilityDelegation".) 13ms
+OK   expired zCap (expired an hour ago): 403 v8 verified=false (The invoked capability has expired.) 16ms
+OK   replayed request (verifier clock 31 days on): 403 v8 verified=false (The signature has expired.) 0ms
+OK   zCap longer than the 31-day TTL cap: 403 v8 verified=false (A delegated capability in the delegation chain has a time to live that is too long.) 11ms
+OK   narrowed zCap used inside its target: 200 v8 verified=true 18ms
+OK   narrowed zCap used outside its target: 403 v8 verified=false (Invocation target (http://127.0.0.1:3211/lws/lists/xyz/items) does not match capability target (http://127.0.0.1:3211/lws/lists/abc/).) 13ms
+
+GATE 2: PASS

@@ -1,0 +1,7 @@
+OK   interop resolver accepts boop's genesis log (didwebvh-ts 2.8.0)
+     didwebvh-ts 2.8.0 update leaves on #orig-1: ["id","type","controller","publicKeyMultibase","purpose"]
+OK   interop resolver accepts the didwebvh-ts-written update
+OK   interop updateDID({ didDocument }) writes a clean update over boop's log
+     state: {"verificationMethod":["id+type+controller+publicKeyMultibase <did>#key-0","id+type+controller+publicKeyMultibase <did>#orig-1"],"assertionMethod":["#orig-1"],"capabilityDelegation":["#orig-1"]}
+OK   didwebvh-ts 2.8.0 (boop's resolver) accepts that update
+     authorDidProblems (main): ["capabilityDelegation must be empty"]

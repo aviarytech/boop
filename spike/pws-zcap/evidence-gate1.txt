@@ -1,0 +1,119 @@
+
+== user DID
+did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike
+
+== DID state after the update (version 2-QmVNWyDxHGxZmAXHcqfAFFXfjwxErsjsFT3vx9uwX9Vcb6)
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/multikey/v1"
+  ],
+  "id": "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike",
+  "controller": "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike",
+  "verificationMethod": [
+    {
+      "id": "#key-0",
+      "type": "Multikey",
+      "controller": "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike",
+      "publicKeyMultibase": "z6MkvLSbXuHTAsSBUXLazmRQCmoHhDDfExH2SAjjF8Z7MvBD"
+    },
+    {
+      "id": "#orig-1",
+      "type": "Multikey",
+      "controller": "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike",
+      "publicKeyMultibase": "z6MkiVS4FTDW5ud96bBcrPZSCp3Aef1v9aRGHueKBLyJtH9S",
+      "purpose": "capabilityDelegation"
+    }
+  ],
+  "authentication": [
+    "#key-0"
+  ],
+  "assertionMethod": [
+    "#orig-1"
+  ],
+  "keyAgreement": [],
+  "capabilityDelegation": [
+    "#orig-1"
+  ],
+  "capabilityInvocation": [],
+  "service": [
+    {
+      "id": "#files",
+      "type": "relativeRef",
+      "serviceEndpoint": "https://spike.boop.test/u-spike"
+    },
+    {
+      "@context": "https://identity.foundation/linked-vp/contexts/v1",
+      "id": "#whois",
+      "type": "LinkedVerifiablePresentation",
+      "serviceEndpoint": "https://spike.boop.test/u-spike/whois.vp"
+    }
+  ]
+}
+
+== authorDidProblems on the genesis state (today's shape)
+[]
+
+== authorDidProblems on the updated state (main as of c4ec8b1)
+[
+  "#orig-1 carries purpose",
+  "capabilityDelegation must be empty"
+]
+
+== authorLogProblems on the updated log
+[
+  "version 2: #orig-1 carries purpose",
+  "version 2: capabilityDelegation must be empty"
+]
+
+== delegated zCap (ezcap + EddsaJcs2022, signed through the remote signer)
+{
+  "@context": [
+    "https://w3id.org/zcap/v1",
+    "https://w3id.org/security/data-integrity/v2"
+  ],
+  "id": "urn:uuid:a8408caf-dd59-4eb2-aafc-72c3808deac0",
+  "controller": "did:key:z6MkrjiP23qZmssPmF8hafiS85Y3bVXKKAvPKZfjew9gVgzY",
+  "parentCapability": "urn:zcap:root:https%3A%2F%2Fboop.example%2Flws%2F",
+  "invocationTarget": "https://boop.example/lws/",
+  "expires": "2026-12-15T19:49:08Z",
+  "allowedAction": [
+    "item.created",
+    "item.completed",
+    "item.reopened",
+    "list.created",
+    "list.renamed"
+  ],
+  "proof": {
+    "type": "DataIntegrityProof",
+    "created": "2026-11-15T19:49:08Z",
+    "verificationMethod": "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike#orig-1",
+    "cryptosuite": "eddsa-jcs-2022",
+    "proofPurpose": "capabilityDelegation",
+    "capabilityChain": [
+      "urn:zcap:root:https%3A%2F%2Fboop.example%2Flws%2F"
+    ],
+    "@context": [
+      "https://w3id.org/zcap/v1",
+      "https://w3id.org/security/data-integrity/v2"
+    ],
+    "proofValue": "zQtDx5MsbG2LvRFRzqWCmTVotYA4Fuq3N6Ks7TZwtZNMLKhEWfokij48nJfZi7G4qwPAzNeRUr2hmA7xjousPzVZ"
+  }
+}
+
+== boop proofHashData(zcap, proof options) as it is on main
+PROOF_UNKNOWN_MEMBER: proof member "capabilityChain" is not defined by Data Integrity
+
+OK signed bytes == sha256(JCS(proof options)) || sha256(JCS(zcap)), using boop's own canonicalize
+OK proofValue is #orig-1's Ed25519 signature over those bytes
+OK chain verifies: root (controller = user did:webvh) -> agent did:key, #orig-1 under capabilityDelegation
+
+== same zCap, DID document left with relative key references
+Verification method "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike#orig-1" not authorized by controller for proof purpose "capabilityDelegation".
+
+== same zCap against today's DID state (no capabilityDelegation)
+Verification method "did:webvh:QmYWGKPKquEtsDnYFanLDZwxVPM5bSBF6PVmsUq6MN8gw6:spike.boop.test:u-spike#orig-1" not authorized by controller for proof purpose "capabilityDelegation".
+OK a tampered zCap does not verify
+OK PwsClient.fromSigner({signer}).grant(...) signs through the same remote signer and verifies
+
+GATE 1: PASS (local key behind the Turnkey backend interface)

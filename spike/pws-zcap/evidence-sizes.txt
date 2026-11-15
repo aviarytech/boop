@@ -1,0 +1,5 @@
+server-verify.ts     [browser] min   271 kB  gzip    81 kB  top(kB): @interop/jsonld 88, pako 46, @interop/zcap 19, @interop/jsonld-signatures 17, rdf-canonize 17, @noble/hashes 10, @interop/ed25519-verification-key 8
+server-verify.ts     [node   ] min   813 kB  gzip   252 kB  top(kB): undici 527, @interop/jsonld 89, pako 47, @interop/zcap 20, @interop/jsonld-signatures 17, rdf-canonize 17, ky 14
+client-delegate.ts   [browser] min   260 kB  gzip    77 kB  top(kB): @interop/jsonld 88, pako 46, @interop/jsonld-signatures 17, rdf-canonize 17, @interop/zcap 15, ky 14, @interop/data-integrity-proof 7
+client-pws.ts        [browser] min   326 kB  gzip    97 kB  top(kB): @interop/jsonld 88, @interop/pws-client 63, pako 46, @interop/jsonld-signatures 17, rdf-canonize 17, @interop/zcap 15, ky 14
+agent-invoke.ts      [browser] min    59 kB  gzip    20 kB  top(kB): pako 46, @noble/hashes 5, @interop/http-signature-header 3, @interop/http-signature-zcap-invoke 2, @interop/http-digest-header 2, (spike code) 0

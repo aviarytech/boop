@@ -1,0 +1,111 @@
+== record (version 3 sketch)
+{
+  "payload": {
+    "action": "item.created",
+    "after": {
+      "name": "oat milk"
+    },
+    "author": {
+      "did": "did:key:z6Mkm3ebFyPGG6Gjd8WPp8jTZte1fiV7qF4xxNdV2aSWhFqe",
+      "verificationMethod": "did:key:z6Mkm3ebFyPGG6Gjd8WPp8jTZte1fiV7qF4xxNdV2aSWhFqe#z6Mkm3ebFyPGG6Gjd8WPp8jTZte1fiV7qF4xxNdV2aSWhFqe"
+    },
+    "delegation": {
+      "digest": "85b1205ef12793831c060655b590ca71a75be73ac73133a3ae58427badfab52a",
+      "id": "urn:uuid:c917a3b4-ac0b-4c4d-80bf-f6a6416ffbf5"
+    },
+    "onBehalfOf": {
+      "did": "did:webvh:QmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC:spike.boop.test:u-spike"
+    },
+    "schema": "boop.action-record",
+    "signedAt": 1794772583400,
+    "subject": {
+      "listId": "k17abc"
+    },
+    "version": 3
+  },
+  "digest": "1abf3bf8a4b8b349f8ee167a101e029ed536a547a9921b224c8f8b0d567c7965",
+  "status": "signed",
+  "signature": "z2LMv5vgxPHQRZMSpVTYwhuC9nZS9K1RDvF1HNVKmVCjqTUSyZ2EDGzMDU9YFrrvQgEY4gyDHicHRb8E7QEZ17TfR",
+  "delegation": [
+    {
+      "@context": [
+        "https://w3id.org/zcap/v1",
+        "https://w3id.org/security/data-integrity/v2"
+      ],
+      "id": "urn:uuid:c917a3b4-ac0b-4c4d-80bf-f6a6416ffbf5",
+      "controller": "did:key:z6Mkm3ebFyPGG6Gjd8WPp8jTZte1fiV7qF4xxNdV2aSWhFqe",
+      "parentCapability": "urn:zcap:root:https%3A%2F%2Fboop.example%2Flws%2Fdid%253Awebvh%253AQmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC%253Aspike.boop.test%253Au-spike%2F",
+      "invocationTarget": "https://boop.example/lws/did%3Awebvh%3AQmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC%3Aspike.boop.test%3Au-spike/",
+      "expires": "2026-12-15T19:56:23Z",
+      "allowedAction": [
+        "item.created",
+        "item.completed"
+      ],
+      "proof": {
+        "type": "DataIntegrityProof",
+        "created": "2026-11-15T19:56:23Z",
+        "verificationMethod": "did:webvh:QmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC:spike.boop.test:u-spike#orig-1",
+        "cryptosuite": "eddsa-jcs-2022",
+        "proofPurpose": "capabilityDelegation",
+        "capabilityChain": [
+          "urn:zcap:root:https%3A%2F%2Fboop.example%2Flws%2Fdid%253Awebvh%253AQmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC%253Aspike.boop.test%253Au-spike%2F"
+        ],
+        "@context": [
+          "https://w3id.org/zcap/v1",
+          "https://w3id.org/security/data-integrity/v2"
+        ],
+        "proofValue": "z5jnsHiPn5zmZhvF3mBKZXGtPSK9y6bsenBBCBiKbhgCxNpd68EwVvzW3cmZs1wRepDFmwAVMFDXnNHwZB26P67WH"
+      }
+    }
+  ],
+  "receipt": {
+    "payload": {
+      "receivedAt": 1794772583800,
+      "recordDigest": "1abf3bf8a4b8b349f8ee167a101e029ed536a547a9921b224c8f8b0d567c7965",
+      "schema": "boop.action-receipt",
+      "signer": "did:webvh:QmSpikeService:boop.example#receipts-1",
+      "version": 1
+    },
+    "signature": "z5XPGkzKVeWQgNBrJQz3XbADrokQEB4xh6QwuKCTXnqZWYCoJ88Et4pomAuRgNPnzNYeU8qtSCDeo64h4CsszdmVJ"
+  }
+}
+
+sizes: payload 603 B, zCap 1214 B, receipt 347 B
+
+== offline verification (zCap expires 2026-12-15T19:56:23Z; owner DID drops the key at 2026-11-15T19:56:26.000Z)
+OK   [libs   ] received inside the delegation: verified
+OK   [minimal] received inside the delegation: verified
+OK   [libs   ] verified 400 days after the zCap expired: verified
+OK   [minimal] verified 400 days after the zCap expired: verified
+OK   [libs   ] …and after the owner revoked it, receipt earlier than the revocation: verified
+OK   [minimal] …and after the owner revoked it, receipt earlier than the revocation: verified
+OK   [libs   ] received after the revocation: received_after_revocation
+OK   [minimal] received after the revocation: received_after_revocation
+OK   [libs   ] no receipt (D10: fails): no_receipt
+OK   [minimal] no receipt (D10: fails): no_receipt
+OK   [libs   ] backdated: signedAt inside the window, received after expiry: received_after_expiry
+OK   [minimal] backdated: signedAt inside the window, received after expiry: received_after_expiry
+OK   [libs   ] received after the owner's DID dropped the delegating key: delegation_proof: Verification method "did:webvh:QmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC:spike.boop.test:u-spike#orig-1" not authorized by controller for proof purpose "capabilityDelegation".
+OK   [minimal] received after the owner's DID dropped the delegating key: delegation_proof: did:webvh:QmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC:spike.boop.test:u-spike#orig-1 is not a capabilityDelegation key of the owner
+OK   [libs   ] received before the DID listed the key under capabilityDelegation: delegation_proof: Verification method "did:webvh:QmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC:spike.boop.test:u-spike#orig-1" not authorized by controller for proof purpose "capabilityDelegation".
+OK   [minimal] received before the DID listed the key under capabilityDelegation: delegation_proof: did:webvh:QmNNF1MUGzWnq3vRezvUyp32zhUPoAT3ToiSXRgJ7G2bHC:spike.boop.test:u-spike#orig-1 is not a capabilityDelegation key of the owner
+OK   [libs   ] payload changed after signing: digest_mismatch
+OK   [minimal] payload changed after signing: digest_mismatch
+OK   [libs   ] signed by a key that is not the author's: bad_signature
+OK   [minimal] signed by a key that is not the author's: bad_signature
+OK   [libs   ] another agent presents this agent's zCap: delegation_not_for_author
+OK   [minimal] another agent presents this agent's zCap: delegation_not_for_author
+OK   [libs   ] action the zCap does not grant: action_not_delegated
+OK   [minimal] action the zCap does not grant: action_not_delegated
+OK   [libs   ] zCap widened after delegation: delegation_mismatch
+OK   [minimal] zCap widened after delegation: delegation_mismatch
+OK   [libs   ] receipt from a key the verifier does not trust: bad_receipt
+OK   [minimal] receipt from a key the verifier does not trust: bad_receipt
+OK   [libs   ] receipt lifted from another record: receipt_for_another_record
+OK   [minimal] receipt lifted from another record: receipt_for_another_record
+OK   [libs   ] zCap for the owner's root signed by someone else: delegation_proof: The capability controller does not match the verification method (or its controller) used to delegate.
+OK   [minimal] zCap for the owner's root signed by someone else: delegation_proof: not signed by the owner
+
+network calls during verification: 0
+
+GATE 3: PASS

@@ -1,0 +1,22 @@
+{
+  "name": "boop-pws-zcap-spike",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY: PWS zCap spike for #286 (plans/pws-spike-findings.md). Never merged.",
+  "dependencies": {
+    "@interop/data-integrity-core": "^8.11.0",
+    "@interop/data-integrity-proof": "^3.4.8",
+    "@interop/ed25519-signature": "^7.2.5",
+    "@interop/ezcap": "^7.5.4",
+    "@interop/http-digest-header": "^3.2.0",
+    "@interop/http-signature-zcap-invoke": "^6.3.0",
+    "@interop/http-signature-zcap-verify": "^12.2.7",
+    "@interop/pws-client": "^0.109.0",
+    "@interop/zcap": "^11.4.0",
+    "@noble/ed25519": "^3.2.0",
+    "@noble/hashes": "^2.4.0",
+    "@scure/base": "^2.4.0",
+    "convex": "^1.50.0",
+    "esbuild": "^0.28.2"
+  }
+}
