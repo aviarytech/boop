@@ -8,7 +8,7 @@ import { ConvexError, convexToJson, jsonToConvex } from 'convex/values';
 import { createHash } from 'node:crypto';
 
 process.env.JWT_SECRET = 'boundary-test-secret-not-a-deployed-credential';
-const names = ['items','lists','originalsHost','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits'];
+const names = ['items','lists','originalsHost','publication','attachments','activity','assignees','presence','comments','tags','itemCategories','auth','authSessions','actorSession','didResources','itemsHttp','listsHttp','agentReadHttp','users','bitcoinAnchors','siteActions','siteInternals','sites','siteAssets','billing','referrals','feedback','notificationActions','categories','templates','notifications','lib/httpResponses','http','rateLimits','clientCapabilities'];
 await build({ entryPoints: names.map(n => `convex/${n}.ts`), outdir: 'tmp/auth-boundary-test', define: { 'process.env.NODE_ENV': '"production"' }, bundle: true, platform: 'node', format: 'esm', outExtension: { '.js': '.mjs' }, external: ['convex/*','@originals/*','@turnkey/*','didwebvh-ts','@noble/*'] });
 const modules = Object.fromEntries(await Promise.all(names.map(async n => [n, await import(pathToFileURL(`${process.cwd()}/tmp/auth-boundary-test/${n}.mjs`))])));
 const call = (module, name, ctx, args) => modules[module][name]._handler(ctx, args);
@@ -565,6 +565,142 @@ test('all anonymous attribution masks historical owner and current/legacy creato
     }
     assert.deepEqual(ctx.rows.users, before, 'Public reads must not rewrite private profiles');
   }
+});
+
+// plans/002 D13 (#286 P2b): builds say whether they parse the tolerated DID
+// shape. The server only records it; no value of it changes a sign-in.
+async function signIn(ctx, extra = {}) {
+  ctx.rows.authSessions = [{
+    _id: 'otp', sessionId: 'signin', email: 'owner@example.test', subOrgId: 'owner', otpId: 'verified-otp',
+    timestamp: Date.now(), verified: false, expiresAt: Date.now() + 60000,
+  }];
+  ctx.runAction = async (ref) => {
+    switch (getFunctionName(ref)) {
+      case 'authInternal:verifyAuth': return { verified: true, email: 'owner@example.test', subOrgId: 'owner', verificationToken: 'client-bound' };
+      case 'authInternal:createAuthToken': return { token: ownerToken, cookieValue: 'fixture' };
+      default: assert.fail(`Unexpected action ${getFunctionName(ref)}`);
+    }
+  };
+  const [verify] = modules.http.default.lookup('/auth/verify', 'POST');
+  const response = await verify._handler(ctx, new Request('https://test/auth/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId: 'signin', encryptedOtpBundle: 'sealed-code', ...extra }),
+  }));
+  return { status: response.status, body: await response.json(), cookie: response.headers.get('set-cookie') };
+}
+const CAPABILITY = 'did-capability-relationships';
+const reportsOf = ctx => (ctx.rows.clientCapabilityReports ?? []).map(({ subject, platform, capabilities }) => ({ subject, platform, capabilities }));
+
+test('/auth/verify answers every build the same and records what it declared', async () => {
+  const old = await signIn(fixture());
+  assert.equal(old.status, 200, 'a build that sends no clientCapabilities still signs in');
+  for (const [extra, recorded] of [
+    [{}, { platform: 'unknown', capabilities: [] }],
+    [{ platform: 'ios' }, { platform: 'ios', capabilities: [] }],
+    [{ platform: 'web', clientCapabilities: [CAPABILITY] }, { platform: 'web', capabilities: [CAPABILITY] }],
+    [{ platform: 'android', clientCapabilities: ['zeta', CAPABILITY, CAPABILITY, 'Not A Name', 7, null, { a: 1 }] }, { platform: 'android', capabilities: [CAPABILITY, 'zeta'] }],
+    [{ platform: 'plan9', clientCapabilities: [] }, { platform: 'unknown', capabilities: [] }],
+    [{ clientCapabilities: CAPABILITY }, { platform: 'unknown', capabilities: [] }],
+    [{ clientCapabilities: { length: 1, 0: CAPABILITY } }, { platform: 'unknown', capabilities: [] }],
+    [{ clientCapabilities: Array.from({ length: 500 }, (_, i) => `cap-${i}`) }, null],
+  ]) {
+    const ctx = fixture();
+    const answer = await signIn(ctx, extra);
+    assert.deepEqual(answer, old, JSON.stringify(extra).slice(0, 80));
+    const reports = reportsOf(ctx);
+    assert.equal(reports.length, 1);
+    if (recorded) assert.deepEqual(reports[0], { subject: 'owner', ...recorded });
+    else assert.equal(reports[0].capabilities.length, 16, 'a long list is cut, not refused');
+  }
+});
+
+test('/auth/verify signs in even when the capability report cannot be stored', async () => {
+  const old = await signIn(fixture());
+  const ctx = fixture();
+  const run = ctx.runMutation;
+  ctx.runMutation = async (ref, args) => {
+    if (getFunctionName(ref) === 'clientCapabilities:recordInternal') throw new Error('table unavailable');
+    return run(ref, args);
+  };
+  const errors = console.error;
+  console.error = () => {};
+  try { assert.deepEqual(await signIn(ctx, { clientCapabilities: [CAPABILITY] }), old); }
+  finally { console.error = errors; }
+  assert.deepEqual(reportsOf(ctx), []);
+});
+
+test('a restored session reports its capabilities for its own account only', async () => {
+  const ctx = fixture();
+  const report = args => call('clientCapabilities', 'report', ctx, args);
+  for (const authToken of [undefined, 'forged', await token('owner', { secret: 'another-secret' }), await token('nobody')]) {
+    await assert.rejects(() => report({ authToken, clientCapabilities: [CAPABILITY], platform: 'ios' }), /auth|token|session/i);
+  }
+  assert.deepEqual(reportsOf(ctx), []);
+
+  await report({ authToken: ownerToken, clientCapabilities: [], platform: 'ios' });
+  await report({ authToken: strangerToken, clientCapabilities: [CAPABILITY], platform: 'ios' });
+  assert.deepEqual(reportsOf(ctx), [
+    { subject: 'owner', platform: 'ios', capabilities: [] },
+    { subject: 'stranger', platform: 'ios', capabilities: [CAPABILITY] },
+  ]);
+
+  // The same build again writes nothing until the row is hours old; an updated build is recorded at once.
+  const row = ctx.rows.clientCapabilityReports[0];
+  row.lastSeenAt -= 60_000;
+  const seen = row.lastSeenAt;
+  await report({ authToken: ownerToken, clientCapabilities: [], platform: 'ios' });
+  assert.equal(row.lastSeenAt, seen);
+  row.lastSeenAt -= 7 * 3600_000;
+  await report({ authToken: ownerToken, clientCapabilities: [], platform: 'ios' });
+  assert.ok(row.lastSeenAt > seen);
+  row.lastSeenAt = seen;
+  await report({ authToken: ownerToken, clientCapabilities: [CAPABILITY], platform: 'ios' });
+  assert.deepEqual(row.capabilities, [CAPABILITY]);
+  assert.ok(row.lastSeenAt > seen);
+  assert.equal(ctx.rows.clientCapabilityReports.length, 2, 'one row per account and platform');
+});
+
+test('adoption is the share of recently seen builds, and of accounts, that declare the capability', async () => {
+  const ctx = fixture();
+  const day = 86400_000, now = Date.now();
+  const seen = (subject, platform, capable, daysAgo) => ({ _id: `${subject}-${platform}`, subject, platform, capabilities: capable ? [CAPABILITY] : [], lastSeenAt: now - daysAgo * day });
+  ctx.rows.clientCapabilityReports = [
+    seen('a', 'web', true, 1), seen('a', 'ios', false, 2),   // one platform behind: not a ready account
+    seen('b', 'web', true, 3),
+    seen('c', 'android', true, 10),
+    seen('d', 'ios', false, 20),
+    seen('e', 'ios', true, 45),                              // outside both windows
+  ];
+  ctx.rows.accessSessions = [
+    { _id: 'P1', tokenHash: 'p1', subject: 'a' },                       // native, never expires, old build
+    { _id: 'P2', tokenHash: 'p2', subject: 'e' },                       // reported capable
+    { _id: 'P3', tokenHash: 'p3', subject: 'silent' },                  // never reported
+    { _id: 'P4', tokenHash: 'p4', subject: 'gone', revokedAt: now },    // signed out
+    { _id: 'W1', tokenHash: 'w1', subject: 'b', expiresAt: now + day }, // web
+  ];
+  const result = await call('clientCapabilities', 'adoption', ctx, {});
+  assert.equal(result.capability, CAPABILITY);
+  assert.equal(result.truncated, false);
+  const [week, month] = result.windows;
+  assert.deepEqual([week.days, month.days], [7, 30]);
+  assert.deepEqual(week.installs, { total: 3, withCapability: 2, share: 2 / 3 });
+  assert.deepEqual(week.accounts, { total: 2, withCapability: 1, share: 0.5 });
+  assert.deepEqual(week.byPlatform, { web: { total: 2, withCapability: 2, share: 1 }, ios: { total: 1, withCapability: 0, share: 0 } });
+  assert.deepEqual(month.installs, { total: 5, withCapability: 3, share: 0.6 });
+  assert.deepEqual(month.accounts, { total: 4, withCapability: 2, share: 0.5 });
+  assert.deepEqual(result.persistentSessions, { accounts: 3, withoutCapability: 2 });
+
+  const { formatAdoption } = await import('./client-capability-adoption.mjs');
+  const printed = formatAdoption(result);
+  assert.match(printed, /Last 7 days\n  accounts with every platform ready: 50\.0% \(1 of 2\)\n  installs \(account and platform\):    66\.7% \(2 of 3\)/);
+  assert.match(printed, /Last 30 days\n  accounts with every platform ready: 50\.0% \(2 of 4\)/);
+  assert.match(printed, /ios:\s+0\.0% \(0 of 1\)/);
+  assert.match(printed, /3 accounts, 2 with no native build/);
+  assert.ok(!printed.includes('WARNING'));
+
+  const empty = await call('clientCapabilities', 'adoption', fixture(), { days: [1] });
+  assert.match(formatAdoption(empty), /accounts with every platform ready: none seen/);
+  assert.deepEqual(empty.windows, [{ days: 1, installs: { total: 0, withCapability: 0, share: null }, byPlatform: {}, accounts: { total: 0, withCapability: 0, share: null } }]);
 });
 
 // #286: relaying a plaintext code would let the backend finish a Turnkey login

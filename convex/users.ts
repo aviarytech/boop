@@ -131,6 +131,7 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
   // Receipts live for the account lifetime so old lost-response retries remain safe.
   if (await drain(ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", userId)).take(DELETE_BATCH_SIZE))) return false;
   if (await drain(ctx.db.query("replaySequences").withIndex("by_account", q => q.eq("accountId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (user.turnkeySubOrgId && await drain(ctx.db.query("clientCapabilityReports").withIndex("by_subject_platform", q => q.eq("subject", user.turnkeySubOrgId!)).take(DELETE_BATCH_SIZE))) return false;
   await ctx.db.delete(userId);
   return true;
 }
