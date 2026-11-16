@@ -72,7 +72,9 @@ export const adoption = internalQuery({
     const capability = args.capability ?? DID_CAPABILITY_RELATIONSHIPS;
     const now = Date.now();
     const reports = await ctx.db.query("clientCapabilityReports").withIndex("by_last_seen").order("desc").take(SCAN_LIMIT + 1);
-    const sessions = await ctx.db.query("accessSessions").withIndex("by_expires_at", q => q.eq("expiresAt", undefined)).take(SCAN_LIMIT + 1);
+    // Revoked persistent rows are never deleted, so drop them before the limit counts them.
+    const sessions = await ctx.db.query("accessSessions").withIndex("by_expires_at", q => q.eq("expiresAt", undefined))
+      .filter(q => q.eq(q.field("revokedAt"), undefined)).take(SCAN_LIMIT + 1);
     const truncated = reports.length > SCAN_LIMIT || sessions.length > SCAN_LIMIT;
     const has = (row: { capabilities: string[] }) => row.capabilities.includes(capability);
 
@@ -95,7 +97,7 @@ export const adoption = internalQuery({
     });
 
     const nativeReady = new Set(reports.filter(row => row.platform !== "web" && has(row)).map(row => row.subject));
-    const persistent = new Set(sessions.slice(0, SCAN_LIMIT).filter(row => row.revokedAt === undefined).map(row => row.subject));
+    const persistent = new Set(sessions.slice(0, SCAN_LIMIT).map(row => row.subject));
     return {
       capability,
       generatedAt: now,
