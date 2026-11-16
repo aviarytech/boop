@@ -17,7 +17,7 @@ const load = async (entry, name, plugins = []) => {
   return import(`${pathToFileURL(`${process.cwd()}/${outdir}/${name}.mjs`).href}?t=${Date.now()}`);
 };
 const fixture = await load('scripts/helpers/author-did-fixture.ts', 'fixture');
-const { mockTurnkey, mintAuthor, mintLegacyDid, updateAuthor, resignLastEntry, withProof, deactivateAuthor, handOver, pinned, authorDid, authorDidLog, shared } = fixture;
+const { mockTurnkey, mintAuthor, mintLegacyDid, updateAuthor, updateAuthorState, resignLastEntry, withProof, deactivateAuthor, handOver, pinned, authorDid, authorDidLog, shared } = fixture;
 
 // authorIdentity with its Turnkey session and Convex URL replaced by the test's.
 const t = globalThis.__authorIdentityTest = { ready: true, backend: null };
@@ -188,6 +188,7 @@ test('only #key-0 and #orig-1, each in its one relationship', async () => {
   const tamper = state => shared.authorDidProblems({ ...genesis.state, ...state }, genesis.parameters.updateKeys, pinned(author.keys).keys);
   assert.deepEqual(tamper({}), []);
   assert.ok(tamper({ capabilityInvocation: ['#key-0'] }).length > 0);
+  assert.ok(tamper({ keyAgreement: ['#orig-1'] }).length > 0);
   assert.ok(tamper({ authentication: ['#key-0', '#orig-1'] }).length > 0);
   assert.ok(tamper({ assertionMethod: ['#orig-1', '#key-0'] }).length > 0);
   assert.ok(tamper({ verificationMethod: [...genesis.state.verificationMethod, { id: '#x', type: 'Multikey', controller: author.did, publicKeyMultibase: author.keys.assertion.multikey }] }).length > 0);
@@ -199,6 +200,80 @@ test('only #key-0 and #orig-1, each in its one relationship', async () => {
   // Round 4: a method embedded in a relationship is a key description too.
   assert.match(tamper({ assertionMethod: [{ ...evil, id: '#orig-1' }] }).join(), /embeds a verification method/);
   assert.match(tamper({ authentication: [{ ...key0, publicKeyMultibase: evil.publicKeyMultibase }] }).join(), /embeds a verification method/);
+});
+
+// plans/002 D13 (#286 P2): builds tolerate the DID shape a later release may
+// write, so that release needs no 426 gate. Nothing mints this shape yet.
+test('#orig-1 may also be the capabilityDelegation and capabilityInvocation method, by reference', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  const [genesis] = authorDid.parseDidLog(author.jsonl);
+  const problems = state => shared.authorDidProblems({ ...genesis.state, ...state }, genesis.parameters.updateKeys, pinned(author.keys).keys);
+  const absent = { ...genesis.state };
+  delete absent.capabilityDelegation;
+  delete absent.capabilityInvocation;
+  assert.deepEqual(shared.authorDidProblems(absent, genesis.parameters.updateKeys, pinned(author.keys).keys), [], 'absent');
+  for (const state of [
+    { capabilityDelegation: [], capabilityInvocation: [] },
+    { capabilityDelegation: ['#orig-1'] },
+    { capabilityInvocation: ['#orig-1'] },
+    { capabilityDelegation: ['#orig-1'], capabilityInvocation: ['#orig-1'] },
+    { capabilityDelegation: [`${author.did}#orig-1`], capabilityInvocation: [`${author.did}#orig-1`] },
+  ]) assert.deepEqual(problems(state), [], JSON.stringify(state));
+
+  // Still refused: any method but #orig-1, a second reference, or a key description.
+  const [key0, orig1] = genesis.state.verificationMethod;
+  const stranger = (await authorDid.resolveAuthorKeys(await mockTurnkey(), SUB_ORG)).assertion.multikey;
+  for (const relationship of ['capabilityDelegation', 'capabilityInvocation']) {
+    for (const [refs, reason] of [
+      [['#key-0'], /may only be #orig-1/],
+      [['#orig-1', '#key-0'], /may only be #orig-1/],
+      [['#orig-1', '#orig-1'], /may only be #orig-1/],
+      [['#agent-1'], /may only be #orig-1/],
+      [['did:webvh:other:boop.ad:user#orig-1'], /may only be #orig-1/],
+      [[`did:key:${stranger}#${stranger}`], /may only be #orig-1/],
+      [[{ ...orig1 }], /embeds a verification method/],
+      [[{ ...orig1, id: '#agent-1', publicKeyMultibase: stranger }], /embeds a verification method/],
+      [['#orig-1', { ...key0 }], /embeds a verification method/],
+      ['#orig-1', /is not a list/],
+      [{ 0: '#orig-1' }, /is not a list/],
+    ]) assert.match(problems({ [relationship]: refs }).join(), reason, `${relationship}: ${JSON.stringify(refs)}`);
+  }
+
+  // The reference adds no key and loosens nothing else.
+  const delegating = { capabilityDelegation: ['#orig-1'], capabilityInvocation: ['#orig-1'] };
+  const agent = { id: '#agent-1', type: 'Multikey', controller: author.did, publicKeyMultibase: stranger };
+  assert.match(problems({ ...delegating, verificationMethod: [key0, orig1, agent] }).join(), /must be exactly #key-0 and #orig-1/);
+  assert.match(problems({ ...delegating, verificationMethod: [key0, orig1, agent], capabilityDelegation: ['#orig-1', '#agent-1'] }).join(), /may only be #orig-1/);
+  assert.match(problems({ ...delegating, assertionMethod: ['#orig-1', '#key-0'] }).join(), /assertionMethod must be exactly #orig-1/);
+  assert.match(problems({ ...delegating, assertionMethod: [] }).join(), /#orig-1 is not an assertionMethod/);
+  assert.match(problems({ ...delegating, authentication: ['#key-0', '#orig-1'] }).join(), /authentication must be exactly #key-0/);
+  assert.match(problems({ ...delegating, keyAgreement: ['#orig-1'] }).join(), /keyAgreement must be empty/);
+  assert.match(shared.authorDidProblems({ ...genesis.state, ...delegating }, [author.keys.author.multikey, stranger], pinned(author.keys).keys).join(), /exactly one update key/);
+  assert.match(shared.authorDidProblems({ ...genesis.state, ...delegating }, [author.keys.assertion.multikey], pinned(author.keys).keys).join(), /is also an update key/);
+});
+
+test('a log whose later version adds the capability references stays an author DID, on the server and the client', async () => {
+  const turnkey = await mockTurnkey([shared.AUTHOR_KEY_PATH, shared.ASSERTION_KEY_PATH]);
+  const author = await mintAuthor(turnkey, { path: PATH });
+  const delegating = await updateAuthorState(turnkey, author, { capabilityDelegation: ['#orig-1'], capabilityInvocation: ['#orig-1'] });
+  const [, head] = authorDid.parseDidLog(delegating);
+  assert.deepEqual(head.state.capabilityDelegation, ['#orig-1']);
+  assert.deepEqual(head.state.capabilityInvocation, ['#orig-1']);
+  assert.deepEqual(head.state.assertionMethod, ['#orig-1']);
+  assert.deepEqual(head.parameters.updateKeys ?? [author.keys.author.multikey], [author.keys.author.multikey]);
+  const checked = await authorDidLog.checkDidLogWrite(author.jsonl, delegating, pinned(author.keys));
+  assert.deepEqual(checked.authorProblems, []);
+  assert.equal(checked.entries, 2);
+  assert.deepEqual((await authorDid.inspectAuthorDid(delegating, author.keys)).problems, []);
+
+  // The same update granting the author key, or a key of its own, is refused for that version.
+  for (const state of [{ capabilityDelegation: ['#key-0'] }, { capabilityInvocation: ['#orig-1', '#key-0'] }]) {
+    const log = await updateAuthorState(turnkey, author, state);
+    const refused = await authorDidLog.checkDidLog(log, pinned(author.keys));
+    assert.match(refused.authorProblems.join(), /^version 2: capability(Delegation|Invocation) may only be #orig-1/, JSON.stringify(state));
+    assert.ok((await authorDid.inspectAuthorDid(log, author.keys)).problems.length > 0, 'the client refuses it too');
+  }
 });
 
 test('witnesses, pre-rotation, deactivation and other domains are refused', async () => {
