@@ -90,6 +90,10 @@ interface; the live Turnkey check is still an owner action.
 | D8b | Autosave | **One signed `item.edited` per edit session**, sent on blur/close or after idle. Saves still persist immediately. | Fewer Turnkey calls and records. | Signing every save, and measuring first. |
 
 P5 must handle these points from the spike:
+- **Write only `capabilityDelegation: ["#orig-1"]`.** #309 (merged) also
+  tolerates `#orig-1` under `capabilityInvocation`, as insurance, but nothing
+  should write it: zCap agents invoke with their own key, and
+  `@originals/sdk`'s WebVHManager refuses a key in both relationships.
 - Users' DIDs need `capabilityDelegation: ["#orig-1"]`. didwebvh-ts 2.8 can't
   write that cleanly (it leaves a stray `purpose`), so the log entry is built
   by hand. Test the new shape against `@originals/sdk` 6 first.
