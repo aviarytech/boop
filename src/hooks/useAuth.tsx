@@ -36,6 +36,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuthorDid } from "./useAuthorDid";
+import { CLIENT_CAPABILITIES } from "../../shared/clientCapabilities";
 import { clearCurrentAuthor, ensureAuthorDid } from "../lib/authorIdentity";
 import { getConvexHttpUrl } from "../lib/convexUrls";
 import { storageAdapter } from "../lib/storageAdapter";
@@ -212,6 +213,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
           throw err;
         }
         if (cancelled) return;
+        // A restored session never passes /auth/verify again, so say here what
+        // this build supports. Report-only: the outcome is ignored.
+        void Promise.resolve()
+          .then(() => convex.mutation(api.clientCapabilities.report, {
+            authToken: parsed.token, clientCapabilities: [...CLIENT_CAPABILITIES], platform: Capacitor.getPlatform(),
+          }))
+          .catch(() => {});
         // An older build cached `did:temp` when the server had no DID. Which
         // DID the account has is the server's to say: one with none is refused
         // on every call, and only an OTP sign-up can mint one now (#286), so
@@ -357,6 +365,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             sessionId: otpFlowState.sessionId,
             encryptedOtpBundle,
             platform: Capacitor.getPlatform(),
+            // Report-only: the server records it and never acts on it.
+            clientCapabilities: CLIENT_CAPABILITIES,
           }),
         });
 

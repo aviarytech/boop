@@ -10,6 +10,12 @@
  *   entries. Originals 5 refuses an assertion key that is also an update key.
  * Every verification method's controller is the DID itself (Originals 5,
  * P5.3/P5.14); at genesis it is written with the `{SCID}` placeholder.
+ *
+ * Tolerated, not minted (plans/002 D13, #286 P2): `#orig-1` may also be
+ * referenced under `capabilityDelegation` and `capabilityInvocation`, so a
+ * later release can let the assertion key delegate to agents without builds
+ * from this one on refusing the DID. It is the same method by reference: no
+ * new key, and nothing else about the shape loosens.
  */
 
 /** BIP32 paths of the two Ed25519 accounts in the sub-org's default wallet. */
@@ -100,9 +106,19 @@ export function authorDidProblems(
   if (assertionRefs.length !== 1) problems.push(`assertionMethod must be exactly #${ASSERTION_VM_FRAGMENT}`);
   const authRefs = (doc.authentication ?? []).map(ref => absolute(did, typeof ref === "string" ? ref : ref.id ?? ""));
   if (authRefs.length !== 1 || authRefs[0] !== authorId) problems.push(`authentication must be exactly #${AUTHOR_VM_FRAGMENT}`);
-  for (const relationship of ["capabilityInvocation", "capabilityDelegation", "keyAgreement"] as const) {
-    if ((doc[relationship] ?? []).length > 0) problems.push(`${relationship} must be empty`);
+  // Absent, empty, or one reference to #orig-1: a capability may be delegated
+  // or invoked by the assertion key and no other (plans/002 D13). Never an
+  // embedded method, which would be a third key, and never #key-0, which only
+  // signs DID updates.
+  for (const relationship of ["capabilityDelegation", "capabilityInvocation"] as const) {
+    const refs: unknown = doc[relationship] ?? [];
+    if (!Array.isArray(refs)) { problems.push(`${relationship} is not a list`); continue; }
+    if (refs.some(ref => typeof ref !== "string")) problems.push(`${relationship} embeds a verification method`);
+    else if (refs.length > 1 || refs.some(ref => absolute(did, ref) !== assertionId)) {
+      problems.push(`${relationship} may only be #${ASSERTION_VM_FRAGMENT}`);
+    }
   }
+  if (!Array.isArray(doc.keyAgreement ?? []) || (doc.keyAgreement ?? []).length > 0) problems.push("keyAgreement must be empty");
   return problems;
 }
 

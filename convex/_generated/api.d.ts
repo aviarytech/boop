@@ -30,6 +30,7 @@ import type * as billingHttp from "../billingHttp.js";
 import type * as bitcoinAnchors from "../bitcoinAnchors.js";
 import type * as categories from "../categories.js";
 import type * as categoriesHttp from "../categoriesHttp.js";
+import type * as clientCapabilities from "../clientCapabilities.js";
 import type * as cloudflare from "../cloudflare.js";
 import type * as comments from "../comments.js";
 import type * as crons from "../crons.js";
@@ -131,6 +132,7 @@ declare const fullApi: ApiFromModules<{
   bitcoinAnchors: typeof bitcoinAnchors;
   categories: typeof categories;
   categoriesHttp: typeof categoriesHttp;
+  clientCapabilities: typeof clientCapabilities;
   cloudflare: typeof cloudflare;
   comments: typeof comments;
   crons: typeof crons;

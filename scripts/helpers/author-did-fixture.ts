@@ -10,6 +10,7 @@ import type { SigningInput } from "didwebvh-ts";
 import * as authorDid from "../../src/lib/authorDid";
 import * as originalsSigning from "../../src/lib/originalsSigning";
 import * as shared from "../../shared/authorDid";
+import { canonicalize } from "../../shared/actionRecord";
 import * as authorDidLog from "../../convex/lib/authorDidLog";
 
 export { authorDid, originalsSigning, shared, authorDidLog };
@@ -114,6 +115,29 @@ export async function updateAuthor(turnkey: MockTurnkey, minted: { jsonl: string
     services: [{ id: "#files", type: "LinkedDomains", serviceEndpoint: "https://boop.ad/files" }],
   });
   return authorDid.serializeDidLog(result.log);
+}
+
+/**
+ * An update to `minted` whose document also carries `state`, signed through
+ * Turnkey by the author key. didwebvh-ts 2.8's updateDID can't set
+ * `capabilityDelegation`/`capabilityInvocation` by reference, so the entry is
+ * rebuilt here: new state, its entry hash, and the author key's proof over it.
+ */
+export async function updateAuthorState(turnkey: MockTurnkey, minted: { jsonl: string; keys: authorDid.AuthorKeys }, state: Record<string, unknown>) {
+  const log = authorDid.parseDidLog(await updateAuthor(turnkey, minted)) as unknown as Array<Record<string, unknown> & { versionId: string; state: Record<string, unknown>; proof: Array<Record<string, unknown>> }>;
+  const { proof, ...last } = log[log.length - 1];
+  const previous = log[log.length - 2].versionId;
+  const unhashed = { ...last, versionId: previous, state: { ...last.state, ...state } };
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalize(unhashed))));
+  // The entry hash: a base58btc sha2-256 multihash of the entry under the previous versionId.
+  const entryHash = multibaseEncode(new Uint8Array([0x12, 0x20, ...digest]), MultibaseEncoding.BASE58_BTC).slice(1);
+  const document = { ...unhashed, versionId: `${log.length}-${entryHash}` };
+  const template = { ...proof[0] };
+  delete template.proofValue;
+  const signer = authorDid.authorUpdateSigner(turnkey, "sub-org", minted.keys.author);
+  const { proofValue } = await signer.sign({ document, proof: template } as never);
+  log[log.length - 1] = { ...document, proof: [{ ...template, proofValue }] };
+  return authorDid.serializeDidLog(log as never);
 }
 
 /**

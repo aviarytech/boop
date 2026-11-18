@@ -213,6 +213,7 @@ async function apply(account, endpoint, args) {
   const list = account.lists.find(l => l._id === args.listId);
   switch (endpoint) {
     case 'actorSession:establish': break;
+    case 'clientCapabilities:report': break; // report-only; nothing to keep
     case 'referrals:redeemReferral': {
       account.referralRedeemed = true;
       result = {success:true};

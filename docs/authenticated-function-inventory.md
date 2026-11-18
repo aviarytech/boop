@@ -11,7 +11,7 @@ real registrations and fails when:
   writes, or reads beyond the credential tables (`/d/*` may also read public resolution
   tables).
 
-Snapshot: 175 public registrations (159 actor-wrapped, 5 self-authenticating,
+Snapshot: 176 public registrations (159 actor-wrapped, 6 self-authenticating,
 7 rejecting compatibility names, 4 intentionally public). HTTP routes are listed
 separately below.
 
@@ -38,12 +38,13 @@ against the actor inside the handler.
 `publication` (except `getPublicList`), `referrals`, `siteActions`, `siteAssets`, `sites`,
 `tags`, `templates` (except `getPublicTemplates`), `users` (except `getUsersByDids`).
 
-## 2. Self-authenticating (5)
+## 2. Self-authenticating (6)
 
 | Function | Identity source |
 |---|---|
 | `actorSession.establish` | Verifies the JWT signature; records only its hash. Proves possession of a token, never a DID. |
 | `actorSession.revoke` | Requires the raw token being revoked. |
+| `clientCapabilities.report` | `requireSession`; records which capabilities that session's build declares, for its own account. Report-only: nothing reads it to allow or refuse a call (plans/002 D13). |
 | `auth.getUserByTurnkeyId`, `auth.getUserByEmail`, `auth.upsertUser` | `requireSession`; arguments must equal the session's sub-org/email; `upsertUser` cannot link a new current or legacy DID. Compatibility names (AUTH-COMPAT-RETIREMENT). |
 
 ## 3. Rejecting compatibility names (7)
