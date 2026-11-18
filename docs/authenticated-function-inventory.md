@@ -11,11 +11,11 @@ real registrations and fails when:
   writes, or reads beyond the credential tables (`/d/*` may also read public resolution
   tables).
 
-Snapshot: 173 public registrations (156 actor-wrapped, 6 self-authenticating,
+Snapshot: 176 public registrations (159 actor-wrapped, 6 self-authenticating,
 7 rejecting compatibility names, 4 intentionally public). HTTP routes are listed
 separately below.
 
-## 1. Actor-wrapped (156)
+## 1. Actor-wrapped (159)
 
 Defined with `actorQuery` / `actorMutation` / `actorAction` (`convex/lib/authenticated.ts`).
 The wrapper resolves the actor from `authToken` (a signed JWT whose hash has a live
@@ -30,7 +30,7 @@ and strips it from read responses. Resources a handler loads beyond the declared
 ones (tags, comments, categories, templates, sites, grants, invitations) are checked
 against the actor inside the handler.
 
-`activity`, `assignees`, `attachments`, `billing`, `bitcoinAnchors` (reads, `anchorListState`,
+`activity`, `agentEnrollment` (session-only: API keys are refused in the handler), `assignees`, `attachments`, `billing`, `bitcoinAnchors` (reads, `anchorListState`,
 `verifyAnchorState`), `categories`, `comments`, `didResources`
 (`checkSharedItem`, `uncheckSharedItem`), `feedback`, `invitations`, `itemCategories`,
 `items` (including `*Replay`), `listGrants`, `lists` (including `*Replay`), `notes`,
