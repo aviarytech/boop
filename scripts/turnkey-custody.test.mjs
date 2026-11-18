@@ -77,6 +77,9 @@ test('the receipt signer policy allows only signing with the receipt key', () =>
   for (const term of ['ACTIVITY_TYPE_CREATE_WALLET_ACCOUNTS', 'ACTIVITY_TYPE_EXPORT_WALLET_ACCOUNT', 'ACTIVITY_TYPE_CREATE_SUB_ORGANIZATION_V8', 'ACTIVITY_TYPE_INIT_OTP_V3', "'<UPDATE_KEY_ADDRESS>'"]) {
     assert.ok(denied.includes(term), `${term} is denied`);
   }
+  // SIGN_RAW_PAYLOAD_V2 is resource PRIVATE_KEY in Turnkey: denying that resource would deny the allowed signature.
+  assert.doesNotMatch(denied, /'PRIVATE_KEY'/);
+  assert.ok(denied.includes('ACTIVITY_TYPE_CREATE_PRIVATE_KEYS_V2'), 'private-key creation is denied by type');
   // The relay user's policy file is unchanged by receipts: it still denies signing outright.
   assert.ok(policies.filter(p => p.effect === 'EFFECT_DENY').flatMap(listed).includes('ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2'));
   assert.doesNotMatch(server, /TURNKEY_RECEIPT/);

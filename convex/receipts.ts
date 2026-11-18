@@ -22,7 +22,8 @@ const RETRY_DELAYS_MS = [5_000, 30_000, 180_000];
 /**
  * Sign a receipt for `recordHash` (a record's `digest`) at `receivedAt` with
  * the receipt key of the latest version of the served Boop service DID.
- * Internal: whoever calls it decides what Boop vouches for.
+ * Internal: whoever calls it decides what Boop vouches for. Kept for the
+ * owner's manual check; issueForRecords signs directly.
  */
 export const signReceipt = internalAction({
   args: { recordHash: v.string(), receivedAt: v.number() },
@@ -74,11 +75,23 @@ export const issueForRecords = internalAction({
     const attempt = args.attempt ?? 0;
     const failed: Id<"actionRecords">[] = [];
     let issued = 0;
+    // One read of the service log and one signer for the whole batch; a plain
+    // call, not a nested action, since both run in the same runtime.
+    let served: string | null = null;
+    let signer: ReturnType<typeof turnkeyServiceSigner> | null = null;
+    try {
+      served = await ctx.runQuery(internal.didLogs.getDidLogByPath, { path: SERVICE_DID_PATH });
+      if (!served) throw new Error("No Boop service DID is published");
+      signer = turnkeyServiceSigner(receiptSignerCredentials());
+    } catch (error) {
+      console.error("[receipts] cannot sign receipts:", error instanceof Error ? error.message : String(error));
+    }
     for (const recordId of args.recordIds) {
       const owed = await ctx.runQuery(internal.receipts.awaitingReceipt, { recordId });
       if (!owed) continue;
+      if (!served || !signer) { failed.push(recordId); continue; }
       try {
-        const receipt: ActionRecordReceipt = await ctx.runAction(internal.receipts.signReceipt, owed);
+        const receipt: ActionRecordReceipt = await issueReceipt(served, owed, signer);
         if (await ctx.runMutation(internal.receipts.storeReceipt, { recordId, receipt })) issued++;
       } catch (error) {
         failed.push(recordId);

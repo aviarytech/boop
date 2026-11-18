@@ -133,9 +133,9 @@ bun scripts/boop-service-did.ts rotate --wallet-id <wallet id> --yes
 creates the next account, and appends a version in which `#receipt-<n+1>`
 replaces `#receipt-<n>`, signed by the update key. Then, in this order: allow
 the receipt signer to use the new address (update the policy), `publish`, and
-remove the old address from the policy. Between publishing and the policy
-change Convex cannot sign, so records accepted in that window get their
-receipt on a retry or not at all.
+remove the old address from the policy. The signer is allowed both
+addresses while the log changes, so there is no window in which Convex
+cannot sign.
 
 Receipts name the log version they were signed under, so earlier receipts keep
 verifying from the longer log. Rotation does not, by itself, invalidate a
