@@ -2,8 +2,10 @@
 import { api } from "../../convex/_generated/api";
 import { getFunctionName } from "convex/server";
 export const authenticatedOperations = new Set([
+  api.actionRecords.getDeletedItemActionRecords,
   api.actionRecords.getItemActionRecords,
   api.actionRecords.getListActionRecords,
+  api.actionRecords.getListItemActionRecords,
   api.activity.getListActivity,
   api.agentEnrollment.listEnrollmentCodes,
   api.agentEnrollment.mintEnrollmentCode,
@@ -72,6 +74,7 @@ export const authenticatedOperations = new Set([
   api.items.getOfflineDraftAccess,
   api.items.getSubItems,
   api.items.promoteItem,
+  api.items.recordItemEdit,
   api.items.removeItem,
   api.items.reorderItems,
   api.items.setAisleOverride,

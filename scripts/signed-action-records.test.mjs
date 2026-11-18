@@ -38,8 +38,17 @@ const { signActions } = await import(pathToFileURL(`${process.cwd()}/tmp/signed-
 // TURNKEY IS MOCKED (scripts/helpers/author-did-fixture.ts): local Ed25519 keys sign exactly the bytes given.
 await build({ entryPoints: ['scripts/helpers/author-did-fixture.ts'], outfile: 'tmp/signed-action-records-extra/author-did-fixture.mjs', bundle: true, platform: 'node', format: 'esm', target: 'node20', logLevel: 'silent' });
 const { mockTurnkey, mintAuthor, updateAuthor } = await import(pathToFileURL(`${process.cwd()}/tmp/signed-action-records-extra/author-did-fixture.mjs`));
+// The device's edit sessions (src/lib/editSessions.ts) and the sender every mutation goes through.
+await build({
+  stdin: { contents: 'export * from "./src/lib/actionSigner.ts"; export * from "./src/lib/editSessions.ts";', resolveDir: process.cwd(), loader: 'ts' },
+  outfile: 'tmp/signed-action-records-extra/editSessions.mjs', bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
+});
+const device = await import(pathToFileURL(`${process.cwd()}/tmp/signed-action-records-extra/editSessions.mjs`));
 const digest = value => createHash('sha256').update(value).digest('hex');
 const VM = did => `${did}#orig-1`;
+/** Replay metadata for a queued operation on the fixture's items, as the offline queue sends it. */
+const meta = async (f, operationId) => ({ operationId, accountId: f.session.accountId,
+  expected: await Promise.all(f.rows.items.map(async i => ({ id: i._id, revision: await modules.shared.revision(i) }))) });
 
 async function fixture() {
   const f = await replayFixture(modules);
@@ -118,7 +127,24 @@ test('canonical payload bytes are deterministic, the client mapping names what t
   assert.deepEqual(clientActionChanges('createList', { name: 'Notes', kind: 'note', createdAt: 1 }), [{ action: 'list.created', subject: { createdAt: 1 }, after: { name: 'Notes', kind: 'note' } }]);
   assert.deepEqual(clientActionChanges('createList', { name: 'Notes', createdAt: NaN }), []);
   assert.deepEqual(clientActionChanges('renameList', { listId: 'L', name: 'Food' }), [{ action: 'list.renamed', subject: { listId: 'L' }, after: { name: 'Food' } }]);
-  assert.deepEqual(clientActionChanges('removeItem', { itemId: 'I' }), []);
+  assert.deepEqual(clientActionChanges('removeItem', { itemId: 'I' }), [{ action: 'item.deleted', subject: { itemId: 'I' }, after: { deleted: true } }]);
+  assert.deepEqual(clientActionChanges('batchDeleteItems', { itemIds: ['I', 'J', 'I'] }).map(c => [c.action, c.subject.itemId, c.after]), [['item.deleted', 'I', { deleted: true }], ['item.deleted', 'J', { deleted: true }]]);
+  // An edit states the fields the author set: new values, null for a cleared field (a clear flag
+  // wins, as in the mutation), and a description by digest. Undefined keys a form leaves behind,
+  // assignment, and numbers JSON cannot carry are not part of it.
+  assert.deepEqual(clientActionChanges('updateItem', {
+    itemId: 'I', name: 'Oat milk', description: '2 cartons', expectedDescription: '', url: 'https://old.example', clearUrl: true, dueDate: 5,
+    recurrence: { frequency: 'weekly', interval: 2, endDate: undefined, nextDue: Infinity }, clearPriority: true, groceryAisle: 'dairy',
+    assigneeDids: ['did:someone'], userDid: 'did:caller',
+  }), [{ action: 'item.edited', subject: { itemId: 'I' }, after: {
+    name: 'Oat milk', description: { sha256: digest('2 cartons') }, url: null, dueDate: 5, recurrence: { frequency: 'weekly', interval: 2 }, priority: null, groceryAisle: 'dairy',
+  } }]);
+  assert.deepEqual(clientActionChanges('updateItem', { itemId: 'I', clearDueDate: true, clearRecurrence: true, clearGroceryAisle: true, priority: 'low' })[0].after,
+    { dueDate: null, recurrence: null, groceryAisle: null, priority: 'low' });
+  for (const args of [{ itemId: 'I' }, { itemId: 'I', assigneeDids: [] }, { itemId: 'I', clearAssigneeDid: true }, { itemId: 'I', dueDate: NaN }, { name: 'No item' }, { itemId: 'I', priority: 'urgent' }]) {
+    assert.deepEqual(clientActionChanges('updateItem', args), []);
+  }
+  assert.deepEqual(clientActionChanges('reorderItems', { listId: 'L', itemIds: ['I'] }), []);
   assert.deepEqual(clientActionChanges('checkItem', { itemId: 7 }), []);
   assert.equal(actionSubjectKey(change), '{"itemId":"I"}');
 
@@ -226,7 +252,7 @@ test('the author\'s device signs each action with its did:webvh assertion key an
   const envelope = await a.sign('batchCheckItems', { itemIds: ['I1', itemId] });
   assert.deepEqual(Object.keys(envelope).sort(), ['signatures', 'signedAt', 'verificationMethod', 'versionId']);
   assert.deepEqual(envelope.signatures.map(s => s.subject), ['{"itemId":"I1"}', `{"itemId":"${itemId}"}`]);
-  assert.equal(await a.sign('removeItem', { itemId }), undefined, 'mutations that record nothing are not signed');
+  assert.equal(await a.sign('reorderItems', { listId, itemIds: [itemId] }), undefined, 'mutations that record nothing are not signed');
 });
 
 test('batch and individual actions produce the same signed statements, and a DID update keeps older records verifiable', async () => {
@@ -502,7 +528,7 @@ test('notes are recorded as notes', async () => {
   assert.deepEqual(f.records().map(r => [r.listId, r.status]), [[noteId, 'signed']]);
 });
 
-test('records are readable with the access of their subject, exportable with their evidence, and removed with their subject', async () => {
+test('records are readable with the access of their subject, exportable with their evidence, outlive their item, and are removed with their list', async () => {
   const f = await fixture();
   const a = await f.author();
   const stranger = await createAuthFixture('did:stranger-records');
@@ -531,7 +557,10 @@ test('records are readable with the access of their subject, exportable with the
   assert.deepEqual(records.map(r => r._id), itemRecords.map(r => r._id));
   assert.equal((await verifyActionRecord(records[0], { resolveDidLog: a.resolveDidLog })).verified, true);
   assert.deepEqual((await (await http('listId=L1', 'reader-key')).json()).records.map(r => JSON.parse(r.payload).action), ['list.renamed']);
-  assert.equal((await http('itemId=I1&listId=L1', 'reader-key')).status, 400);
+  // Through the list, the same item records are readable; that read keeps working once the item is gone.
+  assert.deepEqual((await (await http('itemId=I1&listId=L1', 'reader-key')).json()).records.map(r => r._id), itemRecords.map(r => r._id));
+  assert.deepEqual((await (await http('listId=L1&deleted=true', 'reader-key')).json()).records, []);
+  for (const query of ['deleted=true', 'itemId=I1&deleted=true', 'itemId=I1&listId=L1&deleted=true']) assert.equal((await http(query, 'reader-key')).status, 400);
 
   // The standalone verifier accepts that export against the author's DID log or a pinned key, and nothing else.
   const dir = 'tmp/signed-action-records-extra';
@@ -556,33 +585,35 @@ test('records are readable with the access of their subject, exportable with the
   assert.deepEqual([refused.status, refused.stdout.trim().split('\t').slice(1, 3)], [1, ['REJECTED', 'digest_mismatch']]);
   assert.equal(cli().status, 2);
   assert.equal((await http('', 'reader-key')).status, 400);
-  for (const query of ['itemId=I1', 'listId=L1']) {
+  for (const query of ['itemId=I1', 'listId=L1', 'itemId=I1&listId=L1', 'listId=L1&deleted=true']) {
     const denied = await http(query, 'stranger-key');
     assert.notEqual(denied.status, 200);
     assert.equal((await denied.json()).records, undefined);
   }
 
+  // Removing an item removes none of its records, and adds the deletion to them.
+  const kept = f.records().length;
   await f.call('items', 'removeItem', { itemId: 'I1' });
-  assert.deepEqual(f.payloads().map(p => p.action), ['list.renamed', 'item.created']);
+  assert.deepEqual(f.payloads().map(p => p.action), ['list.renamed', 'item.completed', 'item.created', 'item.deleted']);
   await f.call('items', 'batchDeleteItems', { itemIds: [f.attested().find(c => c.before === null && c.itemId).itemId] });
-  assert.deepEqual(f.payloads().map(p => p.action), ['list.renamed']);
+  assert.deepEqual(f.payloads().map(p => p.action), ['list.renamed', 'item.completed', 'item.created', 'item.deleted', 'item.deleted']);
+  assert.equal(f.records().length, kept + 2);
+  assert.deepEqual(f.effects.filter(([, ref]) => getFunctionName(ref) === 'actionRecords:deleteRemaining'), []);
+  // They go with the list, the records of its deleted items included.
   await f.call('lists', 'deleteList', { listId: 'L1' });
   assert.deepEqual(f.records(), []);
 
-  // Subjects with more records than one mutation should touch are drained in batches.
+  // A list with more records than one mutation should touch is drained in batches.
   const DELETE_RECORDS_BATCH = 500; // convex/lib/actionRecords.ts
   const h = await fixture();
   for (let i = 0; i <= DELETE_RECORDS_BATCH; i++) await h.ctx.db.insert('actionRecords', { listId: 'L1', itemId: 'I1', status: 'unsigned' });
   await h.call('items', 'removeItem', { itemId: 'I1' });
-  assert.equal(h.records().length, 1);
-  const continuations = h.effects.filter(([, ref]) => getFunctionName(ref) === 'actionRecords:deleteRemaining');
-  assert.deepEqual(continuations.map(([delay, , args]) => [delay, args]), [[0, { target: { itemId: 'I1' } }]]);
-  await modules.actionRecords.deleteRemaining._handler(h.ctx, continuations[0][2]);
-  assert.deepEqual(h.records(), []);
-  for (let i = 0; i <= DELETE_RECORDS_BATCH; i++) await h.ctx.db.insert('actionRecords', { listId: 'L1', status: 'unsigned' });
+  assert.equal(h.records().length, DELETE_RECORDS_BATCH + 2, 'a long history is kept whole when its item is removed');
   await h.call('lists', 'deleteList', { listId: 'L1' });
-  assert.equal(h.records().length, 1);
-  await modules.actionRecords.deleteRemaining._handler(h.ctx, { target: { listId: 'L1' } });
+  assert.equal(h.records().length, 2);
+  const continuations = h.effects.filter(([, ref]) => getFunctionName(ref) === 'actionRecords:deleteRemaining');
+  assert.deepEqual(continuations.map(([delay, , args]) => [delay, args]), [[0, { target: { listId: 'L1' } }]]);
+  await modules.actionRecords.deleteRemaining._handler(h.ctx, continuations[0][2]);
   assert.deepEqual(h.records(), []);
 
   // Account erasure removes the records of that account's lists and items as well.
@@ -595,6 +626,278 @@ test('records are readable with the access of their subject, exportable with the
   for (let step = 0; step < 40 && g.rows.lists.length; step++) await modules.users.continueUserDeletion._handler(g.ctx, { userId: g.owner.user._id });
   assert.equal(g.rows.lists.length, 0);
   assert.deepEqual(g.records(), []);
+});
+
+test('an edit and a delete are signed on the device, verified at receipt and independently, and say only what the author set', async () => {
+  const f = await fixture();
+  const a = await f.author();
+  Object.assign(f.rows.items[0], { priority: 'high', url: 'https://old.example' });
+  const edit = { itemId: 'I1', name: 'Oat milk', description: '2 cartons, unsweetened', dueDate: 5, clearUrl: true, clearPriority: true, recurrence: { frequency: 'weekly', interval: 2 } };
+  await a.call('items', 'updateItem', edit);
+  assert.deepEqual([f.rows.items[0].name, f.rows.items[0].description, f.rows.items[0].priority], ['Oat milk', '2 cartons, unsweetened', undefined]);
+  const [edited] = f.records();
+  const payload = JSON.parse(edited.payload);
+  assert.deepEqual([edited.status, payload.action, payload.subject, payload.version], ['signed', 'item.edited', { itemId: 'I1' }, 2]);
+  assert.deepEqual(payload.after, { name: 'Oat milk', description: { sha256: digest('2 cartons, unsweetened') }, dueDate: 5, url: null, priority: null, recurrence: { frequency: 'weekly', interval: 2 } });
+  assert.deepEqual(payload.author, { did: a.did, verificationMethod: VM(a.did), versionId: a.versionId });
+  // The stored bytes are the ones the device built from the same arguments.
+  assert.equal(edited.payload, buildActionRecord(clientActionChanges('updateItem', edit)[0], payload.author, payload.signedAt).payload);
+  // boop attests the prior value of each edited field, in the same form; neither side holds the note text.
+  assert.deepEqual(JSON.parse(edited.attested).before, { name: 'Milk', description: null, dueDate: null, url: 'https://old.example', priority: 'high', recurrence: null });
+  assert.doesNotMatch(edited.payload + edited.attested, /cartons/);
+  assert.deepEqual([edited.itemId, edited.listId, JSON.parse(edited.attested).listAssetDid], ['I1', 'L1', 'did:list']);
+
+  // A second edit attests the first one's values as its prior state.
+  await a.call('items', 'updateItem', { itemId: 'I1', description: 'none' });
+  assert.deepEqual([JSON.parse(f.records()[1].payload).after, JSON.parse(f.records()[1].attested).before],
+    [{ description: { sha256: digest('none') } }, { description: { sha256: digest('2 cartons, unsweetened') } }]);
+  // Assignment alone is not an edit record, and a value JSON cannot carry is left out without failing the write.
+  await a.call('items', 'updateItem', { itemId: 'I1', assigneeDids: [] });
+  assert.equal(f.records().length, 2);
+  await a.call('items', 'updateItem', { itemId: 'I1', dueDate: NaN, groceryAisle: 'dairy' });
+  assert.deepEqual([JSON.parse(f.records()[2].payload).after, f.records()[2].status, Number.isNaN(f.rows.items[0].dueDate)], [{ groceryAisle: 'dairy' }, 'signed', true]);
+  await a.call('items', 'updateItem', { itemId: 'I1', name: 'Oat milk 2' });
+  assert.deepEqual(JSON.parse(f.records()[3].attested).before, { name: 'Oat milk' });
+
+  await a.call('items', 'removeItem', { itemId: 'I1' });
+  assert.equal(f.rows.items.find(i => i._id === 'I1'), undefined);
+  const deleted = f.records()[4];
+  assert.deepEqual([deleted.status, JSON.parse(deleted.payload).action, JSON.parse(deleted.payload).subject, JSON.parse(deleted.payload).after], ['signed', 'item.deleted', { itemId: 'I1' }, { deleted: true }]);
+  assert.equal(deleted.payload, buildActionRecord(clientActionChanges('removeItem', { itemId: 'I1' })[0], payload.author, deleted.signedAt).payload);
+  // The deletion names the item and nothing of it.
+  const { occurredAt, ...context } = JSON.parse(deleted.attested);
+  assert.deepEqual(context, { listId: 'L1', listAssetDid: 'did:list', itemId: 'I1', userId: f.owner.user._id, credential: { kind: 'session', id: f.owner.accessSession._id } });
+  assert.doesNotMatch(deleted.payload + deleted.attested, /milk/i);
+
+  // Every record is still there after the delete, and each verifies from the DID log or a pinned key.
+  assert.deepEqual(f.records().map(r => [JSON.parse(r.payload).action, r.status, r.itemId]),
+    [...new Array(4).fill(['item.edited', 'signed', 'I1']), ['item.deleted', 'signed', 'I1']]);
+  assert.deepEqual(a.signedWith(), new Array(5).fill(a.keys.assertion.address));
+  for (const record of f.records()) {
+    const signed = JSON.parse(record.payload);
+    assert.ok(await ed25519.verifyAsync(base58Decode(record.signature.slice(1)), actionRecordSigningInput(record.payload), a.keys.assertion.publicKey));
+    const viaLog = await verifyActionRecord(record, { resolveDidLog: a.resolveDidLog, expected: { ownerDid: a.did } });
+    assert.deepEqual([viaLog.verified, viaLog.payload?.action, viaLog.author], [true, signed.action, signed.author]);
+    assert.equal((await verifyActionRecord(record, { trustedKeys: { [a.did]: [a.keys.assertion.multikey] } })).verified, true);
+    assert.equal((await verifyActionRecord(record, { trustedKeys: { [a.did]: [a.keys.author.multikey] } })).verified, false);
+    assert.equal(describeActionRecord(record).action, signed.action);
+    // A statement altered after signing is refused, whichever way it is re-wrapped.
+    const forged = canonicalize({ ...signed, after: signed.action === 'item.deleted' ? { deleted: false } : { name: 'Forged' } });
+    assert.deepEqual(await verifyActionRecord({ ...record, payload: forged }, { resolveDidLog: a.resolveDidLog }), { verified: false, reason: 'digest_mismatch' });
+    assert.deepEqual(await verifyActionRecord({ ...record, payload: forged, digest: actionRecordDigest(forged) }, { resolveDidLog: a.resolveDidLog }), { verified: false, reason: 'bad_signature' });
+    assert.deepEqual(await verifyActionRecord({ ...record, itemId: 'I2' }, { resolveDidLog: a.resolveDidLog }), { verified: false, reason: 'binding_mismatch' });
+  }
+  // A delete signature does not carry over to an edit of the same item, or the other way round.
+  const [deletedSignature, editedSignature] = [deleted.signature, f.records()[3].signature];
+  assert.deepEqual(await verifyActionRecord({ ...deleted, signature: editedSignature }, { resolveDidLog: a.resolveDidLog }), { verified: false, reason: 'bad_signature' });
+  assert.deepEqual(await verifyActionRecord({ ...f.records()[3], signature: deletedSignature }, { resolveDidLog: a.resolveDidLog }), { verified: false, reason: 'bad_signature' });
+});
+
+test('a deleted item keeps its whole history, readable through its list; a batch signs each named item and attests cascaded sub-items', async () => {
+  const f = await fixture();
+  const a = await f.author();
+  const stranger = await createAuthFixture('did:stranger-deleted');
+  f.rows.users.push(stranger.user); f.rows.accessSessions.push(stranger.accessSession);
+  f.rows.publications.length = 0; // private list
+  const itemId = await a.call('items', 'addItem', { listId: 'L1', name: 'Sweep', createdAt: 2 });
+  await a.call('items', 'updateItem', { itemId, name: 'Sweep the hall' });
+  await a.call('items', 'checkItem', { itemId, checkedAt: 3 });
+  await a.call('items', 'uncheckItem', { itemId });
+  const history = ['item.created', 'item.edited', 'item.completed', 'item.reopened'];
+  assert.deepEqual((await f.call('actionRecords', 'getItemActionRecords', { itemId })).map(r => JSON.parse(r.payload).action), history);
+  assert.deepEqual(await f.call('actionRecords', 'getDeletedItemActionRecords', { listId: 'L1' }), []);
+
+  await a.call('items', 'removeItem', { itemId });
+  assert.equal(f.rows.items.find(i => i._id === itemId), undefined);
+  // The item can no longer authorize a read, so its records are read through the list it was on.
+  await assert.rejects(f.call('actionRecords', 'getItemActionRecords', { itemId }));
+  const survived = await f.call('actionRecords', 'getListItemActionRecords', { listId: 'L1', itemId }, f.collaborator);
+  assert.deepEqual(survived.map(r => JSON.parse(r.payload).action), [...history, 'item.deleted']);
+  for (const record of survived) assert.equal((await verifyActionRecord(record, { resolveDidLog: a.resolveDidLog })).verified, true);
+  const deletions = await f.call('actionRecords', 'getDeletedItemActionRecords', { listId: 'L1' });
+  assert.deepEqual(deletions.map(r => [JSON.parse(r.payload).action, r.itemId, r.status]), [['item.deleted', itemId, 'signed']]);
+  assert.deepEqual(Object.keys(deletions[0]).sort(), ['_id', 'attested', 'digest', 'error', 'itemId', 'listId', 'ownerUserId', 'payload', 'publicKeyMultibase', 'signature', 'signedAt', 'status', 'verificationMethod']);
+  // List-level records stay list-level, and the reads keep the list's access.
+  assert.deepEqual(await f.call('actionRecords', 'getListActionRecords', { listId: 'L1' }), []);
+  await assert.rejects(f.call('actionRecords', 'getListItemActionRecords', { listId: 'L1', itemId }, stranger));
+  await assert.rejects(f.call('actionRecords', 'getDeletedItemActionRecords', { listId: 'L1' }, stranger));
+
+  // An editor's delete on someone else's list is theirs, unsigned without a device signature.
+  const second = await a.call('items', 'addItem', { listId: 'L1', name: 'Mop', createdAt: 4 });
+  await f.call('items', 'removeItem', { itemId: second }, f.collaborator);
+  const byEditor = f.records().at(-1);
+  assert.deepEqual([JSON.parse(byEditor.payload).author, byEditor.status, byEditor.ownerUserId], [{ did: f.collaborator.user.did }, 'unsigned', f.collaborator.user._id]);
+  // A signature for another item's deletion does not sign this one: it is recorded unsigned.
+  const third = await a.call('items', 'addItem', { listId: 'L1', name: 'Dust', createdAt: 5 });
+  await f.call('items', 'removeItem', { itemId: third, signed: await a.sign('removeItem', { itemId: 'I1' }) });
+  assert.deepEqual([f.records().at(-1).status, f.records().at(-1).signature], ['unsigned', undefined]);
+  // One offered for this item that does not verify is a truthful failure, and the delete still happens.
+  const fourth = await a.call('items', 'addItem', { listId: 'L1', name: 'Wipe', createdAt: 6 });
+  const envelope = await a.sign('removeItem', { itemId: fourth });
+  await f.call('items', 'removeItem', { itemId: fourth, signed: { ...envelope, signedAt: envelope.signedAt + 1 } });
+  assert.deepEqual([f.records().at(-1).status, f.records().at(-1).error, f.rows.items.some(i => i._id === fourth)], ['failed', 'bad_signature', false]);
+
+  // A batch: one signed deletion per item the author named; a sub-item removed with its parent is boop's statement.
+  const parent = await a.call('items', 'addItem', { listId: 'L1', name: 'Shop', createdAt: 7 });
+  const child = await a.call('items', 'addItem', { listId: 'L1', name: 'Eggs', createdAt: 8 });
+  const namedChild = await a.call('items', 'addItem', { listId: 'L1', name: 'Flour', createdAt: 9 });
+  for (const id of [child, namedChild]) f.rows.items.find(i => i._id === id).parentId = parent;
+  const before = f.records().length;
+  await a.call('items', 'batchDeleteItems', { itemIds: [parent, namedChild, 'I1', parent] });
+  assert.deepEqual(f.rows.items, []);
+  assert.deepEqual(f.records().slice(before).map(r => [JSON.parse(r.payload).action, r.itemId, r.status, JSON.parse(r.attested).origin]), [
+    ['item.deleted', child, 'unsigned', { kind: 'cascade', parentItemId: parent }],
+    ['item.deleted', namedChild, 'signed', undefined],
+    ['item.deleted', parent, 'signed', undefined],
+    ['item.deleted', 'I1', 'signed', undefined],
+  ]);
+  // Every creation record is still there for the items that are gone.
+  assert.deepEqual(f.records().filter(r => JSON.parse(r.payload).action === 'item.created').map(r => r.itemId), [itemId, second, third, fourth, parent, child, namedChild]);
+  assert.equal((await f.call('actionRecords', 'getDeletedItemActionRecords', { listId: 'L1' })).length, 8);
+});
+
+test('an edit session is one signed record: saves persist at once, the record holds each field\'s final value and its value before the session', async () => {
+  const f = await fixture();
+  const a = await f.author();
+  const pending = () => f.rows.pendingItemEdits ?? [];
+  Object.assign(f.rows.items[0], { url: 'https://old.example' });
+  const saves = [
+    { itemId: 'I1', description: 'Dra' },
+    { itemId: 'I1', description: 'Draft', expectedDescription: 'Dra' },
+    { itemId: 'I1', name: 'Oat milk', priority: 'low' },
+    { itemId: 'I1', description: 'Draft two', expectedDescription: 'Draft', clearUrl: true, priority: 'high' },
+  ];
+  for (const save of saves) {
+    await f.call('items', 'updateItem', { ...save, editSession: 'S1' });
+    // Each save is on the item as soon as it returns; only the record waits.
+    for (const key of ['name', 'description', 'priority']) if (save[key] !== undefined) assert.equal(f.rows.items[0][key], save[key]);
+  }
+  assert.equal(f.rows.items[0].url, undefined);
+  assert.deepEqual(f.records(), []);
+  assert.deepEqual(pending().map(p => [p.itemId, p.listId, p.userId, p.editSession]), [['I1', 'L1', f.owner.user._id, 'S1']]);
+
+  // The device merges the same saves and signs the result once.
+  const after = saves.map(save => clientActionChanges('updateItem', save)[0].after).reduce((merged, edit) => ({ ...merged, ...edit }));
+  assert.deepEqual(after, { description: { sha256: digest('Draft two') }, name: 'Oat milk', priority: 'high', url: null });
+  const signed = await a.sign('recordItemEdit', { itemId: 'I1', after });
+  assert.equal(signed.signatures.length, 1);
+  assert.equal(await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'S1', signed }), true);
+  assert.deepEqual(pending(), []);
+  const [record] = f.records();
+  assert.equal(f.records().length, 1);
+  assert.deepEqual([record.status, JSON.parse(record.payload).action, JSON.parse(record.payload).subject, JSON.parse(record.payload).after], ['signed', 'item.edited', { itemId: 'I1' }, after]);
+  // boop attests what each field held before the session's first save touched it, not before its last.
+  assert.deepEqual(JSON.parse(record.attested).before, { description: null, name: 'Milk', priority: null, url: 'https://old.example' });
+  assert.doesNotMatch(record.payload + record.attested, /Draft/);
+  assert.equal((await verifyActionRecord(record, { resolveDidLog: a.resolveDidLog, expected: { ownerDid: a.did } })).verified, true);
+  assert.equal((await verifyActionRecord(record, { trustedKeys: { [a.did]: [a.keys.assertion.multikey] } })).verified, true);
+  // Closing it again, or closing a session that never saved, records nothing.
+  assert.equal(await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'S1', signed }), false);
+  assert.equal(await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'never' }), false);
+  assert.equal(f.records().length, 1);
+
+  // Sessions are apart per device session and per account: two tabs, and an editor, each get their own record.
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Tab one', editSession: 'T1' });
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Tab two', editSession: 'T2' });
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Editor', editSession: 'T1' }, f.collaborator);
+  assert.equal(pending().length, 3);
+  await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'T1', signed: await a.sign('recordItemEdit', { itemId: 'I1', after: { name: 'Tab one' } }) });
+  await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'T1' }, f.collaborator);
+  // No device signature: unsigned. A signature over something other than what the server applied: a truthful failure.
+  await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'T2', signed: await a.sign('recordItemEdit', { itemId: 'I1', after: { name: 'Not what was saved' } }) });
+  assert.deepEqual(f.records().slice(1).map(r => [JSON.parse(r.payload).after, JSON.parse(r.attested).before, r.status, r.error, r.ownerUserId]), [
+    [{ name: 'Tab one' }, { name: 'Oat milk' }, 'signed', undefined, f.owner.user._id],
+    [{ name: 'Editor' }, { name: 'Tab two' }, 'unsigned', undefined, f.collaborator.user._id],
+    [{ name: 'Tab two' }, { name: 'Tab one' }, 'failed', 'bad_signature', f.owner.user._id],
+  ]);
+  assert.deepEqual(pending(), []);
+
+  // A save without a session (the HTTP API, an older build) is recorded on its own, as before.
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Direct' });
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Bad session', editSession: 'x'.repeat(101) });
+  assert.deepEqual(f.records().slice(4).map(r => JSON.parse(r.payload).after), [{ name: 'Direct' }, { name: 'Bad session' }]);
+  assert.deepEqual(pending(), []);
+
+  // A replayed offline save is the same operation whichever session it is retried under.
+  const replay = await meta(f, 'edit-replay');
+  const ack = await f.call('items', 'updateItemReplay', { itemId: 'I1', name: 'Queued', editSession: 'R1', replay });
+  assert.deepEqual(await f.call('items', 'updateItemReplay', { itemId: 'I1', name: 'Queued', editSession: 'R2', replay }), ack);
+  assert.deepEqual(pending().map(p => [p.editSession, JSON.parse(p.after)]), [['R1', { name: 'Queued' }]]);
+});
+
+test('a session left open is not lost for good: it is recorded unsigned when its author next edits the item, or removes it, and goes with its list', async () => {
+  const f = await fixture();
+  const a = await f.author();
+  const pending = () => f.rows.pendingItemEdits ?? [];
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Crashed tab', editSession: 'gone' });
+  await f.call('items', 'updateItem', { itemId: 'I1', priority: 'low', editSession: 'live' });
+  // Another session of the same account that is still fresh (a second tab) is left alone.
+  await f.call('items', 'updateItem', { itemId: 'I1', priority: 'high', editSession: 'live' });
+  assert.deepEqual([f.records(), pending().length], [[], 2]);
+  // Ten minutes without a save and the first one counts as abandoned.
+  pending().find(p => p.editSession === 'gone').updatedAt -= 10 * 60 * 1000 + 1;
+  await f.call('items', 'updateItem', { itemId: 'I1', name: 'Editor', editSession: 'theirs' }, f.collaborator);
+  assert.deepEqual(f.records(), [], 'only its own author\'s next edit records an abandoned session');
+  await f.call('items', 'updateItem', { itemId: 'I1', url: 'https://a.example', editSession: 'live' });
+  assert.deepEqual(f.records().map(r => [JSON.parse(r.payload).after, JSON.parse(r.attested).before, r.status, JSON.parse(r.payload).author]),
+    [[{ name: 'Crashed tab' }, { name: 'Milk' }, 'unsigned', { did: a.did }]]);
+  assert.deepEqual(pending().map(p => p.editSession).sort(), ['live', 'theirs']);
+  // Its device coming back later finds nothing to sign.
+  assert.equal(await f.call('items', 'recordItemEdit', { itemId: 'I1', editSession: 'gone', signed: await a.sign('recordItemEdit', { itemId: 'I1', after: { name: 'Crashed tab' } }) }), false);
+
+  // Removing the item closes the remover's own open session first, unsigned, so the edit precedes the deletion.
+  // Someone else's open session cannot be recorded in their name and is dropped.
+  await a.call('items', 'removeItem', { itemId: 'I1' });
+  assert.deepEqual(f.records().slice(1).map(r => [JSON.parse(r.payload).action, JSON.parse(r.payload).after, r.status, r.ownerUserId]), [
+    ['item.edited', { priority: 'high', url: 'https://a.example' }, 'unsigned', f.owner.user._id],
+    ['item.deleted', { deleted: true }, 'signed', f.owner.user._id],
+  ]);
+  assert.deepEqual(pending(), []);
+
+  // A batch delete does the same for each item and sub-item, and deleting a list drops what is open on it.
+  const [parent, child, other] = [await a.call('items', 'addItem', { listId: 'L1', name: 'Shop', createdAt: 2 }), await a.call('items', 'addItem', { listId: 'L1', name: 'Eggs', createdAt: 3 }), await a.call('items', 'addItem', { listId: 'L1', name: 'Keep', createdAt: 4 })];
+  f.rows.items.find(i => i._id === child).parentId = parent;
+  for (const itemId of [parent, child, other]) await f.call('items', 'updateItem', { itemId, name: 'Renamed', editSession: 'batch' });
+  const before = f.records().length;
+  await a.call('items', 'batchDeleteItems', { itemIds: [parent] });
+  assert.deepEqual(f.records().slice(before).map(r => [JSON.parse(r.payload).action, r.itemId]), [['item.edited', child], ['item.edited', parent], ['item.deleted', child], ['item.deleted', parent]]);
+  assert.deepEqual(pending().map(p => p.itemId), [other]);
+  await f.call('lists', 'deleteList', { listId: 'L1' });
+  assert.deepEqual([pending(), f.records()], [[], []]);
+});
+
+test('end to end: the device files its saves under one session, signs the session once when it is flushed, and the record verifies', async () => {
+  const f = await fixture();
+  const a = await f.author();
+  device.resetEditSessions();
+  device.setActionSigner((mutation, args) => a.sign(mutation, args));
+  device.setEditRecorder(async (itemId, editSession, after) => {
+    const signed = await device.signActionRecords('recordItemEdit', { itemId, after });
+    await f.call('items', 'recordItemEdit', { itemId, editSession, ...(signed ? { signed } : {}) });
+  });
+  try {
+    const send = (name, args) => device.sendWithActionRecords(name, args, prepared => f.call('items', name, prepared));
+    for (const description of ['T', 'Th', 'Tho', 'Thoughts']) await send('updateItem', { itemId: 'I1', description });
+    await send('updateItem', { itemId: 'I1', name: 'Notes', dueDate: 9 });
+    await send('updateItem', { itemId: 'I1', clearDueDate: true });
+    assert.deepEqual([f.rows.items[0].description, f.rows.items[0].name, f.rows.items[0].dueDate, f.records()], ['Thoughts', 'Notes', undefined, []]);
+    assert.deepEqual(a.signedWith(), [], 'nothing is signed while the session is open');
+
+    await device.flushEditSessions(); // what a route change, a hidden tab or an unload does
+    assert.deepEqual(a.signedWith(), [a.keys.assertion.address], 'six saves, one signature');
+    assert.deepEqual(f.records().map(r => [r.status, JSON.parse(r.payload).after, JSON.parse(r.attested).before]),
+      [['signed', { description: { sha256: digest('Thoughts') }, name: 'Notes', dueDate: null }, { description: null, name: 'Milk', dueDate: null }]]);
+    assert.equal((await verifyActionRecord(f.records()[0], { resolveDidLog: a.resolveDidLog })).verified, true);
+    assert.deepEqual(f.rows.pendingItemEdits, []);
+
+    // A later run is its own session; a delete in between is signed on its own, as before.
+    await send('updateItem', { itemId: 'I1', name: 'Notes 2' });
+    await send('removeItem', { itemId: 'I1' });
+    await device.flushEditSessions(); // the item is gone: the server already closed the session, and the device's close is refused quietly
+    assert.deepEqual(f.records().slice(1).map(r => [JSON.parse(r.payload).action, r.status]), [['item.edited', 'unsigned'], ['item.deleted', 'signed']]);
+  } finally {
+    device.resetEditSessions(); device.setEditRecorder(null); device.setActionSigner(null);
+  }
 });
 
 test('historical placeholders and version-1 records stay untouched and unsigned; a DID re-mint never rewrites signed payloads', async () => {

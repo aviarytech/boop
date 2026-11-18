@@ -23,6 +23,7 @@ import {
   buildActionRecord,
   canonicalize,
   decodeSignature,
+  itemEdit,
   parseEd25519PublicKey,
   verifyActionSignature,
   type ActionChange,
@@ -72,6 +73,97 @@ export const listRenamed = (list: ListRef & { name: string }, name: string): Rec
   attested: { ...listContext(list), before: { name: list.name } },
 });
 
+/** Null when the call changes nothing an edit record covers. `args` are updateItem's own. */
+export const itemEdited = (list: ListRef, item: Doc<"items">, args: Record<string, unknown>): RecordedAction | null => {
+  const after = itemEdit(args);
+  if (!after) return null;
+  const prior: Record<string, unknown> = itemEdit(item) ?? {};
+  const before = Object.fromEntries(Object.keys(after).map(key => [key, prior[key] ?? null]));
+  return {
+    change: { action: "item.edited", subject: { itemId: item._id }, after },
+    attested: { ...listContext(list), itemId: item._id, before },
+  };
+};
+
+// Carries nothing of the item but its id: the record outlives it. `parentItemId` marks a
+// sub-item removed with its parent, which the author did not name (and so did not sign).
+export const itemDeleted = (list: ListRef, itemId: Id<"items">, parentItemId?: Id<"items">): RecordedAction => ({
+  change: { action: "item.deleted", subject: { itemId }, after: { deleted: true } },
+  attested: { ...listContext(list), itemId, ...(parentItemId ? { origin: { kind: "cascade", parentItemId } } : {}) },
+});
+
+/** A device that never closes a session (a crash, a closed tab) leaves it open this long before it counts as abandoned. */
+export const EDIT_SESSION_ABANDONED_MS = 10 * 60 * 1000;
+const MAX_EDIT_SESSION_ID = 100;
+export const validEditSession = (editSession: string | undefined): editSession is string =>
+  editSession !== undefined && editSession.length > 0 && editSession.length <= MAX_EDIT_SESSION_ID;
+
+type PendingEdit = Doc<"pendingItemEdits">;
+const pendingEdits = (ctx: MutationCtx, itemId: Id<"items">, userId: Id<"users">) =>
+  ctx.db.query("pendingItemEdits").withIndex("by_item_user", q => q.eq("itemId", itemId).eq("userId", userId)).collect();
+
+/** Writes a session's one record, from what this server applied, and closes the session. */
+async function recordPendingEdit(ctx: ActorCtx<MutationCtx>, pending: PendingEdit, signed?: ActionSignatureEnvelope): Promise<void> {
+  const list: ListRef = await ctx.db.get(pending.listId) ?? { _id: pending.listId };
+  await ctx.db.delete(pending._id);
+  await recordActions(ctx, [{
+    change: { action: "item.edited", subject: { itemId: pending.itemId }, after: JSON.parse(pending.after) },
+    attested: { ...listContext(list), itemId: pending.itemId, before: JSON.parse(pending.before) },
+  }], signed);
+}
+
+/**
+ * Adds one save to the actor's edit session on the item instead of recording
+ * it. Later saves win per field in `after`; `before` keeps the value each
+ * field had when the session first touched it. A session of the same account
+ * on the same item that its device abandoned is recorded here, unsigned, so it
+ * is not lost for good.
+ */
+export async function deferItemEdit(ctx: ActorCtx<MutationCtx>, edited: RecordedAction, editSession: string): Promise<void> {
+  const itemId = edited.attested.itemId!;
+  const now = Date.now();
+  const sessions = await pendingEdits(ctx, itemId, ctx.actor.userId);
+  for (const other of sessions) {
+    if (other.editSession !== editSession && other.updatedAt < now - EDIT_SESSION_ABANDONED_MS) await recordPendingEdit(ctx, other);
+  }
+  const open = sessions.find(session => session.editSession === editSession);
+  const { after } = edited.change, before = edited.attested.before as Record<string, unknown>;
+  if (!open) {
+    await ctx.db.insert("pendingItemEdits", {
+      itemId, listId: edited.attested.listId, userId: ctx.actor.userId, editSession,
+      after: canonicalize(after), before: canonicalize(before), updatedAt: now,
+    });
+    return;
+  }
+  await ctx.db.patch(open._id, {
+    after: canonicalize({ ...JSON.parse(open.after), ...after }),
+    before: canonicalize({ ...before, ...JSON.parse(open.before) }),
+    updatedAt: now,
+  });
+}
+
+/** Closes the actor's edit session with the device's signature over it. False when there is nothing to record. */
+export async function recordDeferredItemEdit(ctx: ActorCtx<MutationCtx>, itemId: Id<"items">, editSession: string, signed?: ActionSignatureEnvelope): Promise<boolean> {
+  const open = (await pendingEdits(ctx, itemId, ctx.actor.userId)).find(session => session.editSession === editSession);
+  if (!open) return false;
+  await recordPendingEdit(ctx, open, signed);
+  return true;
+}
+
+/**
+ * Before an item is removed: the remover's own open sessions on it are
+ * recorded (unsigned; their device has not signed them), so the edit precedes
+ * the deletion in the item's history. Other accounts' open sessions cannot be
+ * recorded in their name here and are dropped.
+ */
+export async function closeItemEditSessions(ctx: ActorCtx<MutationCtx>, itemId: Id<"items">): Promise<void> {
+  const sessions = await ctx.db.query("pendingItemEdits").withIndex("by_item_user", q => q.eq("itemId", itemId)).collect();
+  for (const session of sessions) {
+    if (session.userId === ctx.actor.userId) await recordPendingEdit(ctx, session);
+    else await ctx.db.delete(session._id);
+  }
+}
+
 type Signer = { key: Uint8Array; publicKeyMultibase: string } | { error: string };
 
 /**
@@ -104,7 +196,7 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: Recorde
   for (const { change, attested } of actions) {
     const row = {
       attested: canonicalize({ ...attested, occurredAt, userId: ctx.actor.userId, credential: ctx.actor.credential } satisfies ActionRecordAttested),
-      listId: attested.listId, itemId: attested.itemId, ownerUserId: ctx.actor.userId,
+      listId: attested.listId, itemId: attested.itemId, ownerUserId: ctx.actor.userId, action: change.action,
     };
     const offered = signed?.signatures.find(entry => entry.subject === actionSubjectKey(change));
     if (!signed || !signer || !offered) {
@@ -129,8 +221,10 @@ export async function recordActions(ctx: ActorCtx<MutationCtx>, actions: Recorde
 // Records grow with every toggle, so deletion is bounded per mutation.
 export const DELETE_RECORDS_BATCH = 500;
 
-/** Records name their subject, so they are removed with it like vcProofs were.
- * Deletes one batch now and schedules the remainder. */
+/** A list's records are removed with the list (or its owner's account). An
+ * item's records outlive the item: removing an item deletes none of them, so
+ * the item target is only reached by continuations scheduled before that
+ * changed. Deletes one batch now and schedules the remainder. */
 export async function deleteActionRecords(
   ctx: MutationCtx, target: { listId: Id<"lists"> } | { itemId: Id<"items"> },
 ): Promise<void> {

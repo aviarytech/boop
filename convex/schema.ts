@@ -360,6 +360,9 @@ export default defineSchema({
     listId: v.id("lists"),
     itemId: v.optional(v.id("items")),
     ownerUserId: v.id("users"), // Account that authorized the action
+    // The payload's action, as an index column so a list's deletions can be read
+    // after the items are gone. Absent on records written before item.deleted existed.
+    action: v.optional(v.string()),
     status: v.union(
       v.literal("pending"), // Reserved: awaiting a signature (not written today)
       v.literal("signed"), // Verified at receipt against the author's DID log
@@ -373,7 +376,23 @@ export default defineSchema({
     error: v.optional(v.string()), // Non-secret reason code, set when failed
   })
     .index("by_list", ["listId", "itemId"])
+    .index("by_list_action", ["listId", "action"])
     .index("by_item", ["itemId"]),
+
+  // An edit session still open on a device (docs/action-records.md, "Edit sessions"):
+  // what one account's saves have set on one item since the session began, held until
+  // the device signs it as a single item.edited record. Never evidence itself.
+  pendingItemEdits: defineTable({
+    itemId: v.id("items"),
+    listId: v.id("lists"),
+    userId: v.id("users"), // The account making the edits
+    editSession: v.string(), // Opaque id the device chose for this session
+    after: v.string(), // Canonical JSON of the ItemEdit so far: each field's latest value
+    before: v.string(), // Canonical JSON: each of those fields' value before the session
+    updatedAt: v.number(),
+  })
+    .index("by_item_user", ["itemId", "userId"])
+    .index("by_list", ["listId"]),
 
   // Item assignees table - tracks who is assigned to each item (Phase 1 foundation)
   itemAssignees: defineTable({

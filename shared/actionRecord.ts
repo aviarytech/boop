@@ -41,11 +41,32 @@ export type ActionChange =
   | { action: "item.completed"; subject: { itemId: string }; after: { checked: true } }
   | { action: "item.reopened"; subject: { itemId: string }; after: { checked: false } }
   | { action: "list.created"; subject: { createdAt: number }; after: { name: string; kind: "list" | "note" } }
-  | { action: "list.renamed"; subject: { listId: string }; after: { name: string } };
+  | { action: "list.renamed"; subject: { listId: string }; after: { name: string } }
+  | { action: "item.edited"; subject: { itemId: string }; after: ItemEdit }
+  | { action: "item.deleted"; subject: { itemId: string }; after: { deleted: true } };
+
+/**
+ * What an edit set, field by field: only the fields the author changed, each
+ * with its new value, and `null` for a field the author cleared. A description
+ * is named by the SHA-256 of its text, not the text: a note body can be 50,000
+ * characters and is saved often, and a record outlives the item it describes.
+ * Anyone holding the text can check it against the digest. Assignment and
+ * position are not part of an edit record.
+ */
+export type ItemEdit = {
+  name?: string;
+  /** Lowercase hex SHA-256 of the description's UTF-8 text. */
+  description?: { sha256: string };
+  dueDate?: number | null;
+  url?: string | null;
+  recurrence?: { frequency: "daily" | "weekly" | "monthly"; interval?: number; nextDue?: number; endDate?: number } | null;
+  priority?: "high" | "medium" | "low" | null;
+  groceryAisle?: string | null;
+};
 
 export type ActionType = ActionChange["action"];
 const ACTION_TYPES: readonly string[] = [
-  "item.created", "item.completed", "item.reopened", "list.created", "list.renamed",
+  "item.created", "item.completed", "item.reopened", "list.created", "list.renamed", "item.edited", "item.deleted",
 ] satisfies ActionType[];
 
 /** The signer: the author DID at the version whose `verificationMethod` is to be checked. */
@@ -70,13 +91,16 @@ export type ActionRecordAttested = {
   listId: string;
   itemId?: string;
   listAssetDid?: string;
-  before?: { checked: boolean } | { name: string } | null;
+  /** Prior state. For item.edited: the edited fields' prior values, in ItemEdit form (null where unset). */
+  before?: { checked: boolean } | { name: string } | ItemEdit | null;
   /** item.completed: the checkedAt stored on the item, when it was a finite number. */
   checkedAt?: number;
   origin?:
     | { kind: "recurrence"; sourceItemId: string }
     | { kind: "template"; source: string }
-    | { kind: "copy"; sourceListId: string };
+    | { kind: "copy"; sourceListId: string }
+    /** item.deleted: removed with its parent item, which is the one the author named. */
+    | { kind: "cascade"; parentItemId: string };
 };
 
 export type ActionRecordStatus = "pending" | "signed" | "failed" | "unsigned";
@@ -266,12 +290,52 @@ export function describeActionRecord(record: Pick<ActionRecordEvidence, "payload
   };
 }
 
+const RECURRENCE_FREQUENCIES = ["daily", "weekly", "monthly"];
+const PRIORITIES = ["high", "medium", "low"];
+
+/**
+ * The edit an `updateItem` call makes, read from its arguments (or, for the
+ * prior state, from the stored item, which uses the same field names). The
+ * device and the server both call this, so they state the same thing. A clear
+ * flag wins over a value, as it does in the mutation. A number JSON cannot
+ * carry is left out instead of failing the write. Null when the call changes
+ * nothing an edit record covers (assignment only, say).
+ */
+export function itemEdit(fields: Record<string, unknown>): ItemEdit | null {
+  const str = (key: string) => (typeof fields[key] === "string" ? (fields[key] as string) : undefined);
+  const finite = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+  const edit: ItemEdit = {};
+  const name = str("name"), description = str("description"), url = str("url"), groceryAisle = str("groceryAisle");
+  if (name !== undefined) edit.name = name;
+  if (description !== undefined) edit.description = { sha256: actionRecordDigest(description) };
+  const dueDate = finite(fields.dueDate);
+  if (fields.clearDueDate === true) edit.dueDate = null;
+  else if (dueDate !== undefined) edit.dueDate = dueDate;
+  if (fields.clearUrl === true) edit.url = null;
+  else if (url !== undefined) edit.url = url;
+  const recurrence = fields.recurrence;
+  if (fields.clearRecurrence === true) edit.recurrence = null;
+  else if (isRecord(recurrence) && RECURRENCE_FREQUENCIES.includes(recurrence.frequency as string)) {
+    edit.recurrence = { frequency: recurrence.frequency as "daily" | "weekly" | "monthly" };
+    for (const key of ["interval", "nextDue", "endDate"] as const) {
+      const value = finite(recurrence[key]);
+      if (value !== undefined) edit.recurrence[key] = value;
+    }
+  }
+  if (fields.clearPriority === true) edit.priority = null;
+  else if (PRIORITIES.includes(fields.priority as string)) edit.priority = fields.priority as "high" | "medium" | "low";
+  if (fields.clearGroceryAisle === true) edit.groceryAisle = null;
+  else if (groceryAisle !== undefined) edit.groceryAisle = groceryAisle;
+  return Object.keys(edit).length > 0 ? edit : null;
+}
+
 /**
  * The changes a client-originated mutation records, built from the arguments
  * the client sends, so the client can sign exactly what the server will write.
  * convex/lib/actionRecords.ts builds the server side; the two must agree, and
  * scripts/signed-action-records.test.mjs checks that they do end to end.
- * Server-originated records (recurrence, templates, copies) are not here.
+ * Server-originated records (recurrence, templates, copies, sub-items removed
+ * with their parent) are not here.
  */
 export function clientActionChanges(mutation: string, args: Record<string, unknown>): ActionChange[] {
   const str = (key: string) => (typeof args[key] === "string" ? (args[key] as string) : null);
@@ -304,6 +368,24 @@ export function clientActionChanges(mutation: string, args: Record<string, unkno
     case "renameList": {
       const listId = str("listId"), name = str("name");
       return listId !== null && name !== null ? [{ action: "list.renamed", subject: { listId }, after: { name } }] : [];
+    }
+    case "updateItem": {
+      const itemId = str("itemId"), after = itemEdit(args);
+      return itemId !== null && after !== null ? [{ action: "item.edited", subject: { itemId }, after }] : [];
+    }
+    // An edit session closing: `after` is what the session's saves set (src/lib/editSessions.ts).
+    case "recordItemEdit": {
+      const itemId = str("itemId"), after = args.after;
+      return itemId !== null && isRecord(after) && Object.keys(after).length > 0
+        ? [{ action: "item.edited", subject: { itemId }, after: after as ItemEdit }] : [];
+    }
+    case "removeItem": {
+      const itemId = str("itemId");
+      return itemId !== null ? [{ action: "item.deleted", subject: { itemId }, after: { deleted: true } }] : [];
+    }
+    case "batchDeleteItems": {
+      const ids = Array.isArray(args.itemIds) ? [...new Set(args.itemIds.filter((id): id is string => typeof id === "string"))] : [];
+      return ids.map(itemId => ({ action: "item.deleted", subject: { itemId }, after: { deleted: true } }));
     }
     default:
       return [];

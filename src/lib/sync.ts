@@ -4,7 +4,7 @@ import { api } from '../../convex/_generated/api';
 import { authErrorData } from '../../convex/lib/authError';
 import { denyOperation, getOperations, prepareOperationForSync, getQueuedMutations, saveOperation, type MutationType, type QueuedMutation } from './offline';
 import type { ReplayAck } from '../../shared/replay';
-import { withActionSignatures } from './actionSigner';
+import { sendWithActionRecords } from './actionSigner';
 export type SyncStatusType = 'idle' | 'syncing' | 'synced' | 'error';
 export interface SyncStatus { status: SyncStatusType; message?: string; accountId?: string }
 export interface SyncSession { accountId: string; token: string }
@@ -88,8 +88,8 @@ export class SyncManager {
     for (const key of ['itemId', 'listId']) if (typeof payload[key] === 'string') payload[key] = resolveId(payload[key]);
     if (Array.isArray(payload.itemIds)) payload.itemIds = payload.itemIds.map(resolveId);
     // Signed at send time, with the server ids the replay resolved to; the device is online here.
-    const signed = await withActionSignatures(m.type, payload);
-    return convex.mutation(endpoints[m.type], { ...signed, authToken: token, replay: { operationId: m.operationId, accountId: m.accountId, expected: m.expected.map(e => ({ ...e, id: resolveId(e.id) })) } } as never);
+    // An item save joins its edit session instead, which is signed once when it ends.
+    return sendWithActionRecords(m.type, payload, signed => convex.mutation(endpoints[m.type], { ...signed, authToken: token, replay: { operationId: m.operationId, accountId: m.accountId, expected: m.expected.map(e => ({ ...e, id: resolveId(e.id) })) } } as never) as Promise<ReplayAck>);
   }
   subscribe(listener: (status: SyncStatus) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   get syncing() { return this.running.size > 0; }

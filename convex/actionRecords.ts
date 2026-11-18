@@ -50,7 +50,32 @@ export const { public: getListActionRecords, internal: getListActionRecordsInter
     .order("desc").take(MAX_RECORDS_PER_READ)).map(evidence),
 });
 
-/** Continues deleteActionRecords for subjects with more records than one batch. */
+/**
+ * Newest deletion records of a list's items. A deleted item cannot authorize
+ * a read itself, so these are read through the list it was on.
+ */
+export const { public: getDeletedItemActionRecords, internal: getDeletedItemActionRecordsInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
+  args: { listId: v.id("lists") },
+  handler: async (ctx, args) => (await ctx.db.query("actionRecords")
+    .withIndex("by_list_action", q => q.eq("listId", args.listId).eq("action", "item.deleted"))
+    .order("desc").take(MAX_RECORDS_PER_READ)).map(evidence),
+});
+
+/** Newest records of one item on a list, whether or not the item still exists. */
+export const { public: getListItemActionRecords, internal: getListItemActionRecordsInternal } = actorQuery({
+  resources: args => ({ lists: [args.listId] }),
+  scope: "items:read",
+  args: { listId: v.id("lists"), itemId: v.id("items") },
+  handler: async (ctx, args) => (await ctx.db.query("actionRecords")
+    .withIndex("by_list", q => q.eq("listId", args.listId).eq("itemId", args.itemId))
+    .order("desc").take(MAX_RECORDS_PER_READ)).map(evidence),
+});
+
+/** Continues deleteActionRecords for a list with more records than one batch.
+ * The item target is accepted for continuations scheduled before item records
+ * began to outlive their item. */
 export const deleteRemaining = internalMutation({
   // Convex requires an object at the top level, so the subject is nested.
   args: { target: v.union(v.object({ listId: v.id("lists") }), v.object({ itemId: v.id("items") })) },

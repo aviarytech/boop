@@ -65,6 +65,10 @@ export const getListWithItems = httpAction(async (ctx, request) => {
 /**
  * GET /api/v1/action-records?itemId=<id>  (requires "items:read")
  * GET /api/v1/action-records?listId=<id>  (requires "lists:read"; list-level records)
+ * GET /api/v1/action-records?listId=<id>&itemId=<id>  (requires "items:read"; one item's
+ *   records, read through its list, so they stay readable after the item is deleted)
+ * GET /api/v1/action-records?listId=<id>&deleted=true  (requires "items:read"; the
+ *   deletion records of the list's items)
  *
  * Action records in the shape shared/actionRecord.ts verifyActionRecord
  * takes, so a caller can verify them without trusting this server.
@@ -75,14 +79,26 @@ export const getActionRecords = httpAction(async (ctx, request) => {
     const params = new URL(request.url).searchParams;
     const itemId = params.get("itemId");
     const listId = params.get("listId");
-    if (!itemId === !listId) {
-      return errorResponse(request, "Provide exactly one of itemId or listId");
+    const deleted = params.get("deleted") === "true";
+    if ((!itemId && !listId) || (deleted && (!listId || itemId))) {
+      return errorResponse(request, "Provide itemId, listId, listId with itemId, or listId with deleted=true");
     }
 
     const credentials = await authenticatedRequest(ctx, request);
-    const records = itemId
+    const records = !listId
       ? await ctx.runQuery(internal.actionRecords.getItemActionRecordsInternal, {
           itemId: itemId as Id<"items">,
+          ...credentials,
+        })
+      : itemId
+      ? await ctx.runQuery(internal.actionRecords.getListItemActionRecordsInternal, {
+          listId: listId as Id<"lists">,
+          itemId: itemId as Id<"items">,
+          ...credentials,
+        })
+      : deleted
+      ? await ctx.runQuery(internal.actionRecords.getDeletedItemActionRecordsInternal, {
+          listId: listId as Id<"lists">,
           ...credentials,
         })
       : await ctx.runQuery(internal.actionRecords.getListActionRecordsInternal, {

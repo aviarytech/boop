@@ -81,8 +81,9 @@ export function actorMutation<A extends PropertyValidators, R>(definition: Defin
       if (!definition.offlineOperation) throw new Error("Offline replay is unsupported");
       // `signed` (the author's action-record signatures, lib/actionRecords.ts) is made
       // at send time, so a retry of the same operation carries a fresh one. It
-      // authenticates the operation's content and is not part of it.
-      const payload = Object.fromEntries(Object.keys(definition.args).filter(key => key !== "signed").map(key => [key, (args as Record<string, unknown>)[key]]));
+      // authenticates the operation's content and is not part of it. Neither is
+      // `editSession`, which only says which record the operation is signed under.
+      const payload = Object.fromEntries(Object.keys(definition.args).filter(key => key !== "signed" && key !== "editSession").map(key => [key, (args as Record<string, unknown>)[key]]));
       // Authenticate before receipt lookup, but allow acknowledgment of a delete
       // whose resource no longer exists. Fresh writes still run all authorization.
       return replayOperation(ctx, actor, definition.offlineOperation, payload, args.replay,

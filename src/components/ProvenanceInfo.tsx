@@ -415,7 +415,27 @@ const ACTION_RECORD_LABELS: Record<ActionType, string> = {
   "item.reopened": "Reopen record",
   "list.created": "List creation record",
   "list.renamed": "Rename record",
+  "item.edited": "Edit record",
+  "item.deleted": "Deletion record",
 };
+
+const EDITED_FIELD_LABELS: Record<string, string> = {
+  name: "name", description: "notes", dueDate: "due date", url: "link",
+  recurrence: "repeat", priority: "priority", groceryAisle: "category",
+};
+
+/** What the signed statement is about, where the record's label alone does not say. */
+function actionRecordSubject(described: NonNullable<ReturnType<typeof describeActionRecord>>): string | null {
+  if (described.action === "item.edited") {
+    const fields = Object.keys(EDITED_FIELD_LABELS).filter((field) => field in described.after).map((field) => EDITED_FIELD_LABELS[field]);
+    return fields.length > 0 ? `Changed: ${fields.join(", ")}` : null;
+  }
+  // The item is gone, so its id is all there is to show.
+  if (described.action === "item.deleted" && typeof described.subject.itemId === "string") {
+    return `Item …${described.subject.itemId.slice(-6)}`;
+  }
+  return null;
+}
 
 /**
  * verified: the signature checks out under the `#orig-1` assertion key of the
@@ -535,6 +555,7 @@ function ActionRecordRow({
   const credential = described.credential
     ? `${described.credential.kind === "apiKey" ? "API key" : "signed-in session"} …${described.credential.id.slice(-6)}`
     : null;
+  const subject = actionRecordSubject(described);
   const attested = [
     credential ? `Via ${credential}` : null,
     described.occurredAt !== undefined ? `Recorded ${formatDate(described.occurredAt)}` : null,
@@ -550,6 +571,7 @@ function ActionRecordRow({
           {ACTION_RECORD_LABELS[described.action]}
         </span>
       </div>
+      {subject && <div className="text-xs text-[var(--boop-ink)]">{subject}</div>}
       <div className={`text-sm ${tone}`}>{status}</div>
       <div className="text-xs text-[var(--boop-muted)] mt-0.5">{detail}</div>
       <DidRow
@@ -577,7 +599,9 @@ function ActionRecordList({
   records,
   displayNames,
   haptic,
+  title = "Action records",
 }: {
+  title?: string;
   records: StoredActionRecord[] | undefined;
   displayNames: Record<string, { displayName: string | null }> | undefined;
   haptic: HapticFn;
@@ -588,7 +612,7 @@ function ActionRecordList({
   return (
     <div className="py-2">
       <div className="text-xs font-medium text-[var(--boop-muted)] mb-2">
-        Action records ({records.length})
+        {title} ({records.length})
       </div>
       <div className="space-y-2">
         {records.map((record) => (
@@ -682,10 +706,12 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
   const { haptic } = useSettings();
   
   const actionRecords = useQuery(api.actionRecords.getListActionRecords, { listId: list._id });
+  // A deleted item has no panel of its own, so its deletion is shown with its list.
+  const deletionRecords = useQuery(api.actionRecords.getDeletedItemActionRecords, { listId: list._id });
 
   // Look up the owner's display name, and whoever authorized recorded actions
   const userInfo = useQuery(api.users.getUsersByDids, {
-    dids: [...new Set([list.ownerDid, ...actionRecordOwnerDids(actionRecords)])]
+    dids: [...new Set([list.ownerDid, ...actionRecordOwnerDids(actionRecords), ...actionRecordOwnerDids(deletionRecords)])]
   });
   
   // Fetch Bitcoin anchors for this list
@@ -766,6 +792,7 @@ export function ListProvenanceInfo({ list }: ListProvenanceProps) {
       <OriginalVerificationRow state={originalState} />
 
       <ActionRecordList records={actionRecords} displayNames={userInfo} haptic={haptic} />
+      <ActionRecordList title="Deleted items" records={deletionRecords} displayNames={userInfo} haptic={haptic} />
 
       {/* Ownership VC */}
       {list.vcProof && (

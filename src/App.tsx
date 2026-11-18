@@ -15,6 +15,7 @@ import { ReferralRedeemer } from './components/ReferralRedeemer'
 import { NativePushRegistrar } from './components/NativePushRegistrar'
 import { CookieConsent } from './components/CookieConsent'
 import { useSwipeBack } from './hooks/useSwipeBack'
+import { useEditSessionRecords } from './hooks/useEditSessionRecords'
 import { useNativeLinks } from './hooks/useNativeLinks'
 import { initPushNotifications } from './lib/pushNotifications'
 import { incrementMetric } from './lib/observability'
@@ -197,6 +198,9 @@ function PageLoadingFallback() {
 function App() {
   const { isAuthenticated } = useAuth()
   const location = useLocation()
+
+  // Sign each run of item saves once, and close runs when the author moves on
+  useEditSessionRecords()
 
   // Enable swipe-right from left edge to go back (mobile PWA)
   useSwipeBack()
