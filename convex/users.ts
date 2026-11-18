@@ -117,6 +117,7 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
   // Pending email invitations are not account-bound. Profile email is not proof
   // of ownership and must never authorize deletion of someone else’s invitations.
   if (await drain(ctx.db.query("invitationRequests").withIndex("by_owner_request", q => q.eq("ownerId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (await drain(ctx.db.query("agentEnrollmentCodes").withIndex("by_owner_expires", q => q.eq("ownerId", userId)).take(DELETE_BATCH_SIZE))) return false;
   const code = await ctx.db.query("referralCodes").withIndex("by_user", q => q.eq("userId", userId)).first();
   if (code) {
     if (await drain(ctx.db.query("referrals").withIndex("by_code", q => q.eq("referralCodeId", code._id)).take(DELETE_BATCH_SIZE))) return false;
@@ -131,6 +132,7 @@ async function deleteUserStep(ctx: MutationCtx, user: Doc<"users">): Promise<boo
   // Receipts live for the account lifetime so old lost-response retries remain safe.
   if (await drain(ctx.db.query("offlineReceipts").withIndex("by_account_operation", q => q.eq("accountId", userId)).take(DELETE_BATCH_SIZE))) return false;
   if (await drain(ctx.db.query("replaySequences").withIndex("by_account", q => q.eq("accountId", userId)).take(DELETE_BATCH_SIZE))) return false;
+  if (user.turnkeySubOrgId && await drain(ctx.db.query("clientCapabilityReports").withIndex("by_subject_platform", q => q.eq("subject", user.turnkeySubOrgId!)).take(DELETE_BATCH_SIZE))) return false;
   await ctx.db.delete(userId);
   return true;
 }

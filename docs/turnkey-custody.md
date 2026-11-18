@@ -114,7 +114,10 @@ device did not build itself.
 - An author DID is one where **every version**, genesis included, has exactly
   the two keys (`#key-0` the only update key and only `authentication`,
   `#orig-1` the only `assertionMethod`, nothing else) and both are the
-  sub-org's own. Checking only the latest version would let a genesis under
+  sub-org's own. `#orig-1` may also be referenced, as the same method, under
+  `capabilityDelegation` and `capabilityInvocation`: nothing mints that yet,
+  but builds accept it so a later DID change needs no forced update
+  (plans/002 D13). Checking only the latest version would let a genesis under
   someone else's key hand over to the victim's public keys while keeping an
   assertion key of its own. Log parameters are an allowlist.
 - The server adopts or re-genesises an account only onto an author DID whose
@@ -123,6 +126,45 @@ device did not build itself.
   `authInternal.listSubOrgEd25519Accounts`), so a JWT holder's own keys never
   make an author DID, and the real owner can always move away from one. If
   Turnkey can't be read, the write fails closed with 503.
+
+### Reading build adoption before a DID change
+
+No DID may gain the `capabilityDelegation`/`capabilityInvocation` references
+until the builds that refuse them are out of use (plans/002 D13; there is no
+426 gate). Builds that accept them say so: they send
+`clientCapabilities: ["did-capability-relationships"]`
+(`shared/clientCapabilities.ts`) with `/auth/verify`, and again each time they
+restore a session (`clientCapabilities.report`), since a native session can
+run for months without signing in. The server keeps the latest answer per
+account and platform in `clientCapabilityReports` (sub-org id, platform,
+capability names, time last seen) and does nothing else with it. A build that
+sends nothing signs in as before and is recorded with no capabilities.
+
+To read it (read-only; `--prod` for production):
+
+```
+node scripts/client-capability-adoption.mjs --prod
+npx convex run --prod clientCapabilities:adoption '{"days":[7,30]}'
+```
+
+For each window it gives:
+
+- **accounts with every platform ready**: accounts seen in the window whose
+  every platform seen in it declares the capability. This is the number to
+  hold the DID change to; an account with a current web build and an old phone
+  build is not ready, because the phone would refuse its DID.
+- **installs**: the same per account and platform, with a line per platform,
+  to see whether web or a store release is the one lagging.
+- **native sessions that never expire**: accounts holding one, and how many
+  have no iOS/Android build that has reported the capability. Builds from
+  before this report say nothing while they stay signed in, so they are
+  missing from the windows; this count is the upper bound on them. It falls
+  as those phones update.
+
+The windows only count from the release that first carries the report, so
+wait at least one full window after the web deploy and the store releases
+before reading them. The threshold is the owner's call (plans/002, open
+decision 4); record the numbers and the date in the P5 PR that changes DIDs.
 
 ## What Turnkey has to enforce
 

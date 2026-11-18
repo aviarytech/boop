@@ -15,4 +15,10 @@ crons.interval(
   internal.siteActions.pollPendingCustomHostnames
 );
 
+crons.interval(
+  "clean up agent enrollment codes",
+  { hours: 1 },
+  internal.agentEnrollment.cleanupEnrollmentCodes
+);
+
 export default crons;

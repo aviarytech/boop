@@ -390,6 +390,7 @@ test('OTP verification sends only the encrypted bundle and completes the Turnkey
   await act(async () => result.current.verifyOtp('123456'));
   assert.equal(verifyBody.encryptedOtpBundle, 'sealed:enclave-target');
   assert.ok(!('code' in verifyBody), 'the plaintext code never leaves the device');
+  assert.deepEqual(verifyBody.clientCapabilities, ['did-capability-relationships'], 'the build reports that it parses the tolerated DID shape (plans/002 D13)');
   assert.ok(!JSON.stringify(verifyBody).includes('123456'));
   assert.deepEqual(turnkeyCalls.find(c => c[0] === 'encrypt'), ['encrypt', '123456', 'enclave-target']);
   assert.deepEqual(turnkeyCalls.find(c => c[0] === 'login')[1], { verificationToken: 'vt', subOrgId: user.turnkeySubOrgId, publicKey: 'session-pub' });
@@ -449,3 +450,24 @@ test('logout clears the Turnkey session', async () => {
   assert.ok(turnkeyCalls.some(c => c[0] === 'clear'));
   assert.ok(turnkeyCalls.some(c => c[0] === 'clearAuthor'), 'the author signer is forgotten');
 });
+
+// plans/002 D13 (#286 P2b): a restored session never passes /auth/verify, so it
+// reports its capabilities itself. The report can't affect the session.
+for (const outcome of ['accepted', 'refused']) {
+  test(`a restored session reports its capabilities, and stays signed in when the report is ${outcome}`, async () => {
+    seed(); state.platform = 'ios';
+    const mutations = [];
+    state.establish = async (_ref, args) => {
+      mutations.push(args);
+      if ('clientCapabilities' in args && outcome === 'refused') throw new Error('Could not find public function for clientCapabilities:report');
+    };
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider }); await flush(); await flush();
+    assert.deepEqual(mutations, [
+      { authToken: token },
+      { authToken: token, clientCapabilities: ['did-capability-relationships'], platform: 'ios' },
+    ]);
+    assert.equal(result.current.isAuthenticated, true);
+    assert.equal(result.current.token, token);
+    assert.equal(state.storage.get('lisa-jwt-token'), token);
+  });
+}

@@ -61,6 +61,16 @@ export default defineSchema({
   })
     .index("by_hash", ["tokenHash"])
     .index("by_expires_at", ["expiresAt"]),
+  // What each account's builds last said they support (plans/002 D13, #286 P2b).
+  // Report-only: read by clientCapabilities.adoption, never by an access check.
+  clientCapabilityReports: defineTable({
+    subject: v.string(), // Turnkey sub-org id, as in accessSessions
+    platform: v.string(), // "web" | "ios" | "android" | "unknown"
+    capabilities: v.array(v.string()), // Empty for a build that declared none
+    lastSeenAt: v.number(),
+  })
+    .index("by_subject_platform", ["subject", "platform"])
+    .index("by_last_seen", ["lastSeenAt"]),
   // DID logs table - stores did:webvh logs for resolution
   didLogs: defineTable({
     userDid: v.string(), // The user's did:webvh
@@ -80,7 +90,7 @@ export default defineSchema({
   // Rate limits table - for tracking auth endpoint rate limits (Phase 9.2)
   rateLimits: defineTable({
     key: v.string(), // Unique identifier (IP address or session ID)
-    endpoint: v.string(), // Endpoint being limited ("initiate" or "verify")
+    endpoint: v.string(), // Budget being limited (a key of RATE_LIMITS)
     attempts: v.number(), // Number of attempts in current window
     windowStart: v.number(), // Timestamp when current window started
     expiresAt: v.number(), // When this record can be cleaned up (windowStart + window duration)
@@ -148,6 +158,21 @@ export default defineSchema({
   })
     .index("by_hash", ["keyHash"])
     .index("by_owner", ["ownerDid"]),
+
+  // One-time agent enrollment codes (agentEnrollment.ts, plans/002 D14). The
+  // owner mints one in Settings and gives it to an agent; P5 will require it in
+  // the agent's access request. Only the hash of a code is stored.
+  agentEnrollmentCodes: defineTable({
+    ownerId: v.id("users"), // Account that minted the code; its DID is read at redemption
+    codeHash: v.string(), // Lowercase hex SHA-256 of the canonical code
+    label: v.optional(v.string()), // Owner's note, e.g. which agent it is for
+    createdAt: v.number(),
+    expiresAt: v.number(), // createdAt + ENROLLMENT_CODE_TTL_MS
+    redeemedAt: v.optional(v.number()), // Set once, when an agent redeems it
+  })
+    .index("by_hash", ["codeHash"])
+    .index("by_owner_expires", ["ownerId", "expiresAt"])
+    .index("by_expires", ["expiresAt"]),
 
   // Categories table - user-specific list organization (Phase 2)
   categories: defineTable({
