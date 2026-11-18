@@ -237,14 +237,38 @@ async function rejects(promise, description) {
 
   const writers = /runMutation\(\s*internal\.[\w.]*(?:upsertDidLog|storeDidLog)/;
 
+  // The one writer with no caller to bind: the Boop service DID (#286 P3),
+  // published by the owner with `npx convex run`. It is held to its own rule
+  // instead: internal only, and only ever the service path, which no account
+  // path can equal.
+  const SERVICE_WRITER = "serviceDid.ts";
+
   for (const file of files) {
     const src = await readFile(`convex/${file}`, "utf8");
     if (!writers.test(src)) continue;
+    if (file === SERVICE_WRITER) {
+      assert.doesNotMatch(src, /\b(?:httpAction|action|mutation|query)\(/, "the service DID writer exposes a public function");
+      assert.match(src, /= internalAction\(/);
+      const written = [...src.matchAll(/\bpath: ([\w."'-]+)/g)].map((m) => m[1]);
+      assert.ok(written.length > 0 && written.every((path) => path === "SERVICE_DID_PATH"), "the service DID writer names another path");
+      assert.doesNotMatch(src, /args\.path|path: args/);
+      continue;
+    }
     assert.ok(
       src.includes("assertDidLogOwnership"),
       `convex/${file} writes a didLogs row without asserting ownership`
     );
   }
+
+  const { SERVICE_DID_PATH } = await import("../shared/serviceDid.ts");
+  for (const subOrg of [SUB_ORG, "", "boop-service", "service", "-service"]) {
+    assert.notEqual(didLogAuth.didLogPathForSubOrg(subOrg), SERVICE_DID_PATH);
+    assert.ok(didLogAuth.didLogPathForSubOrg(subOrg).startsWith("user-"));
+  }
+  assert.throws(
+    () => didLogAuth.assertDidLogOwnership({ subOrgId: SUB_ORG, userDid: `did:webvh:QmScid:boop.ad:${SERVICE_DID_PATH}`, path: SERVICE_DID_PATH }),
+    /not this account's DID log path/
+  );
 }
 
 await rm(outdir, { recursive: true, force: true });
