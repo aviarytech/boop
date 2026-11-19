@@ -247,9 +247,7 @@ with a key.
     (`signed` | `failed` | `unsigned` | `pending`) and, when signed, `signature`,
     `publicKeyMultibase`, `verificationMethod` (`<author did:webvh>#orig-1`) and `signedAt`. See
     [action records](docs/action-records.md) for the payload and how to verify it independently
-    against the author's did:webvh. A signed record may also carry `receipt`: boop's countersigned
-    statement of when it accepted the record ([receipts](docs/action-records.md#receipts)). None
-    is issued yet.
+    against the author's did:webvh.
 
 ### Writes (JWT or `X-API-Key`)
 

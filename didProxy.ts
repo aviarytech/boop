@@ -3,8 +3,6 @@
  *
  * A did:webvh resolves by fetching https://<domain>/<path>/did.jsonl, so
  * did:webvh:…:boop.ad:user-abc resolves from https://boop.ad/user-abc/did.jsonl.
- * The Boop service DID (receipts, #286 P3) is served the same way, from
- * https://boop.ad/boop-service/did.jsonl.
  * Convex serves the logs, but only under /d/ (its pathPrefix routes must end
  * in a slash), so the app server proxies these paths to it.
  *
@@ -14,8 +12,7 @@
  * Convex's /d/ routes directly for writes.
  */
 
-// Account DIDs, and the Boop service DID (shared/serviceDid.ts SERVICE_DID_PATH).
-const DID_LOG = /^\/(user-[A-Za-z0-9_-]+|boop-service)\/did\.jsonl$/;
+const DID_LOG = /^\/(user-[A-Za-z0-9_-]+)\/did\.jsonl$/;
 const DID_RESOURCE = /^\/(user-[A-Za-z0-9_-]+)\/resources\/list-[A-Za-z0-9_-]+$/;
 
 function wantsHtml(request: Request): boolean {
