@@ -19,16 +19,6 @@ test("a DID log is proxied to Convex's /d/ route", () => {
   assert.equal(didProxyTarget(req("/user-abc/did.jsonl"), `${CONVEX}/`), `${CONVEX}/d/user-abc/did.jsonl`);
 });
 
-test("the Boop service DID log is proxied from its own path, and nothing else under it", async () => {
-  const { SERVICE_DID_PATH } = await import("../shared/serviceDid.ts");
-  assert.equal(SERVICE_DID_PATH, "boop-service");
-  assert.equal(didProxyTarget(req("/boop-service/did.jsonl"), CONVEX), `${CONVEX}/d/boop-service/did.jsonl`);
-  for (const path of ["/boop-service", "/boop-service/resources/list-1", "/boop-service-2/did.jsonl", "/boop-service/did.json"]) {
-    assert.equal(didProxyTarget(req(path, { headers: { accept: "*/*" } }), CONVEX), null, path);
-  }
-  assert.equal(didProxyTarget(req("/boop-service/did.jsonl", { method: "POST" }), CONVEX), null);
-});
-
 test("a browser opening a shared list still gets the app page", () => {
   const browser = req("/user-abc/resources/list-k123", { headers: { accept: "text/html,application/xhtml+xml,*/*;q=0.8" } });
   assert.equal(didProxyTarget(browser, CONVEX), null);

@@ -7,7 +7,6 @@
 
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { actionRecordReceipt } from "./lib/actionRecords";
 
 // The authenticated session or specific API key that acted (#236). Absent on system
 // rows and on rows written before credential attribution existed.
@@ -372,9 +371,6 @@ export default defineSchema({
     publicKeyMultibase: v.optional(v.string()),
     signedAt: v.optional(v.number()), // The author's clock, copied from the payload
     error: v.optional(v.string()), // Non-secret reason code, set when failed
-    // Boop's countersigned receipt (shared/receipt.ts), added after the record
-    // is accepted, only for signed records and only when receipts are enabled.
-    receipt: v.optional(actionRecordReceipt),
   })
     .index("by_list", ["listId", "itemId"])
     .index("by_item", ["itemId"]),
