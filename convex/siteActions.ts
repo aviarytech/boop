@@ -11,7 +11,7 @@ import { createCustomHostname, getCustomHostname } from "./cloudflare";
 import { getObjectBody, headObject } from "./lib/bucket";
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { sha512 } from "@noble/hashes/sha2.js";
-import { concatBytes, bytesToHex } from "@noble/hashes/utils.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import * as ed25519 from "@noble/ed25519";
 import {
   createDID,
@@ -49,14 +49,10 @@ const ED25519_MULTICODEC_PREFIX = new Uint8Array([0xed, 0x01]);
 // metadata and JSON encoding until the UI switches to direct upload URLs.
 const MAX_HTML_BYTES = 4 * 1024 * 1024;
 
+// @noble/ed25519 v3 freezes `etc`/`utils`; the sync SHA-512 hook lives on
+// `hashes` (same setup as shared/actionRecord.ts).
 function configureEd25519Sha512() {
-  const sha512Fn = (...messages: Uint8Array[]) => sha512(concatBytes(...messages));
-  const module = ed25519 as unknown as {
-    utils?: { sha512Sync?: (...messages: Uint8Array[]) => Uint8Array };
-    etc?: { sha512Sync?: (...messages: Uint8Array[]) => Uint8Array };
-  };
-  if (module.utils) module.utils.sha512Sync = sha512Fn;
-  if (module.etc) module.etc.sha512Sync = sha512Fn;
+  ed25519.hashes.sha512 ??= sha512;
 }
 
 class SiteWebVHSigner {
